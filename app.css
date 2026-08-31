@@ -1,0 +1,165 @@
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #0b0f16;
+  --card: #111827;
+  --border: #26354b;
+  --text: #f2f5f8;
+  --muted: #9aa8bb;
+  --accent: #3bd6a3;
+  --badge: #182235;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Tahoma, Arial, sans-serif;
+  line-height: 1.8;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 28px 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3rem);
+}
+
+.topbar p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.badge,
+.mini-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--badge);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.container {
+  width: min(920px, calc(100% - 32px));
+  margin: 28px auto 50px;
+}
+
+.card {
+  margin: 18px 0;
+  padding: 30px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: clamp(1.7rem, 6vw, 2.5rem);
+}
+
+.hero {
+  display: grid;
+  gap: 22px;
+}
+
+.hero p,
+.muted {
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+
+.primary {
+  width: 100%;
+  border: 0;
+  border-radius: 20px;
+  padding: 16px 20px;
+  background: var(--accent);
+  color: #07120e;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.primary:active { transform: translateY(1px); }
+
+.rows {
+  display: grid;
+}
+
+.role-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.role-row:last-child { border-bottom: 0; }
+
+.code {
+  margin: 0;
+  padding: 24px;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: left;
+  background: #080d13;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  color: #e8edf4;
+  font-size: .9rem;
+  line-height: 1.7;
+}
+
+.roadmap {
+  margin: 0;
+  padding-inline-start: 2.2rem;
+}
+
+.roadmap li {
+  padding: 8px 0;
+  font-size: 1.08rem;
+}
+
+.roadmap li.current {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.status-card #status {
+  color: var(--accent);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.status-card #status.success {
+  color: var(--accent);
+}
+
+footer {
+  padding: 20px 20px 50px;
+  text-align: center;
+  color: var(--muted);
+}
+
+@media (min-width: 700px) {
+  .hero {
+    grid-template-columns: 1fr 220px;
+    align-items: center;
+  }
+
+  .primary { width: auto; }
+}
