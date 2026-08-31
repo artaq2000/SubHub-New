@@ -1,47 +1,53 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SubHub — الإصدار الجديد</title>
-<meta name="theme-color" content="#0a0e14">
-<style>
-:root{--bg:#0a0e14;--panel:#111823;--panel2:#182230;--text:#f4f7fb;--muted:#9ba8b8;--accent:#35d0a0;--border:#263342}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-header{padding:22px 18px;border-bottom:1px solid var(--border);background:rgba(10,14,20,.96)}
-.wrap{max-width:1050px;margin:auto}.brand{font-size:1.45rem;font-weight:900}.sub{color:var(--muted);font-size:.82rem;margin-top:4px}
-main{padding:22px 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:17px}h2{font-size:1.05rem;margin:0 0 12px}
-.muted{color:var(--muted);line-height:1.7;font-size:.9rem}button{border:0;border-radius:11px;padding:11px 14px;background:var(--accent);color:#07110e;font-weight:800}
-.role,.linkrow{display:flex;justify-content:space-between;gap:10px;align-items:center;border-top:1px solid var(--border);padding:10px 0}
-.pill{padding:4px 9px;border-radius:99px;background:var(--panel2);font-size:.75rem}.links{display:grid;gap:8px}
-footer{padding:25px 18px;color:var(--muted);font-size:.75rem;text-align:center}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f16">
+  <title>SubHub — Foundation v0.1</title>
+  <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<header><div class="wrap"><div class="brand">SubHub</div><div class="sub">المشروع الجديد — Foundation v0.1</div></div></header>
-<main class="wrap">
-<section class="card" style="margin-bottom:14px">
-<h2>الأساس الجديد</h2>
-<p class="muted">هذه نقطة بداية نظيفة. نأخذ من التطبيق القديم الوظائف المطلوبة فقط، ثم نضيف كل نظام بعد اختباره.</p>
-<button id="testBtn">اختبار الواجهة</button> <span id="status" class="pill">جاهز</span>
-</section>
-<section class="grid">
-<div class="card"><h2>الفئات والصلاحيات</h2>
-<div class="role"><span>زائر</span><span class="pill">visitor</span></div>
-<div class="role"><span>مشترك عادي</span><span class="pill">free</span></div>
-<div class="role"><span>مشترك VIP</span><span class="pill">vip</span></div>
-<div class="role"><span>المالك</span><span class="pill">owner</span></div>
-<p class="muted">الصلاحيات مستقلة لكل ميزة، ولا نفترض أن VIP يملك كل شيء تلقائيًا.</p></div>
-<div class="card"><h2>مصادر الفيلم</h2><div class="links" id="slots"></div><p class="muted">ثمانية مصادر كما اتفقنا، مع التحكم بكل مصدر لاحقًا.</p></div>
-<div class="card"><h2>مراحل البناء</h2><p class="muted">1) البيانات<br>2) الصلاحيات<br>3) Firebase<br>4) الأفلام<br>5) المشاهدة والترجمات<br>6) الرفع وR2<br>7) لوحة المالك</p></div>
-</section>
-</main><footer>SubHub-New — مشروع مستقل عن النسخة القديمة</footer>
-<script>
-const QUICK_LINKS=[["vip","مشاهدة VIP"],["free","مشاهدة وتحميل — رابط مجاني"],["extra1","رابط مجاني إضافي 1"],["extra2","رابط مجاني إضافي 2"],["extra3","رابط مجاني إضافي 3"],["youtube","مقطع دعائي"],["dl1","تحميل مباشر"],["dl2","تحميل مباشر — نسخة أخرى"]];
-const PERMISSIONS={visitor:{watchVip:false,watchFree:true,download:false,subtitleWatch:false,subtitleDownload:false},free:{watchVip:false,watchFree:true,download:false,subtitleWatch:true,subtitleDownload:false},vip:{watchVip:true,watchFree:true,download:true,subtitleWatch:true,subtitleDownload:true},owner:{watchVip:true,watchFree:true,download:true,subtitleWatch:true,subtitleDownload:true}};
-const slots=document.getElementById("slots"); QUICK_LINKS.forEach(([id,label])=>{const r=document.createElement("div");r.className="linkrow";r.innerHTML=`<span>${label}</span><span class="pill">${id}</span>`;slots.appendChild(r)});
-document.getElementById("testBtn").onclick=()=>document.getElementById("status").textContent="الأساس يعمل ✓";
-window.SubHubFoundation={QUICK_LINKS,PERMISSIONS};
-</script>
-</body></html>
+  <header class="topbar">
+    <div>
+      <h1>SubHub</h1>
+      <p>Foundation v0.1 — المشروع الجديد</p>
+    </div>
+    <span id="roleBadge" class="badge">visitor</span>
+  </header>
+
+  <main class="container">
+    <section class="card hero">
+      <div>
+        <h2>الأساس الجديد</h2>
+        <p>هذه نقطة بداية نظيفة. نأخذ من التطبيق القديم الوظائف المطلوبة فقط، ثم نضيف كل نظام بعد اختباره.</p>
+      </div>
+      <button id="testUiBtn" class="primary">اختبار الواجهة</button>
+    </section>
+
+    <section class="card">
+      <h2>الفئات والصلاحيات</h2>
+      <div id="roles" class="rows"></div>
+      <p class="muted">الصلاحيات مستقلة لكل ميزة؛ لا نفترض أن VIP يملك كل شيء تلقائيًا.</p>
+    </section>
+
+    <section class="card">
+      <h2>مخطط بيانات الفيلم</h2>
+      <pre id="schema" class="code"></pre>
+    </section>
+
+    <section class="card">
+      <h2>مراحل البناء</h2>
+      <ol id="roadmap" class="roadmap"></ol>
+    </section>
+
+    <section class="card status-card">
+      <h2>حالة المشروع</h2>
+      <div id="status">Foundation v0.1 جاهز للمرحلة التالية.</div>
+    </section>
+  </main>
+
+  <footer>SubHub-New — مشروع مستقل عن النسخة القديمة</footer>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
