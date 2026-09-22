@@ -1,0 +1,44 @@
+image: eclipse-temurin:17-jdk
+
+variables:
+  ANDROID_COMPILE_SDK: "35"
+  ANDROID_BUILD_TOOLS: "34.0.0"
+  ANDROID_CMDLINE_TOOLS: "11076708"
+  ANDROID_HOME: "$CI_PROJECT_DIR/android-sdk"
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+
+cache:
+  key: "soapdiag-android"
+  paths:
+    - .gradle/caches/
+    - android-sdk/
+
+stages: [build]
+
+build_apk:
+  stage: build
+  timeout: 25m
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq wget unzip curl python3
+    - |
+      if [ ! -d "$ANDROID_HOME/cmdline-tools/latest" ]; then
+        mkdir -p "$ANDROID_HOME/cmdline-tools"
+        wget -q "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS}_latest.zip" -O /tmp/cmdline.zip
+        unzip -q /tmp/cmdline.zip -d "$ANDROID_HOME/cmdline-tools"
+        mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
+      fi
+    - export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
+    - yes | sdkmanager --licenses >/dev/null 2>&1 || true
+    - sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}" >/dev/null
+    - curl -sSL -o /tmp/g.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
+    - unzip -q -o /tmp/g.zip -d /opt
+    - export PATH=/opt/gradle-8.7/bin:$PATH
+  script:
+    - python3 tests/test_source.py
+    - gradle assembleDebug --no-daemon --stacktrace
+    - cp app/build/outputs/apk/debug/app-debug.apk SoapDiag-1.0.apk
+  artifacts:
+    name: "SoapDiag-1.0-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - SoapDiag-1.0.apk
+    expire_in: 1 month
