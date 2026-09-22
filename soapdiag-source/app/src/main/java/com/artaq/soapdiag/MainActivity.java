@@ -337,10 +337,10 @@ public class MainActivity extends Activity {
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.3 ===");
+        append("=== SoapDiag 1.4 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: OnlyFlix / CDNM embed / cdnmvs(Server 1) / nontongo / workers.dev / medmedia05");
+        append("Targets: OnlyFlix / CDNM iframe / cdnmvs(Server 1) / nontongo / workers.dev / medmedia05");
         append("Cookies/Authorization values are redacted.");
     }
 
@@ -448,13 +448,29 @@ public class MainActivity extends Activity {
         lastServer1EmbedUrl = u;
         append("[SERVER 1 EMBED FOUND " + source + "]\n" + u);
         ui.post(() -> {
-            statusView.setText("تم العثور على Server 1 — فتح CDNM واستخراج البث…");
-            String current = webView.getUrl();
-            if (!server1EmbedOpened && (current == null || !current.equals(u))) {
-                server1EmbedOpened = true;
-                webView.stopLoading();
-                webView.loadUrl(u);
-            }
+            statusView.setText("تم العثور على Server 1 — تضمينه داخل OnlyFlix…");
+            if (server1EmbedOpened) return;
+            server1EmbedOpened = true;
+
+            String quoted = JSONObject.quote(u);
+            String js =
+                "(function(){" +
+                "try{" +
+                "var old=document.getElementById('__soapdiag_server1');" +
+                "if(old) old.remove();" +
+                "var f=document.createElement('iframe');" +
+                "f.id='__soapdiag_server1';" +
+                "f.src=" + quoted + ";" +
+                "f.allow='autoplay; fullscreen; picture-in-picture';" +
+                "f.setAttribute('allowfullscreen','');" +
+                "f.style.cssText='width:100%;height:72vh;border:0;background:#000;display:block;position:relative;z-index:2147483646;';" +
+                "var target=document.querySelector('main')||document.body;" +
+                "target.insertBefore(f,target.firstChild);" +
+                "return 'iframe-injected';" +
+                "}catch(e){return 'iframe-error:'+e;}" +
+                "})();";
+
+            webView.evaluateJavascript(js, value -> append("[IFRAME] " + value));
         });
     }
 

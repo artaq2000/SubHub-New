@@ -22,3 +22,7 @@ assert 'https://onlyflix.to/resident-evil-2/' in java
 
 assert 'isServer1Embed' in java
 assert 'SERVER 1 EMBED FOUND' in java
+
+assert '__soapdiag_server1' in java
+assert 'createElement(\'iframe\')' in java
+assert 'versionName \'1.4\'' in (r/'app/build.gradle').read_text()

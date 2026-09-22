@@ -3,7 +3,7 @@
   if (window.__soapDiagInstalled) return;
   window.__soapDiagInstalled = true;
 
-  const TARGET_RE = /(?:onlyflix\.to|api\.ilove2day\.com|sv\d+\.nontongo\.(?:day|stream)|cdnmvs\.online|anotherday\.soapsoap123\.workers\.dev|media\.medmedia05\.mom)/i;
+  const TARGET_RE = /(?:onlyflix\.to|cdnm\.ink|api\.ilove2day\.com|sv\d+\.nontongo\.(?:day|stream)|cdnmvs\.online|anotherday\.soapsoap123\.workers\.dev|media\.medmedia05\.mom)/i;
   const SERVER1_RE = /^https?:\/\/s1\.cdnmvs\.online\//i;
   const M3U8_RE = /\.m3u8(?:[?#]|$)/i;
   const MAX_BODY = 16000;
