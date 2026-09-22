@@ -3,7 +3,7 @@
   if (window.__soapDiagInstalled) return;
   window.__soapDiagInstalled = true;
 
-  const TARGET_RE = /(?:api\.ilove2day\.com|sv\d+\.nontongo\.(?:day|stream)|cdnmvs\.online|anotherday\.soapsoap123\.workers\.dev|media\.medmedia05\.mom)/i;
+  const TARGET_RE = /(?:onlyflix\.to|api\.ilove2day\.com|sv\d+\.nontongo\.(?:day|stream)|cdnmvs\.online|anotherday\.soapsoap123\.workers\.dev|media\.medmedia05\.mom)/i;
   const SERVER1_RE = /^https?:\/\/s1\.cdnmvs\.online\//i;
   const M3U8_RE = /\.m3u8(?:[?#]|$)/i;
   const MAX_BODY = 16000;
@@ -95,7 +95,7 @@
           el.getAttribute && el.getAttribute('aria-label')
         ].filter(Boolean).join(' ');
         const hay = (text + ' ' + attrs).toLowerCase();
-        const isOne = /(?:server|سيرفر)\s*0*1\b/i.test(hay) || /\bserver1\b/i.test(hay);
+        const isOne = /(?:server|سيرفر)\s*0*1\b/i.test(hay) || /\bserver1\b/i.test(hay) || /^1$/.test(text);
         if (isOne) {
           server1Clicked = true;
           emit('server1-click', { text: text.slice(0, 200) });
