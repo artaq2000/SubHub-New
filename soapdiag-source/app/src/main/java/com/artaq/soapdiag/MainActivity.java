@@ -51,7 +51,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final String DEFAULT_URL = "https://sv2.nontongo.day/01russia/multisourcesoap.php?id=tt34564059&type=movie";
+    private static final String DEFAULT_URL = "https://onlyflix.to/resident-evil-2/";
     private static final int MAX_LOG_CHARS = 180_000;
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
 
@@ -333,10 +333,10 @@ public class MainActivity extends Activity {
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.1 ===");
+        append("=== SoapDiag 1.2 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: ilove2day / nontongo / cdnmvs(Server 1) / workers.dev / medmedia05");
+        append("Targets: OnlyFlix / ilove2day / nontongo / cdnmvs(Server 1) / workers.dev / medmedia05");
         append("Cookies/Authorization values are redacted.");
     }
 
@@ -392,13 +392,13 @@ public class MainActivity extends Activity {
 
     private boolean isAllowedMainFrame(String u) {
         String h = host(u);
-        return h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
+        return h.endsWith("onlyflix.to") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
                h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom") || h.isEmpty();
     }
 
     private boolean isRelevant(String u) {
         String h = host(u);
-        return h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
+        return h.endsWith("onlyflix.to") || h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
                h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
     }
 
