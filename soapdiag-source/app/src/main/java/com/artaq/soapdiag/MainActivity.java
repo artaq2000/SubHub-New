@@ -71,6 +71,8 @@ public class MainActivity extends Activity {
     private TextView statusView;
     private WebView webView;
     private String lastCdnUrl = "";
+    private String lastServer1Url = "";
+    private boolean server1AutoOpened = false;
     private String diagScript = "";
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
@@ -121,7 +123,7 @@ public class MainActivity extends Activity {
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         normalUi.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        statusView = text("مستقل عن الموقع — لا يغيّر (SubHub) ولا (OnlyFlix)", 13, Color.rgb(155, 180, 215));
+        statusView = text("Server 1 تلقائي — الصق رابط صفحة الفيلم أو المشغل", 13, Color.rgb(155, 180, 215));
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusLp.setMargins(0, dp(2), 0, dp(8));
         normalUi.addView(statusView, statusLp);
@@ -144,7 +146,7 @@ public class MainActivity extends Activity {
         row1.setOrientation(LinearLayout.HORIZONTAL);
         row1.setGravity(Gravity.CENTER);
         row1.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-        Button start = button("تشغيل الاختبار");
+        Button start = button("استخراج Server 1");
         Button clear = button("مسح السجل");
         row1.addView(start, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         row1.addView(clear, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
@@ -161,7 +163,7 @@ public class MainActivity extends Activity {
         row2.setGravity(Gravity.CENTER);
         row2.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         Button copyReport = button("نسخ التقرير");
-        Button copyCdn = button("نسخ آخر CDN");
+        Button copyCdn = button("نسخ Server 1");
         row2.addView(copyReport, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         row2.addView(copyCdn, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         normalUi.addView(row2);
@@ -186,8 +188,8 @@ public class MainActivity extends Activity {
         clear.setOnClickListener(v -> clearReport());
         copyReport.setOnClickListener(v -> copyToClipboard("SoapDiag report", report.toString()));
         copyCdn.setOnClickListener(v -> {
-            if (lastCdnUrl.isEmpty()) Toast.makeText(this, "لم يظهر رابط CDN بعد", Toast.LENGTH_SHORT).show();
-            else copyToClipboard("CDN URL", lastCdnUrl);
+            if (lastServer1Url.isEmpty()) Toast.makeText(this, "لم يظهر رابط Server 1 بعد", Toast.LENGTH_SHORT).show();
+            else copyToClipboard("Server 1 URL", lastServer1Url);
         });
     }
 
@@ -230,7 +232,11 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 append("[PAGE] finished " + url);
-                statusView.setText("الصفحة جاهزة — شغّل الفيلم واتركه من ١٠ إلى ٢٠ ثانية");
+                if (isServer1Media(url)) {
+                    statusView.setText("Server 1 يعمل — تم تشغيل الرابط تلقائياً");
+                } else if (lastServer1Url.isEmpty()) {
+                    statusView.setText("جارٍ البحث عن Server 1 تلقائياً…");
+                }
             }
 
             @Override
@@ -307,9 +313,9 @@ public class MainActivity extends Activity {
         }
         clearReport();
         appendHeader();
-        append("[TEST] Loading player page directly");
+        append("[TEST] Auto Server 1 extraction");
         append("[TEST] " + u);
-        statusView.setText("جاري تحميل صفحة المشغل…");
+        statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
         webView.stopLoading();
         webView.loadUrl(u);
     }
@@ -320,15 +326,17 @@ public class MainActivity extends Activity {
         synchronized (hostCounts) { hostCounts.clear(); }
         synchronized (foundUrls) { foundUrls.clear(); }
         lastCdnUrl = "";
+        lastServer1Url = "";
+        server1AutoOpened = false;
         ui.post(() -> logView.setText(""));
     }
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.0 ===");
+        append("=== SoapDiag 1.1 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: ilove2day / nontongo / workers.dev / medmedia05");
+        append("Targets: ilove2day / nontongo / cdnmvs(Server 1) / workers.dev / medmedia05");
         append("Cookies/Authorization values are redacted.");
     }
 
@@ -385,13 +393,13 @@ public class MainActivity extends Activity {
     private boolean isAllowedMainFrame(String u) {
         String h = host(u);
         return h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
-               h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom") || h.isEmpty();
+               h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom") || h.isEmpty();
     }
 
     private boolean isRelevant(String u) {
         String h = host(u);
         return h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
-               h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
+               h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
     }
 
     private String host(String u) {
@@ -404,14 +412,44 @@ public class MainActivity extends Activity {
     private void rememberUrl(String u, String source) {
         if (u == null || u.isEmpty() || !isRelevant(u)) return;
         String h = host(u);
-        boolean importantCdn = h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
+        boolean server1 = isServer1Media(u);
+        boolean importantCdn = server1 || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
         synchronized (foundUrls) {
-            if (!foundUrls.add(u)) return;
+            if (!foundUrls.add(u)) {
+                if (server1 && lastServer1Url.isEmpty()) handleServer1Url(u, source);
+                return;
+            }
         }
-        if (importantCdn) {
+        if (server1) {
+            handleServer1Url(u, source);
+        } else if (importantCdn) {
             lastCdnUrl = u;
             append("[FOUND " + source + "] " + (h.contains("workers.dev") ? "WORKERS CDN" : "MEDIA CDN") + "\n" + u);
         }
+    }
+
+    private boolean isServer1Media(String u) {
+        if (u == null) return false;
+        String h = host(u);
+        String l = u.toLowerCase(Locale.US);
+        return h.equals("s1.cdnmvs.online") && (l.contains(".m3u8") || l.contains("/index-"));
+    }
+
+    private void handleServer1Url(String u, String source) {
+        if (!isServer1Media(u)) return;
+        if (u.equals(lastServer1Url)) return;
+        lastServer1Url = u;
+        lastCdnUrl = u;
+        append("[SERVER 1 FOUND " + source + "]\n" + u);
+        ui.post(() -> {
+            statusView.setText("تم العثور على Server 1 — تشغيل تلقائي…");
+            String current = webView.getUrl();
+            if (!server1AutoOpened && (current == null || !current.equals(u))) {
+                server1AutoOpened = true;
+                webView.stopLoading();
+                webView.loadUrl(u);
+            }
+        });
     }
 
     private String safe(String s, int max) {
@@ -569,7 +607,11 @@ public class MainActivity extends Activity {
                         append("[JS ERROR] " + kind + " " + u + " :: " + d.optString("error", ""));
                         break;
                     case "dom-url":
+                    case "candidate-url":
                         rememberUrl(u, "DOM");
+                        break;
+                    case "server1-click":
+                        append("[AUTO] تم الضغط على خيار Server 1 داخل الصفحة");
                         break;
                     default:
                         if (!u.isEmpty()) append("[JS " + kind + "] " + u);
