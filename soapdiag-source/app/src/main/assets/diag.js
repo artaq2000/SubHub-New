@@ -3,7 +3,9 @@
   if (window.__soapDiagInstalled) return;
   window.__soapDiagInstalled = true;
 
-  const TARGET_RE = /(?:api\.ilove2day\.com|sv2\.nontongo\.(?:day|stream)|anotherday\.soapsoap123\.workers\.dev|media\.medmedia05\.mom)/i;
+  const TARGET_RE = /(?:api\.ilove2day\.com|sv\d+\.nontongo\.(?:day|stream)|cdnmvs\.online|anotherday\.soapsoap123\.workers\.dev|media\.medmedia05\.mom)/i;
+  const SERVER1_RE = /^https?:\/\/s1\.cdnmvs\.online\//i;
+  const M3U8_RE = /\.m3u8(?:[?#]|$)/i;
   const MAX_BODY = 16000;
 
   function absUrl(v) {
@@ -14,6 +16,23 @@
   }
 
   function isTarget(url) { return TARGET_RE.test(String(url || '')); }
+
+  function emitCandidate(url, source) {
+    const u = absUrl(url);
+    if (SERVER1_RE.test(u) && M3U8_RE.test(u)) {
+      emit('candidate-url', { url: u, source: source || '' });
+      return true;
+    }
+    return false;
+  }
+
+  function scanText(raw, source) {
+    try {
+      const s = String(raw || '').replace(/\\\//g, '/');
+      const urls = s.match(/https?:\/\/[^\s"'<>]+/gi) || [];
+      urls.slice(0, 120).forEach(u => emitCandidate(u.replace(/[),;]+$/, ''), source));
+    } catch (_) {}
+  }
 
   function cap(v, n) {
     const s = String(v == null ? '' : v);
@@ -61,6 +80,60 @@
 
   emit('diag-installed', { page: location.href });
 
+  let server1Clicked = false;
+  function tryClickServer1() {
+    if (server1Clicked) return;
+    try {
+      const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],li,[data-server],[data-id],[data-name]'));
+      for (const el of nodes) {
+        const text = String((el.innerText || el.textContent || '')).trim();
+        const attrs = [
+          el.getAttribute && el.getAttribute('data-server'),
+          el.getAttribute && el.getAttribute('data-id'),
+          el.getAttribute && el.getAttribute('data-name'),
+          el.getAttribute && el.getAttribute('title'),
+          el.getAttribute && el.getAttribute('aria-label')
+        ].filter(Boolean).join(' ');
+        const hay = (text + ' ' + attrs).toLowerCase();
+        const isOne = /(?:server|سيرفر)\s*0*1\b/i.test(hay) || /\bserver1\b/i.test(hay);
+        if (isOne) {
+          server1Clicked = true;
+          emit('server1-click', { text: text.slice(0, 200) });
+          try { el.click(); } catch (_) {}
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  function scanDomForServer1() {
+    try {
+      const root = document.documentElement;
+      if (!root) return;
+      scanText(root.innerHTML.slice(0, 300000), 'document-html');
+      document.querySelectorAll('script').forEach(sc => scanText(sc.textContent || '', 'script'));
+      document.querySelectorAll('[src],[href],[data-src],[data-url],[data-link]').forEach(el => {
+        ['src','href','data-src','data-url','data-link'].forEach(attr => {
+          const v = el.getAttribute && el.getAttribute(attr);
+          if (v) emitCandidate(v, 'attribute:' + attr);
+        });
+      });
+      tryClickServer1();
+    } catch (_) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scanDomForServer1, { once: true });
+  } else {
+    scanDomForServer1();
+  }
+  let autoPasses = 0;
+  const autoTimer = setInterval(() => {
+    scanDomForServer1();
+    autoPasses++;
+    if (autoPasses >= 20 || SERVER1_RE.test(location.href)) clearInterval(autoTimer);
+  }, 700);
+
   // fetch(): captures POST body and readable API responses without changing the request.
   if (typeof window.fetch === 'function') {
     const nativeFetch = window.fetch;
@@ -71,6 +144,7 @@
       let headers = {};
       try { headers = headerObject((init && init.headers) || (input && input.headers)); } catch (_) {}
       if (isTarget(url)) {
+        emitCandidate(url, 'fetch');
         const immediateBody = init && Object.prototype.hasOwnProperty.call(init, 'body') ? bodyText(init.body) : '';
         emit('fetch-request', { url, method, headers, body: immediateBody });
         if (!immediateBody && typeof Request !== 'undefined' && input instanceof Request) {
@@ -129,6 +203,7 @@
     X.send = function(body) {
       const m = this.__soapDiag || { method: 'GET', url: '', headers: {} };
       if (isTarget(m.url)) {
+        emitCandidate(m.url, 'xhr');
         emit('xhr-request', { url: m.url, method: m.method, headers: m.headers, body: bodyText(body) });
         const done = () => {
           const data = { url: m.url, method: m.method, status: 0, responseType: '' };
@@ -154,7 +229,10 @@
     const nativeBeacon = navigator.sendBeacon.bind(navigator);
     navigator.sendBeacon = function(url, data) {
       const u = absUrl(url);
-      if (isTarget(u)) emit('beacon-request', { url: u, method: 'POST', body: bodyText(data) });
+      if (isTarget(u)) {
+        emitCandidate(u, 'beacon');
+        emit('beacon-request', { url: u, method: 'POST', body: bodyText(data) });
+      }
       return nativeBeacon.apply(navigator, arguments);
     };
   }
@@ -167,7 +245,10 @@
         const v = node.getAttribute(attr);
         if (!v) return;
         const u = absUrl(v);
-        if (isTarget(u)) emit('dom-url', { tag: node.tagName || '', attr, url: u });
+        if (isTarget(u)) {
+          emitCandidate(u, 'dom');
+          emit('dom-url', { tag: node.tagName || '', attr, url: u });
+        }
       });
     } catch (_) {}
   };
