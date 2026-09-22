@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
     private WebView webView;
     private String lastCdnUrl = "";
     private String lastServer1Url = "";
+    private String lastServer1EmbedUrl = "";
+    private boolean server1EmbedOpened = false;
     private boolean server1AutoOpened = false;
     private String diagScript = "";
 
@@ -327,16 +329,18 @@ public class MainActivity extends Activity {
         synchronized (foundUrls) { foundUrls.clear(); }
         lastCdnUrl = "";
         lastServer1Url = "";
+        lastServer1EmbedUrl = "";
+        server1EmbedOpened = false;
         server1AutoOpened = false;
         ui.post(() -> logView.setText(""));
     }
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.2 ===");
+        append("=== SoapDiag 1.3 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: OnlyFlix / ilove2day / nontongo / cdnmvs(Server 1) / workers.dev / medmedia05");
+        append("Targets: OnlyFlix / CDNM embed / cdnmvs(Server 1) / nontongo / workers.dev / medmedia05");
         append("Cookies/Authorization values are redacted.");
     }
 
@@ -392,13 +396,13 @@ public class MainActivity extends Activity {
 
     private boolean isAllowedMainFrame(String u) {
         String h = host(u);
-        return h.endsWith("onlyflix.to") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
+        return h.endsWith("onlyflix.to") || h.endsWith("cdnm.ink") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
                h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom") || h.isEmpty();
     }
 
     private boolean isRelevant(String u) {
         String h = host(u);
-        return h.endsWith("onlyflix.to") || h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
+        return h.endsWith("onlyflix.to") || h.endsWith("cdnm.ink") || h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
                h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
     }
 
@@ -413,19 +417,45 @@ public class MainActivity extends Activity {
         if (u == null || u.isEmpty() || !isRelevant(u)) return;
         String h = host(u);
         boolean server1 = isServer1Media(u);
-        boolean importantCdn = server1 || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
+        boolean server1Embed = isServer1Embed(u);
+        boolean importantCdn = server1 || server1Embed || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
         synchronized (foundUrls) {
             if (!foundUrls.add(u)) {
                 if (server1 && lastServer1Url.isEmpty()) handleServer1Url(u, source);
+                if (server1Embed && lastServer1EmbedUrl.isEmpty()) handleServer1Embed(u, source);
                 return;
             }
         }
         if (server1) {
             handleServer1Url(u, source);
+        } else if (server1Embed) {
+            handleServer1Embed(u, source);
         } else if (importantCdn) {
             lastCdnUrl = u;
             append("[FOUND " + source + "] " + (h.contains("workers.dev") ? "WORKERS CDN" : "MEDIA CDN") + "\n" + u);
         }
+    }
+
+    private boolean isServer1Embed(String u) {
+        if (u == null) return false;
+        String h = host(u);
+        String l = u.toLowerCase(Locale.US);
+        return h.endsWith("cdnm.ink") && l.contains("/embed/imdb/");
+    }
+
+    private void handleServer1Embed(String u, String source) {
+        if (!isServer1Embed(u) || u.equals(lastServer1EmbedUrl)) return;
+        lastServer1EmbedUrl = u;
+        append("[SERVER 1 EMBED FOUND " + source + "]\n" + u);
+        ui.post(() -> {
+            statusView.setText("تم العثور على Server 1 — فتح CDNM واستخراج البث…");
+            String current = webView.getUrl();
+            if (!server1EmbedOpened && (current == null || !current.equals(u))) {
+                server1EmbedOpened = true;
+                webView.stopLoading();
+                webView.loadUrl(u);
+            }
+        });
     }
 
     private boolean isServer1Media(String u) {

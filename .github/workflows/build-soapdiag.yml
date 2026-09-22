@@ -54,6 +54,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SoapDiag-1.2-apk
+          name: SoapDiag-1.3-apk
           path: soapdiag-source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
