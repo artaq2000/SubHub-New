@@ -5,6 +5,9 @@ on:
     branches: [soapdiag]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,26 +26,34 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Unpack SoapDiag source
+      - name: Prepare SoapDiag source
         shell: bash
         run: |
           set -euo pipefail
-          marker=$(grep -n '^__SOAPDIAG_PAYLOAD__$' upload-soapdiag-1.0.sh | cut -d: -f1)
-          test -n "$marker"
-          tail -n +$((marker + 1)) upload-soapdiag-1.0.sh | base64 -d > source.zip
-          echo '4fd1accb8263732ff19092982f1ca93b383745c5644fb0517d957a0ff3eaecb0  source.zip' | sha256sum -c -
-          unzip -q source.zip
+          if [ ! -d soapdiag-source ]; then
+            marker=$(grep -n '^__SOAPDIAG_PAYLOAD__$' upload-soapdiag-1.0.sh | cut -d: -f1)
+            test -n "$marker"
+            tail -n +$((marker + 1)) upload-soapdiag-1.0.sh | base64 -d > source.zip
+            echo '4fd1accb8263732ff19092982f1ca93b383745c5644fb0517d957a0ff3eaecb0  source.zip' | sha256sum -c -
+            unzip -q source.zip
+            mv soapdiag-project soapdiag-source
+            git config user.name "SoapDiag Builder"
+            git config user.email "soapdiag@local.invalid"
+            git add soapdiag-source
+            git commit -m "Materialize SoapDiag source"
+            git push origin HEAD:soapdiag
+          fi
 
       - name: Run source tests
-        run: python3 soapdiag-project/tests/test_source.py
+        run: python3 soapdiag-source/tests/test_source.py
 
       - name: Build debug APK
-        working-directory: soapdiag-project
+        working-directory: soapdiag-source
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SoapDiag-1.0-apk
-          path: soapdiag-project/app/build/outputs/apk/debug/app-debug.apk
+          name: SoapDiag-apk
+          path: soapdiag-source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
