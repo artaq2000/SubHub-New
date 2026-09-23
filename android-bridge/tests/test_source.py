@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.2.3'" in site
+assert "BRIDGE_BUILD = '322.3.0'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -37,3 +37,6 @@ assert 'lastSeq' in site and 'estimatedTime' in site
 assert '_onlyflixUseTimeV317' in site
 
 print('source checks OK')
+
+assert "versionName '322.3.0'" in (root/'app/build.gradle').read_text(encoding='utf-8')
+assert '<string name="app_name">SubHub — مكتبة الترجمات</string>' in (root/'app/src/main/res/values/strings.xml').read_text(encoding='utf-8')
