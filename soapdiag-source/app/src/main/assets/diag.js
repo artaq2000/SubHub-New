@@ -45,16 +45,45 @@
   }
 
   function exactQualityNodes(q) {
-    const wanted = String(q) + 'p';
-    const all = Array.from(document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="option"],li,a,span,div'));
-    return all.filter(el => {
-      if (!isVisible(el)) return false;
+    const wanted = String(q);
+    const wantedP = wanted + 'p';
+    const out = [];
+    const seen = new Set();
+
+    function add(el) {
+      if (!el || seen.has(el) || !isVisible(el)) return;
       const t = ownText(el).toLowerCase();
-      return t === wanted || t === String(q);
-    }).sort((a,b) => {
-      const ac = a.children ? a.children.length : 0;
-      const bc = b.children ? b.children.length : 0;
-      if (ac !== bc) return ac - bc;
+      const attrs = [
+        el.getAttribute && el.getAttribute('data-quality'),
+        el.getAttribute && el.getAttribute('data-value'),
+        el.getAttribute && el.getAttribute('value'),
+        el.getAttribute && el.getAttribute('aria-label'),
+        el.getAttribute && el.getAttribute('title')
+      ].filter(Boolean).join(' ').toLowerCase();
+      if (t === wantedP || t === wanted || t.indexOf(wantedP) >= 0 ||
+          attrs === wantedP || attrs === wanted || attrs.indexOf(wantedP) >= 0) {
+        seen.add(el);
+        out.push(el);
+      }
+    }
+
+    document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="option"],li,a,span,div,p,label,[data-quality],[data-value]').forEach(add);
+
+    try {
+      const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        const txt = String(n.nodeValue || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (txt.indexOf(wantedP) < 0 && txt !== wanted) continue;
+        let el = n.parentElement;
+        for (let i = 0; el && i < 4; i++, el = el.parentElement) add(el);
+      }
+    } catch (_) {}
+
+    return out.sort((a,b) => {
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const aa = Math.max(1, ra.width * ra.height), ab = Math.max(1, rb.width * rb.height);
+      if (aa !== ab) return aa - ab;
       return ownText(a).length - ownText(b).length;
     });
   }
@@ -103,7 +132,12 @@
       const trigger = findQualityTrigger();
       if (trigger && clickElement(trigger, 'open-quality-menu')) {
         qualityMenuOpened = true;
-        emit('quality-ui-menu', { url: location.href, text: ownText(trigger) });
+        const labels = Array.from(document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="option"],li,a,span,div,p,label'))
+          .filter(isVisible)
+          .map(ownText)
+          .filter(t => /(?:240|360|480|720|1080)\s*p/i.test(t))
+          .slice(0, 30);
+        emit('quality-ui-menu', { url: location.href, text: ownText(trigger), labels: labels.join(' | ') });
       }
     }
 

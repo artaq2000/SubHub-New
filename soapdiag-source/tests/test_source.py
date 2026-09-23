@@ -25,10 +25,14 @@ assert 'SERVER 1 EMBED FOUND' in java
 
 assert '__soapdiag_server1' in java
 assert 'createElement(\'iframe\')' in java
-assert 'versionName \'1.7\'' in (r/'app/build.gradle').read_text()
+assert 'versionName \'1.8\'' in (r/'app/build.gradle').read_text()
 
 assert 'trySelect1080FromPlayerUi' in js
 assert 'quality-ui-selected' in js
 assert '[QUALITY UI]' in java
 assert '[BEST OBSERVED STREAM]' in java
 assert 'cdnmovies-stream' in js
+
+assert 'manifestFromSegment' in java
+assert '[DERIVED SERVER 1 MANIFEST]' in java
+assert 'createTreeWalker' in js

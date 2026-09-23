@@ -339,7 +339,7 @@ public class MainActivity extends Activity {
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.7 ===");
+        append("=== SoapDiag 1.8 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
         append("Targets: OnlyFlix / CDNM iframe / player quality UI / cdnmvs(Server 1) / nontongo");
@@ -480,7 +480,25 @@ public class MainActivity extends Activity {
         if (u == null) return false;
         String h = host(u);
         String l = u.toLowerCase(Locale.US);
-        return h.equals("s1.cdnmvs.online") && (l.contains(".m3u8") || l.contains("/index-"));
+        return h.equals("s1.cdnmvs.online") &&
+            (l.contains(".m3u8") || l.contains("/index-") || l.matches(".*\\/seg-\\d+[^/]*\\.ts(?:[?#].*)?$"));
+    }
+
+    private boolean isServer1Segment(String u) {
+        if (u == null) return false;
+        String l = u.toLowerCase(Locale.US);
+        return host(u).equals("s1.cdnmvs.online") && l.matches(".*\\/seg-\\d+[^/]*\\.ts(?:[?#].*)?$");
+    }
+
+    private String manifestFromSegment(String u) {
+        if (u == null || u.isEmpty()) return "";
+        Matcher m = Pattern.compile("/seg-\\d+-([A-Za-z0-9_-]+)\\.ts(?:[?#].*)?$", Pattern.CASE_INSENSITIVE).matcher(u);
+        if (m.find()) {
+            return u.substring(0, m.start()) + "/index-" + m.group(1) + ".m3u8";
+        }
+        m = Pattern.compile("/seg-\\d+\\.ts(?:[?#].*)?$", Pattern.CASE_INSENSITIVE).matcher(u);
+        if (m.find()) return u.substring(0, m.start()) + "/index.m3u8";
+        return "";
     }
 
     private int qualityFromUrl(String u) {
@@ -493,17 +511,30 @@ public class MainActivity extends Activity {
     private void handleServer1Url(String u, String source) {
         if (!isServer1Media(u)) return;
         int q = qualityFromUrl(u);
-        append("[SERVER 1 FOUND " + source + "]" + (q > 0 ? " " + q + "p" : "") + "\n" + u);
+        boolean segment = isServer1Segment(u);
+        String candidate = u;
 
-        if (lastServer1Url.isEmpty() || q > bestServer1Quality) {
-            lastServer1Url = u;
-            lastCdnUrl = u;
+        if (segment) {
+            String derived = manifestFromSegment(u);
+            append("[SERVER 1 SEGMENT " + source + "]" + (q > 0 ? " " + q + "p" : "") + "\n" + u);
+            if (!derived.isEmpty()) {
+                candidate = derived;
+                append("[DERIVED SERVER 1 MANIFEST]" + (q > 0 ? " " + q + "p" : "") + "\n" + derived);
+            }
+        } else {
+            append("[SERVER 1 FOUND " + source + "]" + (q > 0 ? " " + q + "p" : "") + "\n" + u);
+        }
+
+        if (lastServer1Url.isEmpty() || q > bestServer1Quality ||
+            (q == bestServer1Quality && lastServer1Url.contains("/seg-"))) {
+            lastServer1Url = candidate;
+            lastCdnUrl = candidate;
             if (q > 0) bestServer1Quality = q;
             int shownQ = bestServer1Quality;
             ui.post(() -> statusView.setText(shownQ > 0
                 ? "Server 1 — تم التقاط " + shownQ + "p"
                 : "Server 1 — تم التقاط البث"));
-            if (q > 0) append("[BEST OBSERVED STREAM] " + q + "p\n" + u);
+            if (q > 0) append("[BEST OBSERVED STREAM] " + q + "p\n" + candidate);
         }
     }
 
@@ -675,7 +706,7 @@ public class MainActivity extends Activity {
                             " :: " + d.optString("cls", ""));
                         break;
                     case "quality-ui-menu":
-                        append("[QUALITY UI] تم فتح قائمة الجودة :: " + d.optString("text", ""));
+                        append("[QUALITY UI] تم فتح قائمة الجودة :: " + d.optString("text", "") + "\n  labels: " + d.optString("labels", ""));
                         break;
                     case "quality-ui-selected":
                         append("[QUALITY UI] تم اختيار " + d.optInt("quality", 0) + "p من المشغّل الأصلي");
