@@ -51,7 +51,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final String DEFAULT_URL = "https://onlyflix.to/resident-evil-2/";
+    private static final String DEFAULT_IMDB = "tt34564059";
+    private static final Pattern IMDB_PATTERN = Pattern.compile("(tt\\d{5,12})", Pattern.CASE_INSENSITIVE);
     private static final int MAX_LOG_CHARS = 180_000;
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
 
@@ -126,13 +127,14 @@ public class MainActivity extends Activity {
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         normalUi.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        statusView = text("Server 1 تلقائي — الصق رابط صفحة الفيلم أو المشغل", 13, Color.rgb(155, 180, 215));
+        statusView = text("أدخل معرف IMDb فقط — سيتم فتح Server 1 مباشرة", 13, Color.rgb(155, 180, 215));
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusLp.setMargins(0, dp(2), 0, dp(8));
         normalUi.addView(statusView, statusLp);
 
         urlInput = new EditText(this);
-        urlInput.setText(DEFAULT_URL);
+        urlInput.setText(DEFAULT_IMDB);
+        urlInput.setHint("مثال: tt34564059 أو رابط IMDb");
         urlInput.setTextColor(Color.WHITE);
         urlInput.setHintTextColor(Color.GRAY);
         urlInput.setBackgroundColor(Color.rgb(12, 27, 45));
@@ -309,18 +311,31 @@ public class MainActivity extends Activity {
     }
 
     private void startTest() {
-        String u = urlInput.getText().toString().trim();
-        if (!(u.startsWith("https://") || u.startsWith("http://"))) {
-            Toast.makeText(this, "أدخل رابط صفحة المشغل كاملاً", Toast.LENGTH_SHORT).show();
+        String raw = urlInput.getText().toString().trim();
+        Matcher imdbMatch = IMDB_PATTERN.matcher(raw);
+        if (!imdbMatch.find()) {
+            Toast.makeText(this, "أدخل معرف IMDb مثل tt34564059", Toast.LENGTH_SHORT).show();
             return;
         }
+
+        String imdbId = imdbMatch.group(1).toLowerCase(Locale.US);
+        String server1Embed = "https://share.cdnm.ink/embed/imdb/" + imdbId;
+
         clearReport();
         appendHeader();
-        append("[TEST] Auto Server 1 extraction");
-        append("[TEST] " + u);
-        statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
+        append("[TEST] IMDb direct Server 1 extraction");
+        append("[IMDB] " + imdbId);
+        append("[SERVER 1 DIRECT] " + server1Embed);
+        statusView.setText("جاري فتح Server 1 مباشرة واختيار 1080p…");
+
+        // Direct IMDb mode intentionally bypasses OnlyFlix. Mark the stable embed
+        // as already opened so the discovery hook does not inject a duplicate iframe.
+        lastServer1EmbedUrl = server1Embed;
+        server1EmbedOpened = true;
+        server1AutoOpened = true;
+
         webView.stopLoading();
-        webView.loadUrl(u);
+        webView.loadUrl(server1Embed);
     }
 
     private void clearReport() {
@@ -339,10 +354,10 @@ public class MainActivity extends Activity {
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.8 ===");
+        append("=== SoapDiag 1.17 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: OnlyFlix / CDNM iframe / player quality UI / cdnmvs(Server 1) / nontongo");
+        append("Mode: IMDb → CDNM Server 1 direct / player quality UI / cdnmvs");
         append("Cookies/Authorization values are redacted.");
     }
 
