@@ -18,14 +18,17 @@ assert 's1.cdnmvs.online' in java or 's1\\.cdnmvs\\.online' in js
 assert 'candidate-url' in java and 'candidate-url' in js
 assert 'Server 1' in java
 
-assert 'https://onlyflix.to/resident-evil-2/' in java
+assert 'DEFAULT_IMDB' in java
+assert 'IMDB_PATTERN' in java
+assert 'https://share.cdnm.ink/embed/imdb/' in java
+assert '[SERVER 1 DIRECT]' in java
 
 assert 'isServer1Embed' in java
 assert 'SERVER 1 EMBED FOUND' in java
 
 assert '__soapdiag_server1' in java
 assert 'createElement(\'iframe\')' in java
-assert 'versionName \'1.8\'' in (r/'app/build.gradle').read_text()
+assert "versionName '1.17'" in (r/'app/build.gradle').read_text()
 
 assert 'trySelect1080FromPlayerUi' in js
 assert 'quality-ui-selected' in js
