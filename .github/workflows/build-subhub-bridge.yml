@@ -1,8 +1,8 @@
-name: Build SubHub Android Bridge 322.2.1
+name: Build SubHub Android Bridge 322.2.2
 
 on:
   push:
-    branches: [onlyflix-bridge-3222-prep116]
+    branches: [onlyflix-bridge-3222-opening]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: onlyflix-bridge-3222-prep116
+          ref: onlyflix-bridge-3222-opening
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -36,20 +36,20 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - run: python3 tests/test_source.py
       - run: gradle assembleDebug --no-daemon --stacktrace
-      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Bridge-322.2.1-Prep116.apk
+      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Bridge-322.2.2-Opening.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-Bridge-322.2.1-Prep116-apk
-          path: SubHub-Bridge-322.2.1-Prep116.apk
+          name: SubHub-Bridge-322.2.2-Opening-apk
+          path: SubHub-Bridge-322.2.2-Opening.apk
       - name: Publish test APK
         working-directory: .
         run: |
           mkdir -p builds
-          cp SubHub-Bridge-322.2.1-Prep116.apk builds/SubHub-Bridge-322.2.1-Prep116.apk
+          cp SubHub-Bridge-322.2.2-Opening.apk builds/SubHub-Bridge-322.2.2-Opening.apk
           git config user.name "SubHub Bridge Builder"
           git config user.email "subhub-bridge@users.noreply.github.com"
-          git add builds/SubHub-Bridge-322.2.1-Prep116.apk
+          git add builds/SubHub-Bridge-322.2.2-Opening.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish SubHub Bridge 322.2.1 Prep116 APK [skip ci]"
-            git push origin HEAD:onlyflix-bridge-3222-prep116
+            git commit -m "Publish SubHub Bridge 322.2.2 Opening APK [skip ci]"
+            git push origin HEAD:onlyflix-bridge-3222-opening
           fi
