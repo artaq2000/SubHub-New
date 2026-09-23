@@ -1,8 +1,11 @@
-name: Build SubHub Android Bridge 322.2.3
+name: Build SubHub 322.3.0
 
 on:
   push:
-    branches: [onlyflix-bridge-3222-deep-player]
+    branches: [main]
+    paths:
+      - 'android-bridge/**'
+      - '.github/workflows/build-subhub-bridge.yml'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: onlyflix-bridge-3222-deep-player
+          ref: main
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -34,22 +37,25 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - run: python3 tests/test_source.py
-      - run: gradle assembleDebug --no-daemon --stacktrace
-      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Bridge-322.2.3-DeepPlayer.apk
+      - name: Verify SubHub source
+        run: python3 tests/test_source.py
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Prepare official APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-322.3.0.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-Bridge-322.2.3-DeepPlayer-apk
-          path: SubHub-Bridge-322.2.3-DeepPlayer.apk
-      - name: Publish test APK
+          name: SubHub-322.3.0-apk
+          path: SubHub-322.3.0.apk
+      - name: Publish official APK
         working-directory: .
         run: |
           mkdir -p builds
-          cp SubHub-Bridge-322.2.3-DeepPlayer.apk builds/SubHub-Bridge-322.2.3-DeepPlayer.apk
-          git config user.name "SubHub Bridge Builder"
-          git config user.email "subhub-bridge@users.noreply.github.com"
-          git add builds/SubHub-Bridge-322.2.3-DeepPlayer.apk
+          cp SubHub-322.3.0.apk builds/SubHub-322.3.0.apk
+          git config user.name "SubHub Builder"
+          git config user.email "subhub-builder@users.noreply.github.com"
+          git add builds/SubHub-322.3.0.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish SubHub Bridge 322.2.3 DeepPlayer APK [skip ci]"
-            git push origin HEAD:onlyflix-bridge-3222-deep-player
+            git commit -m "Publish SubHub 322.3.0 APK [skip ci]"
+            git push origin HEAD:main
           fi
