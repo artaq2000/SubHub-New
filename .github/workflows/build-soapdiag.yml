@@ -44,6 +44,15 @@ jobs:
             git push origin HEAD:soapdiag
           fi
 
+      - name: Restore exact SoapDiag 1.16 player asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat soapdiag-source/diag116.b64.part0* | tr -d '\n\r' | base64 -d > soapdiag-source/app/src/main/assets/diag.js
+          echo '13549b4407a43190c6c4df30af057cf67c838c556ff20e1fad2c6ef9c2b1b1d6  soapdiag-source/app/src/main/assets/diag.js' | sha256sum -c -
+          grep -q 'جارٍ تحضير الفيديو' soapdiag-source/app/src/main/assets/diag.js
+          grep -q '__soapdiag_prepare_overlay' soapdiag-source/app/src/main/assets/diag.js
+
       - name: Run source tests
         run: python3 soapdiag-source/tests/test_source.py
 
@@ -54,6 +63,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SoapDiag-1.18-apk
+          name: SoapDiag-1.16-search-apk
           path: soapdiag-source/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
