@@ -36,20 +36,20 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - run: python3 tests/test_source.py
       - run: gradle assembleDebug --no-daemon --stacktrace
-      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Android-Bridge-v2.apk
+      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Android-Bridge-v3.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-Android-Bridge-v2-apk
-          path: SubHub-Android-Bridge-v2.apk
+          name: SubHub-Android-Bridge-v3-apk
+          path: SubHub-Android-Bridge-v3.apk
       - name: Publish test APK on test branch
         working-directory: .
         run: |
           mkdir -p builds
-          cp SubHub-Android-Bridge-v2.apk builds/SubHub-Android-Bridge-v2.apk
+          cp SubHub-Android-Bridge-v3.apk builds/SubHub-Android-Bridge-v3.apk
           git config user.name "SubHub Bridge Builder"
           git config user.email "subhub-bridge@users.noreply.github.com"
-          git add builds/SubHub-Android-Bridge-v2.apk
+          git add builds/SubHub-Android-Bridge-v3.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish SubHub Android Bridge v1 APK [skip ci]"
+            git commit -m "Publish SubHub Android Bridge v3 APK [skip ci]"
             git push origin HEAD:onlyflix-android-bridge-v322
           fi
