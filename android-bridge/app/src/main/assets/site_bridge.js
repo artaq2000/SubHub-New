@@ -1,20 +1,35 @@
 (function () {
   'use strict';
-  if (window.__subHubSiteBridgeV1) return true;
-  window.__subHubSiteBridgeV1 = true;
+  if (window.__subHubSiteBridgeV2) return true;
+  window.__subHubSiteBridgeV2 = true;
 
-  const BRIDGE_BUILD = '322.1';
+  const BRIDGE_BUILD = '322.2';
   let lastSig = '';
+  let clockSource = '';
+  let lastSeq = -1;
+  let anchorTime = 0;
+  let anchorPerf = 0;
+  let clockPaused = true;
+  let clockSeeking = false;
+  let clockWaiting = false;
+  let clockEnded = false;
+  let clockRate = 1;
+  let clockReadyState = 0;
+  let lastClockReceivePerf = 0;
+  let clockLinked = false;
+
+  function nowPerf() {
+    try { return performance.now(); } catch (_) { return Date.now(); }
+  }
 
   function stampBuild() {
     try {
       document.documentElement.setAttribute('data-subhub-android-bridge', BRIDGE_BUILD);
       const tag = document.getElementById('ownerVersionTag');
       if (tag && String(tag.textContent || '').indexOf('Android ' + BRIDGE_BUILD) < 0) {
-        const base = String(tag.textContent || '').trim();
+        let base = String(tag.textContent || '').replace(/\s*·\s*Android\s+322(?:\.\d+)?/g, '').trim();
         tag.textContent = (base ? base + ' · ' : '') + 'Android ' + BRIDGE_BUILD;
-        tag.title = (String(tag.title || '').trim() ? String(tag.title || '').trim() + ' | ' : '') +
-          'SubHub Android Bridge ' + BRIDGE_BUILD;
+        tag.title = 'SubHub Android Bridge ' + BRIDGE_BUILD;
       }
     } catch (_) {}
   }
@@ -58,34 +73,76 @@
     try { b.subtitleState(sig); } catch (_) {}
   }
 
-  window.SubHubNativeClock = function (payload) {
-    try { if (typeof payload === 'string') payload = JSON.parse(payload); } catch (_) { return false; }
-    payload = payload || {};
-    const t = Number(payload.currentTime);
-    if (!Number.isFinite(t) || t < 0 || t > 50000) return false;
+  function estimatedTime() {
+    let t = anchorTime;
+    const now = nowPerf();
+    const age = now - lastClockReceivePerf;
+    const canAdvance = !clockPaused && !clockSeeking && !clockWaiting && !clockEnded && clockReadyState >= 2 && age >= 0 && age < 650;
+    if (canAdvance) t += Math.max(0, now - anchorPerf) / 1000 * clockRate;
+    return Math.max(0, t);
+  }
+
+  function applyClock() {
+    if (!clockLinked) return false;
+    const t = estimatedTime();
     try {
       if (typeof _onlyflixStopProbeV317 === 'function') _onlyflixStopProbeV317();
-      if (typeof _onlyflixUseTimeV317 === 'function') _onlyflixUseTimeV317(t);
-      else {
+      if (typeof _onlyflixUseTimeV317 === 'function') {
+        _onlyflixUseTimeV317(t);
+      } else {
         if (typeof _bridgeTime !== 'undefined') _bridgeTime = t;
         if (typeof _bridgeActive !== 'undefined') _bridgeActive = true;
         if (typeof updateSubtitleOverlay === 'function') updateSubtitleOverlay();
       }
-      push(false);
       return true;
-    } catch (_) { return false; }
+    } catch (_) {
+      return false;
+    }
+  }
+
+  window.SubHubNativeClock = function (payload) {
+    try { if (typeof payload === 'string') payload = JSON.parse(payload); } catch (_) { return false; }
+    payload = payload || {};
+
+    const t = Number(payload.currentTime);
+    const seq = Number(payload.seq);
+    const source = String(payload.source || '');
+    if (!Number.isFinite(t) || t < 0 || t > 50000) return false;
+    if (source && source === clockSource && Number.isFinite(seq) && seq <= lastSeq) return false;
+
+    if (source !== clockSource) {
+      clockSource = source;
+      lastSeq = -1;
+    }
+    if (Number.isFinite(seq)) lastSeq = seq;
+
+    const now = nowPerf();
+    anchorTime = t;
+    anchorPerf = now;
+    lastClockReceivePerf = now;
+    clockPaused = !!payload.paused;
+    clockSeeking = !!payload.seeking;
+    clockWaiting = !!payload.waiting;
+    clockEnded = !!payload.ended;
+    clockRate = Number(payload.playbackRate || 1);
+    if (!Number.isFinite(clockRate) || clockRate <= 0 || clockRate > 8) clockRate = 1;
+    clockReadyState = Number(payload.readyState || 0);
+    clockLinked = true;
+
+    applyClock();
+    return true;
   };
 
   function wrap(name, after) {
     try {
       const fn = window[name];
-      if (typeof fn !== 'function' || fn.__subhubNativeWrapped) return;
+      if (typeof fn !== 'function' || fn.__subhubNativeWrappedV2) return;
       const wrapped = function () {
         const r = fn.apply(this, arguments);
         try { after(); } catch (_) {}
         return r;
       };
-      wrapped.__subhubNativeWrapped = true;
+      wrapped.__subhubNativeWrappedV2 = true;
       window[name] = wrapped;
     } catch (_) {}
   }
@@ -93,11 +150,19 @@
   stampBuild();
   wrap('updateSubtitleOverlay', function () { push(false); });
   wrap('applySubtitleStyle', function () { push(true); });
+
   setTimeout(function () {
     stampBuild();
     wrap('updateSubtitleOverlay', function () { push(false); });
     wrap('applySubtitleStyle', function () { push(true); });
     push(true);
   }, 800);
+
+  setInterval(function () {
+    if (!clockLinked) return;
+    if (nowPerf() - lastClockReceivePerf > 1200) return;
+    applyClock();
+  }, 50);
+
   return true;
 })();
