@@ -1,9 +1,9 @@
 (function () {
   'use strict';
-  if (window.__subHubSiteBridgeV2) return true;
-  window.__subHubSiteBridgeV2 = true;
+  if (window.__subHubSiteBridgeV3) return true;
+  window.__subHubSiteBridgeV3 = true;
 
-  const BRIDGE_BUILD = '322.2';
+  const BRIDGE_BUILD = '322.3';
   let lastSig = '';
   let clockSource = '';
   let lastSeq = -1;
@@ -17,9 +17,19 @@
   let clockReadyState = 0;
   let lastClockReceivePerf = 0;
   let clockLinked = false;
+  let clockDiagShown = false;
 
   function nowPerf() {
     try { return performance.now(); } catch (_) { return Date.now(); }
+  }
+
+  function fmt(sec) {
+    sec = Math.max(0, Math.round(Number(sec) || 0));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return h ? (h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0'))
+             : (m + ':' + String(s).padStart(2,'0'));
   }
 
   function stampBuild() {
@@ -107,6 +117,7 @@
     const t = Number(payload.currentTime);
     const seq = Number(payload.seq);
     const source = String(payload.source || '');
+
     if (!Number.isFinite(t) || t < 0 || t > 50000) return false;
     if (source && source === clockSource && Number.isFinite(seq) && seq <= lastSeq) return false;
 
@@ -129,6 +140,21 @@
     clockReadyState = Number(payload.readyState || 0);
     clockLinked = true;
 
+    if (!clockDiagShown) {
+      const vt = Number(payload.videoTime);
+      const ut = payload.uiTime == null ? NaN : Number(payload.uiTime);
+      if (Number.isFinite(vt) && (Number.isFinite(ut) || t > 0.5)) {
+        clockDiagShown = true;
+        try {
+          const src = String(payload.clockSource || 'video.currentTime') === 'player-ui' ? 'واجهة المشغّل' : 'الفيديو';
+          const msg = Number.isFinite(ut)
+            ? ('فحص الساعة: الفيديو ' + fmt(vt) + ' · المشغّل ' + fmt(ut) + ' · المعتمد ' + src)
+            : ('فحص الساعة: ' + fmt(vt) + ' · المعتمد الفيديو');
+          showToast(msg, 'success');
+        } catch (_) {}
+      }
+    }
+
     applyClock();
     return true;
   };
@@ -136,13 +162,13 @@
   function wrap(name, after) {
     try {
       const fn = window[name];
-      if (typeof fn !== 'function' || fn.__subhubNativeWrappedV2) return;
+      if (typeof fn !== 'function' || fn.__subhubNativeWrappedV3) return;
       const wrapped = function () {
         const r = fn.apply(this, arguments);
         try { after(); } catch (_) {}
         return r;
       };
-      wrapped.__subhubNativeWrappedV2 = true;
+      wrapped.__subhubNativeWrappedV3 = true;
       window[name] = wrapped;
     } catch (_) {}
   }
