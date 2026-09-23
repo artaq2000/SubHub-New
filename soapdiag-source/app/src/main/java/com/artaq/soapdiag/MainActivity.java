@@ -425,10 +425,8 @@ public class MainActivity extends Activity {
         addHeaderIfPresent(b, h, "Referer");
         addHeaderIfPresent(b, h, "Range");
         addHeaderIfPresent(b, h, "Accept");
-        if (hasHeader(h, "Cookie")) b.append("
-  Cookie: [present, value redacted]");
-        if (hasHeader(h, "Authorization")) b.append("
-  Authorization: [present, value redacted]");
+        if (hasHeader(h, "Cookie")) b.append("\\n  Cookie: [present, value redacted]");
+        if (hasHeader(h, "Authorization")) b.append("\\n  Authorization: [present, value redacted]");
         append(b.toString());
         rememberUrl(u, "WEBVIEW");
     }
@@ -443,8 +441,7 @@ public class MainActivity extends Activity {
         if (h == null) return;
         for (Map.Entry<String, String> e : h.entrySet()) {
             if (e.getKey().equalsIgnoreCase(wanted)) {
-                b.append("
-  ").append(wanted).append(": ").append(safe(e.getValue(), 1000));
+                b.append("\\n  ").append(wanted).append(": ").append(safe(e.getValue(), 1000));
                 return;
             }
         }
@@ -488,8 +485,7 @@ public class MainActivity extends Activity {
             handleServer1Embed(u, source);
         } else if (importantCdn) {
             lastCdnUrl = u;
-            append("[FOUND " + source + "] " + (h.contains("workers.dev") ? "WORKERS CDN" : "MEDIA CDN") + "
-" + u);
+            append("[FOUND " + source + "] " + (h.contains("workers.dev") ? "WORKERS CDN" : "MEDIA CDN") + "\\n" + u);
         }
     }
 
