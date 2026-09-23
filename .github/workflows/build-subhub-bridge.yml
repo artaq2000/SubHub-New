@@ -1,8 +1,8 @@
-name: Build SubHub Android Bridge APK
+name: Build SubHub Android Bridge 322.2.1
 
 on:
   push:
-    branches: [onlyflix-android-bridge-v322]
+    branches: [onlyflix-bridge-3222-prep116]
   workflow_dispatch:
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: onlyflix-android-bridge-v322
+          ref: onlyflix-bridge-3222-prep116
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -36,20 +36,20 @@ jobs:
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
       - run: python3 tests/test_source.py
       - run: gradle assembleDebug --no-daemon --stacktrace
-      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Android-Bridge-v3.apk
+      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Bridge-322.2.1-Prep116.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-Android-Bridge-v3-apk
-          path: SubHub-Android-Bridge-v3.apk
-      - name: Publish test APK on test branch
+          name: SubHub-Bridge-322.2.1-Prep116-apk
+          path: SubHub-Bridge-322.2.1-Prep116.apk
+      - name: Publish test APK
         working-directory: .
         run: |
           mkdir -p builds
-          cp SubHub-Android-Bridge-v3.apk builds/SubHub-Android-Bridge-v3.apk
+          cp SubHub-Bridge-322.2.1-Prep116.apk builds/SubHub-Bridge-322.2.1-Prep116.apk
           git config user.name "SubHub Bridge Builder"
           git config user.email "subhub-bridge@users.noreply.github.com"
-          git add builds/SubHub-Android-Bridge-v3.apk
+          git add builds/SubHub-Bridge-322.2.1-Prep116.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish SubHub Android Bridge v3 APK [skip ci]"
-            git push origin HEAD:onlyflix-android-bridge-v322
+            git commit -m "Publish SubHub Bridge 322.2.1 Prep116 APK [skip ci]"
+            git push origin HEAD:onlyflix-bridge-3222-prep116
           fi
