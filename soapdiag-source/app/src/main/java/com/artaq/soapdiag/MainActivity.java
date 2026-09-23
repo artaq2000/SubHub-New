@@ -53,6 +53,8 @@ import java.util.regex.Pattern;
 public class MainActivity extends Activity {
     private static final String DEFAULT_URL = "https://onlyflix.to/resident-evil-2/";
     private static final int MAX_LOG_CHARS = 180_000;
+    private static final Pattern QUALITY_PATTERN = Pattern.compile("/(\\d{3,4})\\.mp4/", Pattern.CASE_INSENSITIVE);
+    private static final int[] QUALITY_ORDER = new int[]{1080, 720, 480, 360, 240};
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
 
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -75,6 +77,11 @@ public class MainActivity extends Activity {
     private String lastServer1EmbedUrl = "";
     private boolean server1EmbedOpened = false;
     private boolean server1AutoOpened = false;
+    private int qualityTryIndex = -1;
+    private int activeQuality = 0;
+    private String activeQualityUrl = "";
+    private boolean activeQualityFailed = false;
+    private String qualityTemplateUrl = "";
     private String diagScript = "";
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
@@ -234,8 +241,13 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 append("[PAGE] finished " + url);
-                if (isServer1Media(url)) {
-                    statusView.setText("Server 1 يعمل — تم تشغيل الرابط تلقائياً");
+                if (isServer1Media(url) && url.equals(activeQualityUrl)) {
+                    if (!activeQualityFailed) {
+                        lastServer1Url = url;
+                        lastCdnUrl = url;
+                        statusView.setText("Server 1 يعمل — جودة " + activeQuality + "p");
+                        append("[QUALITY OK] " + activeQuality + "p\n" + url);
+                    }
                 } else if (lastServer1Url.isEmpty()) {
                     statusView.setText("جارٍ البحث عن Server 1 تلقائياً…");
                 }
@@ -262,6 +274,9 @@ public class MainActivity extends Activity {
                 if (isRelevant(u)) {
                     append("[HTTP ERROR] " + errorResponse.getStatusCode() + " " + request.getMethod() + " " + u);
                 }
+                if (!activeQualityUrl.isEmpty() && sameQualityPath(u, activeQualityUrl) && errorResponse.getStatusCode() >= 400) {
+                    failActiveQuality("HTTP " + errorResponse.getStatusCode());
+                }
                 super.onReceivedHttpError(view, request, errorResponse);
             }
 
@@ -270,6 +285,9 @@ public class MainActivity extends Activity {
                 String u = request.getUrl().toString();
                 if (isRelevant(u)) {
                     append("[NET ERROR] " + request.getMethod() + " " + u + " :: " + error.getErrorCode() + " " + error.getDescription());
+                }
+                if (!activeQualityUrl.isEmpty() && sameQualityPath(u, activeQualityUrl)) {
+                    failActiveQuality("NET " + error.getErrorCode());
                 }
                 super.onReceivedError(view, request, error);
             }
@@ -332,12 +350,17 @@ public class MainActivity extends Activity {
         lastServer1EmbedUrl = "";
         server1EmbedOpened = false;
         server1AutoOpened = false;
+        qualityTryIndex = -1;
+        activeQuality = 0;
+        activeQualityUrl = "";
+        activeQualityFailed = false;
+        qualityTemplateUrl = "";
         ui.post(() -> logView.setText(""));
     }
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.4 ===");
+        append("=== SoapDiag 1.5 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
         append("Targets: OnlyFlix / CDNM iframe / cdnmvs(Server 1) / nontongo / workers.dev / medmedia05");
@@ -483,19 +506,77 @@ public class MainActivity extends Activity {
 
     private void handleServer1Url(String u, String source) {
         if (!isServer1Media(u)) return;
-        if (u.equals(lastServer1Url)) return;
-        lastServer1Url = u;
-        lastCdnUrl = u;
         append("[SERVER 1 FOUND " + source + "]\n" + u);
+
+        Matcher qm = QUALITY_PATTERN.matcher(u);
+        if (!qm.find()) {
+            lastServer1Url = u;
+            lastCdnUrl = u;
+            ui.post(() -> {
+                statusView.setText("Server 1 — تشغيل الرابط المكتشف…");
+                if (!server1AutoOpened) {
+                    server1AutoOpened = true;
+                    webView.stopLoading();
+                    webView.loadUrl(u);
+                }
+            });
+            return;
+        }
+
+        if (!qualityTemplateUrl.isEmpty()) return;
+        qualityTemplateUrl = u;
+        append("[QUALITY PLAN] 1080p → 720p → 480p → 360p → 240p");
         ui.post(() -> {
-            statusView.setText("تم العثور على Server 1 — تشغيل تلقائي…");
-            String current = webView.getUrl();
-            if (!server1AutoOpened && (current == null || !current.equals(u))) {
-                server1AutoOpened = true;
-                webView.stopLoading();
-                webView.loadUrl(u);
-            }
+            statusView.setText("تم العثور على Server 1 — تجربة 1080p أولاً…");
+            server1AutoOpened = true;
+            qualityTryIndex = -1;
+            tryNextQuality();
         });
+    }
+
+    private String qualityUrl(String template, int quality) {
+        Matcher m = QUALITY_PATTERN.matcher(template);
+        if (!m.find()) return template;
+        return m.replaceFirst("/" + quality + ".mp4/");
+    }
+
+    private boolean sameQualityPath(String requestUrl, String candidateUrl) {
+        if (requestUrl == null || candidateUrl == null) return false;
+        Matcher a = QUALITY_PATTERN.matcher(requestUrl);
+        Matcher b = QUALITY_PATTERN.matcher(candidateUrl);
+        if (!a.find() || !b.find()) return requestUrl.equals(candidateUrl);
+        return a.group(1).equals(b.group(1)) && host(requestUrl).equals(host(candidateUrl));
+    }
+
+    private void tryNextQuality() {
+        if (qualityTemplateUrl.isEmpty()) return;
+        qualityTryIndex++;
+        if (qualityTryIndex >= QUALITY_ORDER.length) {
+            statusView.setText("تعذر تشغيل الجودات المتاحة");
+            append("[QUALITY] no working variant found");
+            return;
+        }
+
+        activeQuality = QUALITY_ORDER[qualityTryIndex];
+        activeQualityUrl = qualityUrl(qualityTemplateUrl, activeQuality);
+        activeQualityFailed = false;
+        lastServer1Url = activeQualityUrl;
+        lastCdnUrl = activeQualityUrl;
+
+        append("[QUALITY TRY] " + activeQuality + "p\n" + activeQualityUrl);
+        statusView.setText("Server 1 — تجربة " + activeQuality + "p…");
+        webView.stopLoading();
+        webView.loadUrl(activeQualityUrl);
+    }
+
+    private void failActiveQuality(String reason) {
+        if (activeQualityFailed || activeQualityUrl.isEmpty()) return;
+        activeQualityFailed = true;
+        int failed = activeQuality;
+        append("[QUALITY FAIL] " + failed + "p :: " + reason);
+        ui.postDelayed(() -> {
+            if (activeQualityFailed && activeQuality == failed) tryNextQuality();
+        }, 250);
     }
 
     private String safe(String s, int max) {

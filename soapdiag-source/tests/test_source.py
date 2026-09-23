@@ -26,3 +26,8 @@ assert 'SERVER 1 EMBED FOUND' in java
 assert '__soapdiag_server1' in java
 assert 'createElement(\'iframe\')' in java
 assert 'versionName \'1.4\'' in (r/'app/build.gradle').read_text()
+
+assert 'QUALITY_ORDER' in java
+assert '[QUALITY TRY]' in java
+assert '1080, 720, 480, 360, 240' in java
+assert "versionName '1.5'" in (r/'app/build.gradle').read_text()
