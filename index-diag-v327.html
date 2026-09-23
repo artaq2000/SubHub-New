@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SubHub v327 — OnlyFlix Resolver Diagnostic</title>
+<style>
+:root{color-scheme:dark;--bg:#0a0e14;--p:#111827;--p2:#172033;--b:#2a3850;--t:#eef2f7;--m:#8ea0b8;--a:#f5b942;--ok:#55d69e;--bad:#ff7b7b;--blue:#38bdf8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,Arial,sans-serif;padding:18px;line-height:1.55}.wrap{max-width:850px;margin:auto}.card{background:linear-gradient(180deg,var(--p2),var(--p));border:1px solid var(--b);border-radius:18px;padding:16px;margin-bottom:14px}.title{font-size:1.15rem;font-weight:900;color:var(--a)}.sub{font-size:.82rem;color:var(--m);margin-top:4px}.grid{display:grid;gap:10px;margin-top:14px}label{font-size:.78rem;color:var(--m)}input{width:100%;margin-top:5px;background:#0b1220;border:1px solid var(--b);border-radius:10px;color:var(--t);padding:11px 12px;font:inherit;direction:ltr;text-align:left}.buttons{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}button{border:1px solid var(--b);border-radius:11px;background:#182235;color:var(--t);padding:10px 13px;font:800 .85rem inherit;cursor:pointer}.primary{border-color:var(--a);color:var(--a)}.copy{border-color:var(--blue);color:var(--blue)}.status{margin-top:12px;padding:11px;border:1px solid var(--b);border-radius:11px;background:#0b1220;font-size:.83rem}.ok{color:var(--ok)}.bad{color:var(--bad)}.mono{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;background:#060a11;border:1px solid var(--b);border-radius:12px;padding:12px;max-height:320px;overflow:auto}.kv{display:grid;grid-template-columns:120px 1fr;gap:6px 10px;font-size:.82rem;margin-top:10px}.kv b{color:var(--m)}.kv span{direction:ltr;text-align:left;word-break:break-all}video{width:100%;background:#000;border-radius:14px;margin-top:12px;min-height:220px}.clock{font:900 1.6rem ui-monospace,monospace;text-align:center;color:var(--ok);padding:8px}.hint{font-size:.78rem;color:var(--m);margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="title">SubHub v327 — اختبار Resolver الحقيقي</div>
+    <div class="sub">هذا الاختبار لا يقرأ iframe. هو يطلب من Worker استخراج الـiframe الداخلي وHLS ثم يجرب تشغيل رابط الـRelay داخل مشغلنا.</div>
+    <div class="grid">
+      <label>IMDb ID<input id="imdb" value="tt36893729"></label>
+      <label>رابط OnlyFlix المصدر<input id="source" value="https://onlyflix.to/ice-cream-man-2/"></label>
+    </div>
+    <div class="buttons">
+      <button class="primary" id="resolve">استخراج البث الآن</button>
+      <button id="play" disabled>تشغيل HLS في مشغل SubHub</button>
+      <button class="copy" id="copy">نسخ السجل</button>
+    </div>
+    <div id="status" class="status">جاهز. يجب أولاً نشر Worker v10.5.</div>
+  </div>
+
+  <div class="card" id="resultCard" hidden>
+    <div class="title">نتيجة Worker</div>
+    <div class="kv">
+      <b>ok</b><span id="okv">—</span>
+      <b>inner</b><span id="inner">—</span>
+      <b>page</b><span id="page">—</span>
+      <b>quality</b><span id="quality">—</span>
+      <b>qualities</b><span id="qualities">—</span>
+      <b>relay</b><span id="relay">—</span>
+    </div>
+    <pre class="mono" id="json"></pre>
+  </div>
+
+  <div class="card" id="playerCard" hidden>
+    <div class="title">مشغل SubHub التجريبي</div>
+    <div class="clock" id="clock">00:00.000</div>
+    <video id="video" controls playsinline webkit-playsinline></video>
+    <div class="hint">إذا اشتغل الفيديو هنا، صار عندنا currentTime / play / pause / seek مباشرة من عنصر video نفسه، وهذا هو المسار المناسب للويب وSafari على iPhone.</div>
+  </div>
+
+  <div class="card">
+    <div class="title">السجل</div>
+    <pre class="mono" id="log"></pre>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+const WORKER='https://subhub-uploader-v2.artaq2000.workers.dev';
+const $=id=>document.getElementById(id);
+let seq=0,last=null,hls=null;
+function stamp(){return new Date().toISOString().slice(11,23)}
+function safe(v){try{return typeof v==='string'?v:JSON.stringify(v)}catch(_){return String(v)}}
+function log(type,msg,data){const s='['+(++seq)+']['+stamp()+']['+type+'] '+msg+(data!==undefined?' | '+safe(data):'');$('log').textContent+=s+'\n';$('log').scrollTop=$('log').scrollHeight}
+function status(text,kind){$('status').textContent=text;$('status').className='status '+(kind||'')}
+function fmt(t){if(!Number.isFinite(t))t=0;const m=Math.floor(t/60),s=t-m*60;return String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0')}
+async function resolve(){
+  const imdb=$('imdb').value.trim(); const source=$('source').value.trim();
+  const u=WORKER+'/onlyflix/diag-resolve?imdb='+encodeURIComponent(imdb)+'&source='+encodeURIComponent(source)+'&_='+Date.now();
+  status('جارٍ طلب Resolver من Worker…'); log('TEST','resolve request',{url:u});
+  $('resolve').disabled=true; $('play').disabled=true;
+  try{
+    const r=await fetch(u,{method:'GET',cache:'no-store'});
+    const txt=await r.text(); let j; try{j=JSON.parse(txt)}catch(_){j={ok:false,error:'non-json',body:txt.slice(0,1000)}}
+    log('HTTP','resolve response',{status:r.status,data:j}); last=j;
+    $('resultCard').hidden=false; $('json').textContent=JSON.stringify(j,null,2);
+    $('okv').textContent=String(!!j.ok); $('inner').textContent=j.inner||'—'; $('page').textContent=j.page||'—';
+    $('quality').textContent=String(j.quality||0); $('qualities').textContent=Array.isArray(j.qualities)?j.qualities.join(', '):'—'; $('relay').textContent=j.stream||'—';
+    if(j.ok&&j.stream){status('نجح Resolver ✅ — وجد HLS Relay. جرّب زر تشغيل HLS.', 'ok');$('play').disabled=false}
+    else{status('Resolver لم يجد بثاً: '+String(j.error||'unknown'), 'bad')}
+  }catch(e){log('ERROR','fetch failed',String(e));status('فشل الاتصال بالـWorker. تأكد أن v10.5 منشور وأن الصفحة على GitHub Pages.', 'bad')}
+  finally{$('resolve').disabled=false}
+}
+function loadHlsJs(){return new Promise((res,rej)=>{if(window.Hls)return res();const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js';s.onload=res;s.onerror=()=>rej(new Error('hls.js load failed'));document.head.appendChild(s)})}
+async function play(){
+  if(!last||!last.stream)return;
+  const v=$('video'); $('playerCard').hidden=false; status('جارٍ تجهيز مشغل SubHub…');
+  try{
+    if(v.canPlayType('application/vnd.apple.mpegurl')){log('PLAYER','native HLS');v.src=last.stream}
+    else{await loadHlsJs();if(!window.Hls||!Hls.isSupported())throw new Error('HLS not supported');if(hls)try{hls.destroy()}catch(_){};hls=new Hls({enableWorker:true});hls.on(Hls.Events.ERROR,(ev,d)=>log('HLS','error',d));hls.on(Hls.Events.MANIFEST_PARSED,(ev,d)=>log('HLS','manifest parsed',{levels:d.levels&&d.levels.length}));hls.loadSource(last.stream);hls.attachMedia(v);log('PLAYER','hls.js attached')}
+    await v.play().catch(e=>log('PLAYER','play needs tap/failed',String(e)));status('المشغل جاهز. راقب الوقت وجرّب تقديم/إيقاف.', 'ok')
+  }catch(e){log('ERROR','player setup',String(e));status('تعذر تشغيل HLS: '+String(e), 'bad')}
+}
+const v=$('video');
+['loadedmetadata','canplay','play','playing','pause','waiting','stalled','seeking','seeked','ended','error','ratechange'].forEach(ev=>v.addEventListener(ev,()=>log('VIDEO',ev,{currentTime:v.currentTime,duration:v.duration,readyState:v.readyState,paused:v.paused})));
+v.addEventListener('timeupdate',()=>{$('clock').textContent=fmt(v.currentTime)});
+$('resolve').onclick=resolve;$('play').onclick=play;$('copy').onclick=async()=>{const text='SubHub Resolver Diagnostic v327\nUA: '+navigator.userAgent+'\nURL: '+location.href+'\nWORKER: '+WORKER+'\n\n'+$('log').textContent;try{await navigator.clipboard.writeText(text);status('تم نسخ السجل ✅','ok')}catch(_){prompt('انسخ السجل:',text)}};
+log('INFO','v327 loaded',{worker:WORKER,origin:location.origin});
+})();
+</script>
+</body>
+</html>
