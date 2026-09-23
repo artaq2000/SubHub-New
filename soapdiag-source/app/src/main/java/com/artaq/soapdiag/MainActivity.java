@@ -76,7 +76,7 @@ public class MainActivity extends Activity {
     private int bestServer1Quality = 0;
     private boolean server1EmbedOpened = false;
     private boolean server1AutoOpened = false;
-    private String diagScript = "";
+    private String diagScript = "";\n    private String pendingMovieTitle = "";
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
 
@@ -126,7 +126,7 @@ public class MainActivity extends Activity {
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         normalUi.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        statusView = text("Server 1 تلقائي — الصق رابط صفحة الفيلم أو المشغل", 13, Color.rgb(155, 180, 215));
+        statusView = text("Server 1 تلقائي — اكتب اسم الفيلم أو الصق رابطه", 13, Color.rgb(155, 180, 215));
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusLp.setMargins(0, dp(2), 0, dp(8));
         normalUi.addView(statusView, statusLp);
@@ -234,7 +234,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                append("[PAGE] finished " + url);
+                append("[PAGE] finished " + url);\n                tryOpenOnlyFlixSearchResult(view, url);
                 if (isServer1Media(url)) {
                     statusView.setText("Server 1 — البث يعمل");
                 } else if (lastServer1Url.isEmpty()) {
@@ -309,18 +309,67 @@ public class MainActivity extends Activity {
     }
 
     private void startTest() {
-        String u = urlInput.getText().toString().trim();
-        if (!(u.startsWith("https://") || u.startsWith("http://"))) {
-            Toast.makeText(this, "أدخل رابط صفحة المشغل كاملاً", Toast.LENGTH_SHORT).show();
+        String input = urlInput.getText().toString().trim();
+        if (input.isEmpty()) {
+            Toast.makeText(this, "أدخل اسم الفيلم أو رابط OnlyFlix", Toast.LENGTH_SHORT).show();
             return;
         }
         clearReport();
         appendHeader();
         append("[TEST] Auto Server 1 extraction");
-        append("[TEST] " + u);
-        statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
+
+        String u = input;
+        pendingMovieTitle = "";
+        if (!(input.startsWith("https://") || input.startsWith("http://"))) {
+            pendingMovieTitle = input;
+            u = "https://onlyflix.to/?s=" + Uri.encode(input);
+            append("[SEARCH] movie title: " + input);
+            append("[SEARCH] " + u);
+            statusView.setText("جاري البحث عن الفيلم في OnlyFlix…");
+        } else {
+            append("[TEST] " + u);
+            statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
+        }
         webView.stopLoading();
         webView.loadUrl(u);
+    }
+
+    private void tryOpenOnlyFlixSearchResult(WebView view, String url) {
+        if (pendingMovieTitle.isEmpty() || url == null || !host(url).endsWith("onlyflix.to")) return;
+        if (!(url.contains("?s=") || url.contains("/?s="))) return;
+
+        final String title = pendingMovieTitle;
+        String js =
+            "(function(){" +
+            "var q=" + JSONObject.quote(title.toLowerCase(Locale.US)) + ";" +
+            "function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}" +
+            "var nq=norm(q), a=[].slice.call(document.querySelectorAll('a[href]'));" +
+            "var best=null,bestScore=-1;" +
+            "a.forEach(function(x){var h=x.href||'',t=norm(x.innerText||x.textContent||x.getAttribute('title')||'');" +
+            "if(!/^https?:\\/\\/(www\\.)?onlyflix\\.to\\/[^?#]+\\/?$/i.test(h))return;" +
+            "if(/\\/(category|tag|genre|actor|director|page)\\//i.test(h))return;" +
+            "var score=0;if(t===nq)score=100;else if(t.indexOf(nq)>=0||nq.indexOf(t)>=0)score=70;" +
+            "var words=nq.split(/\\s+/);words.forEach(function(w){if(w&&t.indexOf(w)>=0)score+=5;});" +
+            "if(score>bestScore){bestScore=score;best=h;}});" +
+            "return bestScore>0?best:'';" +
+            "})();";
+        view.evaluateJavascript(js, value -> {
+            try {
+                String found = value == null ? "" : new org.json.JSONTokener(value).nextValue().toString();
+                if (!found.startsWith("http")) {
+                    append("[SEARCH] لم يتم العثور على نتيجة مطابقة في الصفحة");
+                    statusView.setText("لم أجد نتيجة مطابقة — جرّب الاسم الإنجليزي كما يظهر في الموقع");
+                    return;
+                }
+                append("[SEARCH FOUND] " + found);
+                pendingMovieTitle = "";
+                urlInput.setText(found);
+                statusView.setText("تم العثور على الفيلم — جاري فتحه…");
+                view.loadUrl(found);
+            } catch (Exception e) {
+                append("[SEARCH ERROR] " + e.getClass().getSimpleName());
+            }
+        });
     }
 
     private void clearReport() {
