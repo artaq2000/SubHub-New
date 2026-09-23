@@ -316,6 +316,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "أدخل اسم الفيلم أو رابط OnlyFlix", Toast.LENGTH_SHORT).show();
             return;
         }
+
         clearReport();
         appendHeader();
         append("[TEST] Auto Server 1 extraction");
@@ -332,6 +333,7 @@ public class MainActivity extends Activity {
             append("[TEST] " + u);
             statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
         }
+
         webView.stopLoading();
         webView.loadUrl(u);
     }
@@ -345,8 +347,8 @@ public class MainActivity extends Activity {
             "(function(){" +
             "var q=" + JSONObject.quote(title.toLowerCase(Locale.US)) + ";" +
             "function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}" +
-            "var nq=norm(q), a=[].slice.call(document.querySelectorAll('a[href]'));" +
-            "var best=null,bestScore=-1;" +
+            "var nq=norm(q),a=[].slice.call(document.querySelectorAll('a[href]'));" +
+            "var best='',bestScore=-1;" +
             "a.forEach(function(x){var h=x.href||'',t=norm(x.innerText||x.textContent||x.getAttribute('title')||'');" +
             "if(!/^https?:\\/\\/(www\\.)?onlyflix\\.to\\/[^?#]+\\/?$/i.test(h))return;" +
             "if(/\\/(category|tag|genre|actor|director|page)\\//i.test(h))return;" +
@@ -355,14 +357,17 @@ public class MainActivity extends Activity {
             "if(score>bestScore){bestScore=score;best=h;}});" +
             "return bestScore>0?best:'';" +
             "})();";
+
         view.evaluateJavascript(js, value -> {
             try {
-                String found = value == null ? "" : new org.json.JSONTokener(value).nextValue().toString();
+                Object parsed = value == null ? "" : new org.json.JSONTokener(value).nextValue();
+                String found = parsed == null ? "" : parsed.toString();
                 if (!found.startsWith("http")) {
                     append("[SEARCH] لم يتم العثور على نتيجة مطابقة في الصفحة");
                     statusView.setText("لم أجد نتيجة مطابقة — جرّب الاسم الإنجليزي كما يظهر في الموقع");
                     return;
                 }
+
                 append("[SEARCH FOUND] " + found);
                 pendingMovieTitle = "";
                 urlInput.setText(found);
@@ -425,8 +430,8 @@ public class MainActivity extends Activity {
         addHeaderIfPresent(b, h, "Referer");
         addHeaderIfPresent(b, h, "Range");
         addHeaderIfPresent(b, h, "Accept");
-        if (hasHeader(h, "Cookie")) b.append("\\n  Cookie: [present, value redacted]");
-        if (hasHeader(h, "Authorization")) b.append("\\n  Authorization: [present, value redacted]");
+        if (hasHeader(h, "Cookie")) b.append("\n  Cookie: [present, value redacted]");
+        if (hasHeader(h, "Authorization")) b.append("\n  Authorization: [present, value redacted]");
         append(b.toString());
         rememberUrl(u, "WEBVIEW");
     }
@@ -441,7 +446,7 @@ public class MainActivity extends Activity {
         if (h == null) return;
         for (Map.Entry<String, String> e : h.entrySet()) {
             if (e.getKey().equalsIgnoreCase(wanted)) {
-                b.append("\\n  ").append(wanted).append(": ").append(safe(e.getValue(), 1000));
+                b.append("\n  ").append(wanted).append(": ").append(safe(e.getValue(), 1000));
                 return;
             }
         }
@@ -485,7 +490,7 @@ public class MainActivity extends Activity {
             handleServer1Embed(u, source);
         } else if (importantCdn) {
             lastCdnUrl = u;
-            append("[FOUND " + source + "] " + (h.contains("workers.dev") ? "WORKERS CDN" : "MEDIA CDN") + "\\n" + u);
+            append("[FOUND " + source + "] " + (h.contains("workers.dev") ? "WORKERS CDN" : "MEDIA CDN") + "\n" + u);
         }
     }
 
@@ -499,8 +504,7 @@ public class MainActivity extends Activity {
     private void handleServer1Embed(String u, String source) {
         if (!isServer1Embed(u) || u.equals(lastServer1EmbedUrl)) return;
         lastServer1EmbedUrl = u;
-        append("[SERVER 1 EMBED FOUND " + source + "]
-" + u);
+        append("[SERVER 1 EMBED FOUND " + source + "]\n" + u);
         ui.post(() -> {
             statusView.setText("تم العثور على Server 1 — تضمينه داخل OnlyFlix…");
             if (server1EmbedOpened) return;
@@ -568,16 +572,13 @@ public class MainActivity extends Activity {
 
         if (segment) {
             String derived = manifestFromSegment(u);
-            append("[SERVER 1 SEGMENT " + source + "]" + (q > 0 ? " " + q + "p" : "") + "
-" + u);
+            append("[SERVER 1 SEGMENT " + source + "]" + (q > 0 ? " " + q + "p" : "") + "\n" + u);
             if (!derived.isEmpty()) {
                 candidate = derived;
-                append("[DERIVED SERVER 1 MANIFEST]" + (q > 0 ? " " + q + "p" : "") + "
-" + derived);
+                append("[DERIVED SERVER 1 MANIFEST]" + (q > 0 ? " " + q + "p" : "") + "\n" + derived);
             }
         } else {
-            append("[SERVER 1 FOUND " + source + "]" + (q > 0 ? " " + q + "p" : "") + "
-" + u);
+            append("[SERVER 1 FOUND " + source + "]" + (q > 0 ? " " + q + "p" : "") + "\n" + u);
         }
 
         if (lastServer1Url.isEmpty() || q > bestServer1Quality ||
@@ -589,18 +590,15 @@ public class MainActivity extends Activity {
             ui.post(() -> statusView.setText(shownQ > 0
                 ? "Server 1 — تم التقاط " + shownQ + "p"
                 : "Server 1 — تم التقاط البث"));
-            if (q > 0) append("[BEST OBSERVED STREAM] " + q + "p
-" + candidate);
+            if (q > 0) append("[BEST OBSERVED STREAM] " + q + "p\n" + candidate);
         }
     }
 
     private String safe(String s, int max) {
         if (s == null) return "";
         s = s.replaceAll("(?i)(authorization\\s*[:=]\\s*)[^&\\s,}]+", "$1[redacted]")
-             .replaceAll("(?i)(cookie\\s*[:=]\\s*)[^\
-]+", "$1[redacted]");
-        return s.length() <= max ? s : s.substring(0, max) + "
-…[truncated]";
+             .replaceAll("(?i)(cookie\\s*[:=]\\s*)[^\\n]+", "$1[redacted]");
+        return s.length() <= max ? s : s.substring(0, max) + "\n…[truncated]";
     }
 
     private void scanUrls(String body, String source) {
@@ -630,8 +628,7 @@ public class MainActivity extends Activity {
             } else {
                 v = safe(v, 1200);
             }
-            b.append("
-  ").append(k).append(": ").append(v);
+            b.append("\n  ").append(k).append(": ").append(v);
             shown++;
         }
         return b.toString();
@@ -640,14 +637,12 @@ public class MainActivity extends Activity {
     private void append(String line) {
         final String stamp;
         synchronized (timeFormat) { stamp = timeFormat.format(new Date()); }
-        final String stamped = "[" + stamp + "] " + line + "
-";
+        final String stamped = "[" + stamp + "] " + line + "\n";
         synchronized (report) {
             if (report.length() + stamped.length() > MAX_LOG_CHARS) {
                 int remove = Math.min(report.length(), 30_000);
                 report.delete(0, remove);
-                report.insert(0, "[...older log trimmed...]
-");
+                report.insert(0, "[...older log trimmed...]\n");
             }
             report.append(stamped);
         }
@@ -670,8 +665,7 @@ public class MainActivity extends Activity {
         StringBuilder b = new StringBuilder();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(getAssets().open(name), StandardCharsets.UTF_8))) {
             String line;
-            while ((line = br.readLine()) != null) b.append(line).append('
-');
+            while ((line = br.readLine()) != null) b.append(line).append('\n');
         } catch (Exception e) {
             append("[DIAG] تعذر قراءة " + name + ": " + e);
         }
@@ -728,17 +722,14 @@ public class MainActivity extends Activity {
                         String method = d.optString("method", "GET");
                         String body = safe(d.optString("body", ""), 16_000);
                         String headers = formatJsHeaders(d.optJSONObject("headers"));
-                        append("[JS REQUEST] " + method + " " + u + headers + (body.isEmpty() ? "" : "
-  BODY:
-" + body));
+                        append("[JS REQUEST] " + method + " " + u + headers + (body.isEmpty() ? "" : "\n  BODY:\n" + body));
                         rememberUrl(u, "JS");
                         scanUrls(body, "POST BODY");
                         break;
                     }
                     case "fetch-request-body": {
                         String body = safe(d.optString("body", ""), 16_000);
-                        append("[JS REQUEST BODY] " + u + "
-" + body);
+                        append("[JS REQUEST BODY] " + u + "\n" + body);
                         scanUrls(body, "POST BODY");
                         break;
                     }
@@ -748,8 +739,7 @@ public class MainActivity extends Activity {
                     case "fetch-response-body":
                     case "xhr-response": {
                         String body = safe(d.optString("body", ""), 16_000);
-                        append("[JS RESPONSE BODY] HTTP " + d.optInt("status", 0) + " " + u + (body.isEmpty() ? "" : "
-" + body));
+                        append("[JS RESPONSE BODY] HTTP " + d.optInt("status", 0) + " " + u + (body.isEmpty() ? "" : "\n" + body));
                         scanUrls(body, "RESPONSE");
                         break;
                     }
@@ -772,8 +762,7 @@ public class MainActivity extends Activity {
                             " :: " + d.optString("cls", ""));
                         break;
                     case "quality-ui-menu":
-                        append("[QUALITY UI] تم فتح قائمة الجودة :: " + d.optString("text", "") + "
-  labels: " + d.optString("labels", ""));
+                        append("[QUALITY UI] تم فتح قائمة الجودة :: " + d.optString("text", "") + "\n  labels: " + d.optString("labels", ""));
                         break;
                     case "quality-ui-selected":
                         append("[QUALITY UI] تم اختيار " + d.optInt("quality", 0) + "p من المشغّل الأصلي");
