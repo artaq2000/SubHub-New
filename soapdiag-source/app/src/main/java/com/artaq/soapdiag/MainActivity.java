@@ -51,7 +51,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
-    private static final String DEFAULT_URL = "https://onlyflix.to/runner-2/";
+    private static final String DEFAULT_URL = "https://onlyflix.to/resident-evil-2/";
     private static final int MAX_LOG_CHARS = 180_000;
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
 
@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
     private EditText urlInput;
+    private EditText movieNameInput;
     private TextView logView;
     private TextView statusView;
     private WebView webView;
@@ -127,10 +128,31 @@ public class MainActivity extends Activity {
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
         normalUi.addView(title, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        statusView = text("Server 1 تلقائي — اكتب اسم الفيلم أو الصق رابطه", 13, Color.rgb(155, 180, 215));
+        statusView = text("Server 1 تلقائي — الصق رابط صفحة الفيلم أو المشغل", 13, Color.rgb(155, 180, 215));
         LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         statusLp.setMargins(0, dp(2), 0, dp(8));
         normalUi.addView(statusView, statusLp);
+
+        LinearLayout searchRow = new LinearLayout(this);
+        searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.setGravity(Gravity.CENTER);
+        searchRow.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+
+        Button search = button("بحث");
+        movieNameInput = new EditText(this);
+        movieNameInput.setHint("اسم الفيلم بالإنجليزية");
+        movieNameInput.setTextColor(Color.WHITE);
+        movieNameInput.setHintTextColor(Color.GRAY);
+        movieNameInput.setBackgroundColor(Color.rgb(12, 27, 45));
+        movieNameInput.setTextDirection(View.TEXT_DIRECTION_LTR);
+        movieNameInput.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        movieNameInput.setTextSize(14);
+        movieNameInput.setSingleLine(true);
+        movieNameInput.setPadding(dp(10), dp(6), dp(10), dp(6));
+
+        searchRow.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.28f));
+        searchRow.addView(movieNameInput, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.72f));
+        normalUi.addView(searchRow);
 
         urlInput = new EditText(this);
         urlInput.setText(DEFAULT_URL);
@@ -188,6 +210,7 @@ public class MainActivity extends Activity {
         fullScreenLayer.setVisibility(View.GONE);
         root.addView(fullScreenLayer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        search.setOnClickListener(v -> startMovieSearch());
         start.setOnClickListener(v -> startTest());
         clear.setOnClickListener(v -> clearReport());
         copyReport.setOnClickListener(v -> copyToClipboard("SoapDiag report", report.toString()));
@@ -236,7 +259,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 append("[PAGE] finished " + url);
-                tryOpenOnlyFlixSearchResult(view, url);
+                if (tryOpenOnlyFlixSearchResult(view, url)) return;
                 if (isServer1Media(url)) {
                     statusView.setText("Server 1 — البث يعمل");
                 } else if (lastServer1Url.isEmpty()) {
@@ -310,37 +333,48 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void startTest() {
-        String input = urlInput.getText().toString().trim();
-        if (input.isEmpty()) {
-            Toast.makeText(this, "أدخل اسم الفيلم أو رابط OnlyFlix", Toast.LENGTH_SHORT).show();
+    private void startMovieSearch() {
+        String title = movieNameInput == null ? "" : movieNameInput.getText().toString().trim();
+        if (title.isEmpty()) {
+            Toast.makeText(this, "اكتب اسم الفيلم أولاً", Toast.LENGTH_SHORT).show();
             return;
         }
 
         clearReport();
         appendHeader();
-        append("[TEST] Auto Server 1 extraction");
-
-        String u = input;
-        pendingMovieTitle = "";
-        if (!(input.startsWith("https://") || input.startsWith("http://"))) {
-            pendingMovieTitle = input;
-            u = "https://onlyflix.to/?s=" + Uri.encode(input);
-            append("[SEARCH] movie title: " + input);
-            append("[SEARCH] " + u);
-            statusView.setText("جاري البحث عن الفيلم في OnlyFlix…");
-        } else {
-            append("[TEST] " + u);
-            statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
-        }
-
+        pendingMovieTitle = title;
+        String searchUrl = "https://onlyflix.to/?s=" + Uri.encode(title);
+        append("[SEARCH] " + title);
+        append("[SEARCH] " + searchUrl);
+        statusView.setText("جاري البحث عن الفيلم في OnlyFlix…");
         webView.stopLoading();
-        webView.loadUrl(u);
+        webView.loadUrl(searchUrl);
     }
 
-    private void tryOpenOnlyFlixSearchResult(WebView view, String url) {
-        if (pendingMovieTitle.isEmpty() || url == null || !host(url).endsWith("onlyflix.to")) return;
-        if (!(url.contains("?s=") || url.contains("/?s="))) return;
+    private boolean tryOpenOnlyFlixSearchResult(WebView view, String url) {
+        if (pendingMovieTitle.isEmpty() || url == null || !host(url).endsWith("onlyflix.to")) return false;
+
+        String path = "";
+        try { path = Uri.parse(url).getPath(); } catch (Exception ignored) {}
+        String lowerPath = path == null ? "" : path.toLowerCase(Locale.US);
+
+        // Some WordPress searches redirect directly when there is one exact result.
+        if (!url.contains("?s=") && !url.contains("/?s=") &&
+                !lowerPath.equals("") && !lowerPath.equals("/") &&
+                !lowerPath.startsWith("/search/") && !lowerPath.startsWith("/page/") &&
+                !lowerPath.startsWith("/category/") && !lowerPath.startsWith("/tag/") &&
+                !lowerPath.startsWith("/genre/") && !lowerPath.startsWith("/actor/") &&
+                !lowerPath.startsWith("/director/")) {
+            String found = url;
+            append("[SEARCH FOUND] " + found);
+            pendingMovieTitle = "";
+            urlInput.setText(found);
+            statusView.setText("تم العثور على الفيلم — جاري التحضير…");
+            view.loadUrl(found);
+            return true;
+        }
+
+        if (!(url.contains("?s=") || url.contains("/?s="))) return false;
 
         final String title = pendingMovieTitle;
         String js =
@@ -349,13 +383,16 @@ public class MainActivity extends Activity {
             "function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}" +
             "var nq=norm(q),a=[].slice.call(document.querySelectorAll('a[href]'));" +
             "var best='',bestScore=-1;" +
-            "a.forEach(function(x){var h=x.href||'',t=norm(x.innerText||x.textContent||x.getAttribute('title')||'');" +
+            "a.forEach(function(x){" +
+            "var h=x.href||'',t=norm(x.innerText||x.textContent||x.getAttribute('title')||''),p='';" +
+            "try{p=norm(new URL(h,location.href).pathname);}catch(e){}" +
             "if(!/^https?:\\/\\/(www\\.)?onlyflix\\.to\\/[^?#]+\\/?$/i.test(h))return;" +
-            "if(/\\/(category|tag|genre|actor|director|page)\\//i.test(h))return;" +
-            "var score=0;if(t===nq)score=100;else if(t.indexOf(nq)>=0||nq.indexOf(t)>=0)score=70;" +
-            "var words=nq.split(/\\s+/);words.forEach(function(w){if(w&&t.indexOf(w)>=0)score+=5;});" +
-            "if(score>bestScore){bestScore=score;best=h;}});" +
-            "return bestScore>0?best:'';" +
+            "if(/\\/(category|tag|genre|actor|director|page|search)\\//i.test(h))return;" +
+            "var score=0;if(t===nq)score=100;else if(t.indexOf(nq)>=0||nq.indexOf(t)>=0)score=75;" +
+            "if(p.indexOf(nq)>=0)score+=45;" +
+            "var words=nq.split(/\\s+/);words.forEach(function(w){if(w.length>1&&(t.indexOf(w)>=0||p.indexOf(w)>=0))score+=5;});" +
+            "if(score>bestScore){bestScore=score;best=h;}" +
+            "});return bestScore>=10?best:'';" +
             "})();";
 
         view.evaluateJavascript(js, value -> {
@@ -363,20 +400,36 @@ public class MainActivity extends Activity {
                 Object parsed = value == null ? "" : new org.json.JSONTokener(value).nextValue();
                 String found = parsed == null ? "" : parsed.toString();
                 if (!found.startsWith("http")) {
-                    append("[SEARCH] لم يتم العثور على نتيجة مطابقة في الصفحة");
-                    statusView.setText("لم أجد نتيجة مطابقة — جرّب الاسم الإنجليزي كما يظهر في الموقع");
+                    append("[SEARCH] no matching result");
+                    statusView.setText("لم أجد نتيجة مطابقة — جرّب الاسم كما يظهر في OnlyFlix");
                     return;
                 }
-
                 append("[SEARCH FOUND] " + found);
                 pendingMovieTitle = "";
                 urlInput.setText(found);
-                statusView.setText("تم العثور على الفيلم — جاري فتحه…");
+                statusView.setText("تم العثور على الفيلم — جاري التحضير…");
                 view.loadUrl(found);
             } catch (Exception e) {
                 append("[SEARCH ERROR] " + e.getClass().getSimpleName());
+                statusView.setText("تعذر قراءة نتيجة البحث");
             }
         });
+        return true;
+    }
+
+    private void startTest() {
+        String u = urlInput.getText().toString().trim();
+        if (!(u.startsWith("https://") || u.startsWith("http://"))) {
+            Toast.makeText(this, "أدخل رابط صفحة المشغل كاملاً", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        clearReport();
+        appendHeader();
+        append("[TEST] Auto Server 1 extraction");
+        append("[TEST] " + u);
+        statusView.setText("جاري تحميل الصفحة والبحث عن Server 1…");
+        webView.stopLoading();
+        webView.loadUrl(u);
     }
 
     private void clearReport() {
@@ -395,10 +448,10 @@ public class MainActivity extends Activity {
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.18 ===");
+        append("=== SoapDiag 1.16 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: OnlyFlix embed flow / CDNM iframe / player quality UI / cdnmvs(Server 1) / nontongo");
+        append("Targets: OnlyFlix / CDNM iframe / player quality UI / cdnmvs(Server 1) / nontongo");
         append("Cookies/Authorization values are redacted.");
     }
 
