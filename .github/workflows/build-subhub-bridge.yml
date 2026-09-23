@@ -1,0 +1,55 @@
+name: Build SubHub Android Bridge 322.2.3
+
+on:
+  push:
+    branches: [onlyflix-bridge-3222-deep-player]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    defaults:
+      run:
+        working-directory: android-bridge
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: onlyflix-bridge-3222-deep-player
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Prepare Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - run: python3 tests/test_source.py
+      - run: gradle assembleDebug --no-daemon --stacktrace
+      - run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-Bridge-322.2.3-DeepPlayer.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SubHub-Bridge-322.2.3-DeepPlayer-apk
+          path: SubHub-Bridge-322.2.3-DeepPlayer.apk
+      - name: Publish test APK
+        working-directory: .
+        run: |
+          mkdir -p builds
+          cp SubHub-Bridge-322.2.3-DeepPlayer.apk builds/SubHub-Bridge-322.2.3-DeepPlayer.apk
+          git config user.name "SubHub Bridge Builder"
+          git config user.email "subhub-bridge@users.noreply.github.com"
+          git add builds/SubHub-Bridge-322.2.3-DeepPlayer.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish SubHub Bridge 322.2.3 DeepPlayer APK [skip ci]"
+            git push origin HEAD:onlyflix-bridge-3222-deep-player
+          fi
