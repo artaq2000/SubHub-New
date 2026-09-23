@@ -53,8 +53,6 @@ import java.util.regex.Pattern;
 public class MainActivity extends Activity {
     private static final String DEFAULT_URL = "https://onlyflix.to/resident-evil-2/";
     private static final int MAX_LOG_CHARS = 180_000;
-    private static final Pattern QUALITY_PATTERN = Pattern.compile("/(\\d{3,4})\\.mp4/", Pattern.CASE_INSENSITIVE);
-    private static final int[] QUALITY_ORDER = new int[]{1080, 720, 480, 360, 240};
     private static final Pattern URL_PATTERN = Pattern.compile("https?://[^\\s\\\"'<>]+", Pattern.CASE_INSENSITIVE);
 
     private final Handler ui = new Handler(Looper.getMainLooper());
@@ -77,11 +75,6 @@ public class MainActivity extends Activity {
     private String lastServer1EmbedUrl = "";
     private boolean server1EmbedOpened = false;
     private boolean server1AutoOpened = false;
-    private int qualityTryIndex = -1;
-    private int activeQuality = 0;
-    private String activeQualityUrl = "";
-    private boolean activeQualityFailed = false;
-    private String qualityTemplateUrl = "";
     private String diagScript = "";
 
     private final SimpleDateFormat timeFormat = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
@@ -350,17 +343,12 @@ public class MainActivity extends Activity {
         lastServer1EmbedUrl = "";
         server1EmbedOpened = false;
         server1AutoOpened = false;
-        qualityTryIndex = -1;
-        activeQuality = 0;
-        activeQualityUrl = "";
-        activeQualityFailed = false;
-        qualityTemplateUrl = "";
         ui.post(() -> logView.setText(""));
     }
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.5 ===");
+        append("=== SoapDiag 1.6 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
         append("Targets: OnlyFlix / CDNM iframe / cdnmvs(Server 1) / nontongo / workers.dev / medmedia05");
@@ -507,76 +495,11 @@ public class MainActivity extends Activity {
     private void handleServer1Url(String u, String source) {
         if (!isServer1Media(u)) return;
         append("[SERVER 1 FOUND " + source + "]\n" + u);
-
-        Matcher qm = QUALITY_PATTERN.matcher(u);
-        if (!qm.find()) {
+        if (lastServer1Url.isEmpty()) {
             lastServer1Url = u;
             lastCdnUrl = u;
-            ui.post(() -> {
-                statusView.setText("Server 1 — تشغيل الرابط المكتشف…");
-                if (!server1AutoOpened) {
-                    server1AutoOpened = true;
-                    webView.stopLoading();
-                    webView.loadUrl(u);
-                }
-            });
-            return;
         }
-
-        if (!qualityTemplateUrl.isEmpty()) return;
-        qualityTemplateUrl = u;
-        append("[QUALITY PLAN] 1080p → 720p → 480p → 360p → 240p");
-        ui.post(() -> {
-            statusView.setText("تم العثور على Server 1 — تجربة 1080p أولاً…");
-            server1AutoOpened = true;
-            qualityTryIndex = -1;
-            tryNextQuality();
-        });
-    }
-
-    private String qualityUrl(String template, int quality) {
-        Matcher m = QUALITY_PATTERN.matcher(template);
-        if (!m.find()) return template;
-        return m.replaceFirst("/" + quality + ".mp4/");
-    }
-
-    private boolean sameQualityPath(String requestUrl, String candidateUrl) {
-        if (requestUrl == null || candidateUrl == null) return false;
-        Matcher a = QUALITY_PATTERN.matcher(requestUrl);
-        Matcher b = QUALITY_PATTERN.matcher(candidateUrl);
-        if (!a.find() || !b.find()) return requestUrl.equals(candidateUrl);
-        return a.group(1).equals(b.group(1)) && host(requestUrl).equals(host(candidateUrl));
-    }
-
-    private void tryNextQuality() {
-        if (qualityTemplateUrl.isEmpty()) return;
-        qualityTryIndex++;
-        if (qualityTryIndex >= QUALITY_ORDER.length) {
-            statusView.setText("تعذر تشغيل الجودات المتاحة");
-            append("[QUALITY] no working variant found");
-            return;
-        }
-
-        activeQuality = QUALITY_ORDER[qualityTryIndex];
-        activeQualityUrl = qualityUrl(qualityTemplateUrl, activeQuality);
-        activeQualityFailed = false;
-        lastServer1Url = activeQualityUrl;
-        lastCdnUrl = activeQualityUrl;
-
-        append("[QUALITY TRY] " + activeQuality + "p\n" + activeQualityUrl);
-        statusView.setText("Server 1 — تجربة " + activeQuality + "p…");
-        webView.stopLoading();
-        webView.loadUrl(activeQualityUrl);
-    }
-
-    private void failActiveQuality(String reason) {
-        if (activeQualityFailed || activeQualityUrl.isEmpty()) return;
-        activeQualityFailed = true;
-        int failed = activeQuality;
-        append("[QUALITY FAIL] " + failed + "p :: " + reason);
-        ui.postDelayed(() -> {
-            if (activeQualityFailed && activeQuality == failed) tryNextQuality();
-        }, 250);
+        ui.post(() -> statusView.setText("Server 1 — فحص الجودات داخل المشغّل…"));
     }
 
     private String safe(String s, int max) {
@@ -739,6 +662,34 @@ public class MainActivity extends Activity {
                         break;
                     case "server1-click":
                         append("[AUTO] تم الضغط على خيار Server 1 داخل الصفحة");
+                        break;
+                    case "quality-probe-context":
+                        append("[QUALITY CONTEXT] " + root.optString("page", "") + "\n" + u);
+                        break;
+                    case "quality-probe-start":
+                        append("[QUALITY PROBE TRY] " + d.optInt("quality", 0) + "p\n" + u);
+                        break;
+                    case "quality-probe":
+                        append("[QUALITY PROBE] " + d.optInt("quality", 0) + "p :: HTTP " + d.optInt("status", 0) +
+                            (d.optBoolean("ok", false) ? " OK" : " FAIL") + "\n" + u);
+                        break;
+                    case "quality-best": {
+                        int q = d.optInt("quality", 0);
+                        if (q > 0 && !u.isEmpty()) {
+                            lastServer1Url = u;
+                            lastCdnUrl = u;
+                            ui.post(() -> statusView.setText("Server 1 يعمل — جودة " + q + "p"));
+                            append("[QUALITY BEST] " + q + "p\n" + u);
+                        } else {
+                            append("[QUALITY BEST] لم تظهر جودة أعلى؛ إبقاء الرابط الأصلي");
+                        }
+                        break;
+                    }
+                    case "quality-switch":
+                        append("[QUALITY SWITCHED] " + d.optInt("quality", 0) + "p داخل المشغّل");
+                        break;
+                    case "quality-switch-error":
+                        append("[QUALITY SWITCH ERROR] " + d.optInt("quality", 0) + "p :: " + d.optString("error", ""));
                         break;
                     default:
                         if (!u.isEmpty()) append("[JS " + kind + "] " + u);

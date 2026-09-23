@@ -7,6 +7,57 @@
   const SERVER1_RE = /^https?:\/\/s1\.cdnmvs\.online\//i;
   const M3U8_RE = /\.m3u8(?:[?#]|$)/i;
   const MAX_BODY = 16000;
+  const QUALITY_RE = /\/(\d{3,4})\.mp4\//i;
+  const QUALITY_ORDER = [1080, 720, 480, 360, 240];
+  let rawFetch = null;
+  let qualityProbeStarted = false;
+
+  function qualityUrl(template, q) {
+    return String(template || '').replace(QUALITY_RE, '/' + q + '.mp4/');
+  }
+
+  async function probeServer1Qualities(template) {
+    if (qualityProbeStarted || !rawFetch || !QUALITY_RE.test(template)) return;
+    if (!/cdnmovies-stream\.online$/i.test(location.hostname)) return;
+    qualityProbeStarted = true;
+    emit('quality-probe-context', { url: template, page: location.href });
+
+    for (const q of QUALITY_ORDER) {
+      const u = qualityUrl(template, q);
+      emit('quality-probe-start', { url: u, quality: q, page: location.href });
+      try {
+        const res = await rawFetch.call(window, u, {
+          method: 'GET',
+          credentials: 'include',
+          cache: 'no-store',
+          redirect: 'follow'
+        });
+        emit('quality-probe', { url: u, quality: q, status: res.status, ok: res.ok, page: location.href });
+        try { if (res.body && res.body.cancel) res.body.cancel(); } catch (_) {}
+        if (res.ok) {
+          emit('quality-best', { url: u, quality: q, status: res.status, page: location.href });
+          try {
+            const v = document.querySelector('video');
+            if (v) {
+              v.pause();
+              v.src = u;
+              v.load();
+              const p = v.play();
+              if (p && p.catch) p.catch(() => {});
+              emit('quality-switch', { url: u, quality: q, page: location.href });
+            }
+          } catch (e) {
+            emit('quality-switch-error', { url: u, quality: q, error: String(e), page: location.href });
+          }
+          return;
+        }
+      } catch (e) {
+        emit('quality-probe', { url: u, quality: q, status: 0, ok: false, error: String(e), page: location.href });
+      }
+    }
+    emit('quality-best', { url: template, quality: 0, status: 0, page: location.href, fallback: true });
+  }
+
 
   function absUrl(v) {
     try {
@@ -21,6 +72,7 @@
     const u = absUrl(url);
     if (SERVER1_RE.test(u) && M3U8_RE.test(u)) {
       emit('candidate-url', { url: u, source: source || '' });
+      if (rawFetch) probeServer1Qualities(u);
       return true;
     }
     return false;
@@ -137,6 +189,7 @@
   // fetch(): captures POST body and readable API responses without changing the request.
   if (typeof window.fetch === 'function') {
     const nativeFetch = window.fetch;
+    rawFetch = nativeFetch;
     window.fetch = function(input, init) {
       const url = absUrl(input);
       let method = 'GET';

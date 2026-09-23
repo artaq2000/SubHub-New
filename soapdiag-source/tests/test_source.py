@@ -25,8 +25,11 @@ assert 'SERVER 1 EMBED FOUND' in java
 
 assert '__soapdiag_server1' in java
 assert 'createElement(\'iframe\')' in java
-assert 'versionName \'1.5\'' in (r/'app/build.gradle').read_text()
+assert 'versionName \'1.6\'' in (r/'app/build.gradle').read_text()
 
-assert 'QUALITY_ORDER' in java
-assert '[QUALITY TRY]' in java
-assert '1080, 720, 480, 360, 240' in java
+assert 'QUALITY_ORDER' in js
+assert 'quality-probe' in js
+assert 'quality-best' in js
+assert '[QUALITY PROBE]' in java
+assert '[QUALITY BEST]' in java
+assert 'cdnmovies-stream' in js
