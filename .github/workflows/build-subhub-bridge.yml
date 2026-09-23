@@ -5,6 +5,9 @@ on:
     branches: [onlyflix-android-bridge-v322]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -38,3 +41,15 @@ jobs:
         with:
           name: SubHub-Android-Bridge-v1-apk
           path: SubHub-Android-Bridge-v1.apk
+      - name: Publish test APK on test branch
+        working-directory: .
+        run: |
+          mkdir -p builds
+          cp SubHub-Android-Bridge-v1.apk builds/SubHub-Android-Bridge-v1.apk
+          git config user.name "SubHub Bridge Builder"
+          git config user.email "subhub-bridge@users.noreply.github.com"
+          git add builds/SubHub-Android-Bridge-v1.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish SubHub Android Bridge v1 APK [skip ci]"
+            git push origin HEAD:onlyflix-android-bridge-v322
+          fi
