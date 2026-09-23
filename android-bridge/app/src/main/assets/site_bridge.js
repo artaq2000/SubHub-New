@@ -3,7 +3,22 @@
   if (window.__subHubSiteBridgeV1) return true;
   window.__subHubSiteBridgeV1 = true;
 
+  const BRIDGE_BUILD = '322.1';
   let lastSig = '';
+
+  function stampBuild() {
+    try {
+      document.documentElement.setAttribute('data-subhub-android-bridge', BRIDGE_BUILD);
+      const tag = document.getElementById('ownerVersionTag');
+      if (tag && String(tag.textContent || '').indexOf('Android ' + BRIDGE_BUILD) < 0) {
+        const base = String(tag.textContent || '').trim();
+        tag.textContent = (base ? base + ' · ' : '') + 'Android ' + BRIDGE_BUILD;
+        tag.title = (String(tag.title || '').trim() ? String(tag.title || '').trim() + ' | ' : '') +
+          'SubHub Android Bridge ' + BRIDGE_BUILD;
+      }
+    } catch (_) {}
+  }
+
   function nativeBridge() {
     try {
       const b = window.SubHubAndroidBridge;
@@ -75,9 +90,11 @@
     } catch (_) {}
   }
 
+  stampBuild();
   wrap('updateSubtitleOverlay', function () { push(false); });
   wrap('applySubtitleStyle', function () { push(true); });
   setTimeout(function () {
+    stampBuild();
     wrap('updateSubtitleOverlay', function () { push(false); });
     wrap('applySubtitleStyle', function () { push(true); });
     push(true);
