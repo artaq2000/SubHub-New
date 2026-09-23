@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.2.3';
+  const BRIDGE_BUILD = '322.3.0';
 
   let lastSig = '';
   let clockSource = '';
@@ -149,7 +149,7 @@
     payload = payload || {};
 
     /*
-     * v322.2.3:
+     * v322.3.0:
      * Stage messages are not media time. They are used only to hide the
      * intermediate share.cdnm movie card and reveal the real nested player.
      */
