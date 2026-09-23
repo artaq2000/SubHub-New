@@ -234,13 +234,8 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 append("[PAGE] finished " + url);
-                if (isServer1Media(url) && url.equals(activeQualityUrl)) {
-                    if (!activeQualityFailed) {
-                        lastServer1Url = url;
-                        lastCdnUrl = url;
-                        statusView.setText("Server 1 يعمل — جودة " + activeQuality + "p");
-                        append("[QUALITY OK] " + activeQuality + "p\n" + url);
-                    }
+                if (isServer1Media(url)) {
+                    statusView.setText("Server 1 — البث يعمل");
                 } else if (lastServer1Url.isEmpty()) {
                     statusView.setText("جارٍ البحث عن Server 1 تلقائياً…");
                 }
@@ -267,9 +262,6 @@ public class MainActivity extends Activity {
                 if (isRelevant(u)) {
                     append("[HTTP ERROR] " + errorResponse.getStatusCode() + " " + request.getMethod() + " " + u);
                 }
-                if (!activeQualityUrl.isEmpty() && sameQualityPath(u, activeQualityUrl) && errorResponse.getStatusCode() >= 400) {
-                    failActiveQuality("HTTP " + errorResponse.getStatusCode());
-                }
                 super.onReceivedHttpError(view, request, errorResponse);
             }
 
@@ -278,9 +270,6 @@ public class MainActivity extends Activity {
                 String u = request.getUrl().toString();
                 if (isRelevant(u)) {
                     append("[NET ERROR] " + request.getMethod() + " " + u + " :: " + error.getErrorCode() + " " + error.getDescription());
-                }
-                if (!activeQualityUrl.isEmpty() && sameQualityPath(u, activeQualityUrl)) {
-                    failActiveQuality("NET " + error.getErrorCode());
                 }
                 super.onReceivedError(view, request, error);
             }
