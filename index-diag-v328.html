@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<title>SubHub v328 — Direct Inner Player Diagnostic</title>
+<style>
+:root{color-scheme:dark;--bg:#08111e;--panel:#111d31;--line:#263a56;--text:#e8eef8;--muted:#9da9bc;--gold:#f5b942;--cyan:#39bdf8;--good:#64df9f;--bad:#ff7b7b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;padding:18px}.wrap{max-width:900px;margin:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:18px;margin:14px 0;box-shadow:0 14px 40px #0005}.title{font-size:1.35rem;font-weight:900;color:var(--gold);margin-bottom:8px}.help{color:var(--muted);line-height:1.75}.grid{display:grid;grid-template-columns:1fr;gap:10px}label{color:var(--muted);font-size:.9rem}input{width:100%;padding:14px;border-radius:14px;border:1px solid var(--line);background:#0a1424;color:#fff;font-size:1rem;direction:ltr;text-align:left}button{border:1px solid var(--cyan);background:#102238;color:#dff5ff;padding:12px 16px;border-radius:14px;font-size:1rem;font-weight:800;cursor:pointer}button.gold{border-color:var(--gold);color:var(--gold);background:#2a2417}button:disabled{opacity:.45}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.status{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:14px;color:var(--muted);line-height:1.6}.status.good{color:var(--good);border-color:#2e7d5a}.status.bad{color:var(--bad);border-color:#7f3d45}.mono{direction:ltr;text-align:left;white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem;line-height:1.55;background:#07101c;border:1px solid var(--line);border-radius:14px;padding:12px;max-height:360px;overflow:auto}.urlbox{direction:ltr;text-align:left;word-break:break-all;background:#07101c;border:1px solid var(--line);border-radius:14px;padding:12px;color:#bfeaff;margin-top:10px}.player{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:18px;overflow:hidden;border:1px solid var(--line)}.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#000}.badge{display:inline-block;padding:3px 8px;border-radius:999px;border:1px solid var(--line);font-size:.75rem;color:var(--muted);margin-left:6px}.msg-hot{color:#7fffd4}.msg-other{color:#e2d39d}@media(max-width:520px){body{padding:10px}.card{padding:14px;border-radius:18px}.title{font-size:1.15rem}button{width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="title">SubHub v328 — اختبار المشغل الداخلي الحقيقي</div>
+    <div class="help">هذا الاختبار لا يطلب من Worker فتح المشغل الداخلي المحمي. الـWorker يقرأ فقط صفحة <b>share.cdnm.ink</b> ويعطينا رابط <b>inner</b> الحقيقي، ثم متصفحك أنت يفتح ذلك الرابط مباشرة من جهازك. بعدها نسجل أي <code>postMessage</code> يرسله المشغل إلى الصفحة الأم.</div>
+    <div class="grid" style="margin-top:14px">
+      <label>IMDb ID<input id="imdb" value="tt36893729"></label>
+      <label>رابط OnlyFlix المصدر<input id="source" value="https://onlyflix.to/ice-cream-man-2/"></label>
+    </div>
+    <div class="row">
+      <button class="gold" id="resolve">1) استخراج inner</button>
+      <button id="load" disabled>2) فتح inner في المتصفح</button>
+      <button id="copy">نسخ السجل</button>
+      <button id="clear">مسح</button>
+    </div>
+    <div id="status" class="status">جاهز.</div>
+    <div id="inner" class="urlbox">inner: —</div>
+  </div>
+
+  <div class="card">
+    <div class="title">المشغل الداخلي المباشر</div>
+    <div class="help">بعد ظهوره: شغّل الفيديو، أوقفه، قدّم 20–30 ثانية، ارجع للخلف، وجرّب ملء الشاشة. إذا كان المشغل يرسل وقتاً إلى parent فسيظهر فوراً في السجل.</div>
+    <div class="player" style="margin-top:12px"><iframe id="frame" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>
+  </div>
+
+  <div class="card">
+    <div class="title">رسائل postMessage <span id="count" class="badge">0</span></div>
+    <div class="help">الرسائل من <b>cdnmovies-stream.online</b> ستظهر بلون مميز. رسائل Firebase/Google الأخرى لا تهمنا.</div>
+    <pre id="log" class="mono"></pre>
+  </div>
+</div>
+<script>
+(function(){
+'use strict';
+const WORKER='https://subhub-uploader-v2.artaq2000.workers.dev';
+const $=id=>document.getElementById(id); let seq=0,innerUrl='',msgCount=0;
+function ts(){return new Date().toISOString().slice(11,23)}
+function safe(v){try{return typeof v==='string'?v:JSON.stringify(v)}catch(_){return String(v)}}
+function log(type,msg,data,hot){const line='['+(++seq)+']['+ts()+']['+type+'] '+msg+(data!==undefined?' | '+safe(data):'');const span=document.createElement('div');span.className=hot?'msg-hot':'msg-other';span.textContent=line;$('log').appendChild(span);$('log').scrollTop=$('log').scrollHeight}
+function status(t,k){$('status').textContent=t;$('status').className='status'+(k?' '+k:'')}
+function findInner(j){if(j&&typeof j.inner==='string'&&j.inner)return j.inner;if(j&&j.page&&typeof j.page.url==='string'&&/cdnmovies-stream\.online/i.test(j.page.url))return j.page.url;return ''}
+async function resolve(){const imdb=$('imdb').value.trim(),source=$('source').value.trim();const u=WORKER+'/onlyflix/diag-resolve?imdb='+encodeURIComponent(imdb)+'&source='+encodeURIComponent(source)+'&_='+Date.now();$('resolve').disabled=true;$('load').disabled=true;status('جارٍ استخراج inner من صفحة share…');log('TEST','diag-resolve',{url:u});try{const r=await fetch(u,{cache:'no-store'});const txt=await r.text();let j;try{j=JSON.parse(txt)}catch(_){j={ok:false,error:'non-json',body:txt.slice(0,800)}}log('HTTP','resolver',{status:r.status,data:j});innerUrl=findInner(j);if(innerUrl){$('inner').textContent='inner: '+innerUrl;$('load').disabled=false;status('تم العثور على inner الحقيقي. اضغط فتح inner في المتصفح.','good')}else{status('لم يرجع Worker رابط inner.','bad')}}catch(e){log('ERR','resolve failed',String(e));status('فشل الاتصال بالـWorker.','bad')}finally{$('resolve').disabled=false}}
+function loadInner(){if(!innerUrl)return;const f=$('frame');f.src='about:blank';setTimeout(()=>{log('FRAME','direct inner src',innerUrl);f.src=innerUrl;status('تم تحميل inner مباشرة من جهازك. الآن شغّل/أوقف/قدّم الفيديو وراقب الرسائل.','good')},50)}
+$('frame').addEventListener('load',()=>log('FRAME','iframe load',$('frame').src));
+window.addEventListener('message',e=>{msgCount++;$('count').textContent=String(msgCount);const origin=String(e.origin||'');const hot=/cdnmovies-stream\.online|cdnmvs\.online|cdnm\.ink/i.test(origin);log('MSG','origin='+origin,e.data,hot)});
+document.addEventListener('fullscreenchange',()=>log('FULL','fullscreenchange',document.fullscreenElement?document.fullscreenElement.tagName:'EXIT'));
+$('resolve').onclick=resolve;$('load').onclick=loadInner;$('clear').onclick=()=>{$('log').textContent='';seq=0;msgCount=0;$('count').textContent='0';log('INFO','تم مسح السجل')};$('copy').onclick=async()=>{const head='SubHub Direct Inner Diagnostic v328\nUA: '+navigator.userAgent+'\nURL: '+location.href+'\nINNER: '+innerUrl+'\n\n';const body=head+$('log').innerText;try{await navigator.clipboard.writeText(body);status('تم نسخ السجل ✅','good')}catch(_){const ta=document.createElement('textarea');ta.value=body;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();status('تم نسخ السجل ✅','good')}};
+log('INFO','v328 loaded',{worker:WORKER,origin:location.origin});
+})();
+</script>
+</body></html>
