@@ -73,6 +73,7 @@ public class MainActivity extends Activity {
     private String lastCdnUrl = "";
     private String lastServer1Url = "";
     private String lastServer1EmbedUrl = "";
+    private int bestServer1Quality = 0;
     private boolean server1EmbedOpened = false;
     private boolean server1AutoOpened = false;
     private String diagScript = "";
@@ -330,6 +331,7 @@ public class MainActivity extends Activity {
         lastCdnUrl = "";
         lastServer1Url = "";
         lastServer1EmbedUrl = "";
+        bestServer1Quality = 0;
         server1EmbedOpened = false;
         server1AutoOpened = false;
         ui.post(() -> logView.setText(""));
@@ -337,10 +339,10 @@ public class MainActivity extends Activity {
 
     private void appendHeader() {
         PackageInfo p = WebView.getCurrentWebViewPackage();
-        append("=== SoapDiag 1.6 ===");
+        append("=== SoapDiag 1.7 ===");
         append("Device: " + Build.MANUFACTURER + " " + Build.MODEL + " / Android API " + Build.VERSION.SDK_INT);
         append("WebView: " + (p == null ? "unknown" : p.packageName + " " + p.versionName));
-        append("Targets: OnlyFlix / CDNM iframe / cdnmvs(Server 1) / nontongo / workers.dev / medmedia05");
+        append("Targets: OnlyFlix / CDNM iframe / player quality UI / cdnmvs(Server 1) / nontongo");
         append("Cookies/Authorization values are redacted.");
     }
 
@@ -396,13 +398,13 @@ public class MainActivity extends Activity {
 
     private boolean isAllowedMainFrame(String u) {
         String h = host(u);
-        return h.endsWith("onlyflix.to") || h.endsWith("cdnm.ink") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
+        return h.endsWith("onlyflix.to") || h.endsWith("cdnm.ink") || h.endsWith("cdnmovies-stream.online") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") || h.endsWith("ilove2day.com") ||
                h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom") || h.isEmpty();
     }
 
     private boolean isRelevant(String u) {
         String h = host(u);
-        return h.endsWith("onlyflix.to") || h.endsWith("cdnm.ink") || h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
+        return h.endsWith("onlyflix.to") || h.endsWith("cdnm.ink") || h.endsWith("cdnmovies-stream.online") || h.endsWith("ilove2day.com") || h.endsWith("nontongo.day") || h.endsWith("nontongo.stream") ||
                h.endsWith("cdnmvs.online") || h.endsWith("soapsoap123.workers.dev") || h.endsWith("medmedia05.mom");
     }
 
@@ -481,14 +483,28 @@ public class MainActivity extends Activity {
         return h.equals("s1.cdnmvs.online") && (l.contains(".m3u8") || l.contains("/index-"));
     }
 
+    private int qualityFromUrl(String u) {
+        if (u == null) return 0;
+        Matcher m = Pattern.compile("/(\\d{3,4})\\.mp4/", Pattern.CASE_INSENSITIVE).matcher(u);
+        if (!m.find()) return 0;
+        try { return Integer.parseInt(m.group(1)); } catch (Exception e) { return 0; }
+    }
+
     private void handleServer1Url(String u, String source) {
         if (!isServer1Media(u)) return;
-        append("[SERVER 1 FOUND " + source + "]\n" + u);
-        if (lastServer1Url.isEmpty()) {
+        int q = qualityFromUrl(u);
+        append("[SERVER 1 FOUND " + source + "]" + (q > 0 ? " " + q + "p" : "") + "\n" + u);
+
+        if (lastServer1Url.isEmpty() || q > bestServer1Quality) {
             lastServer1Url = u;
             lastCdnUrl = u;
+            if (q > 0) bestServer1Quality = q;
+            int shownQ = bestServer1Quality;
+            ui.post(() -> statusView.setText(shownQ > 0
+                ? "Server 1 — تم التقاط " + shownQ + "p"
+                : "Server 1 — تم التقاط البث"));
+            if (q > 0) append("[BEST OBSERVED STREAM] " + q + "p\n" + u);
         }
-        ui.post(() -> statusView.setText("Server 1 — فحص الجودات داخل المشغّل…"));
     }
 
     private String safe(String s, int max) {
@@ -652,33 +668,21 @@ public class MainActivity extends Activity {
                     case "server1-click":
                         append("[AUTO] تم الضغط على خيار Server 1 داخل الصفحة");
                         break;
-                    case "quality-probe-context":
-                        append("[QUALITY CONTEXT] " + root.optString("page", "") + "\n" + u);
+                    case "quality-ui-action":
+                        append("[QUALITY UI] " + d.optString("action", "") +
+                            " :: " + d.optString("text", "") +
+                            " :: " + d.optString("tag", "") +
+                            " :: " + d.optString("cls", ""));
                         break;
-                    case "quality-probe-start":
-                        append("[QUALITY PROBE TRY] " + d.optInt("quality", 0) + "p\n" + u);
+                    case "quality-ui-menu":
+                        append("[QUALITY UI] تم فتح قائمة الجودة :: " + d.optString("text", ""));
                         break;
-                    case "quality-probe":
-                        append("[QUALITY PROBE] " + d.optInt("quality", 0) + "p :: HTTP " + d.optInt("status", 0) +
-                            (d.optBoolean("ok", false) ? " OK" : " FAIL") + "\n" + u);
+                    case "quality-ui-selected":
+                        append("[QUALITY UI] تم اختيار " + d.optInt("quality", 0) + "p من المشغّل الأصلي");
+                        ui.post(() -> statusView.setText("Server 1 — تم اختيار 1080p، جارٍ التقاط الرابط…"));
                         break;
-                    case "quality-best": {
-                        int q = d.optInt("quality", 0);
-                        if (q > 0 && !u.isEmpty()) {
-                            lastServer1Url = u;
-                            lastCdnUrl = u;
-                            ui.post(() -> statusView.setText("Server 1 يعمل — جودة " + q + "p"));
-                            append("[QUALITY BEST] " + q + "p\n" + u);
-                        } else {
-                            append("[QUALITY BEST] لم تظهر جودة أعلى؛ إبقاء الرابط الأصلي");
-                        }
-                        break;
-                    }
-                    case "quality-switch":
-                        append("[QUALITY SWITCHED] " + d.optInt("quality", 0) + "p داخل المشغّل");
-                        break;
-                    case "quality-switch-error":
-                        append("[QUALITY SWITCH ERROR] " + d.optInt("quality", 0) + "p :: " + d.optString("error", ""));
+                    case "quality-ui-timeout":
+                        append("[QUALITY UI] لم أجد خيار 1080p تلقائياً");
                         break;
                     default:
                         if (!u.isEmpty()) append("[JS " + kind + "] " + u);

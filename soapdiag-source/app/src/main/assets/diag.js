@@ -7,57 +7,115 @@
   const SERVER1_RE = /^https?:\/\/s1\.cdnmvs\.online\//i;
   const M3U8_RE = /\.m3u8(?:[?#]|$)/i;
   const MAX_BODY = 16000;
-  const QUALITY_RE = /\/(\d{3,4})\.mp4\//i;
-  const QUALITY_ORDER = [1080, 720, 480, 360, 240];
-  let rawFetch = null;
-  let qualityProbeStarted = false;
+  let qualityUiDone = false;
+  let qualityMenuOpened = false;
+  let qualityUiPasses = 0;
 
-  function qualityUrl(template, q) {
-    return String(template || '').replace(QUALITY_RE, '/' + q + '.mp4/');
+  function isVisible(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      const st = getComputedStyle(el);
+      return r.width > 0 && r.height > 0 && st.display !== 'none' && st.visibility !== 'hidden' && Number(st.opacity || 1) > 0;
+    } catch (_) { return false; }
   }
 
-  async function probeServer1Qualities(template) {
-    if (qualityProbeStarted || !rawFetch || !QUALITY_RE.test(template)) return;
-    if (!/cdnmovies-stream\.online$/i.test(location.hostname)) return;
-    qualityProbeStarted = true;
-    emit('quality-probe-context', { url: template, page: location.href });
+  function ownText(el) {
+    try { return String(el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim(); }
+    catch (_) { return ''; }
+  }
 
-    for (const q of QUALITY_ORDER) {
-      const u = qualityUrl(template, q);
-      emit('quality-probe-start', { url: u, quality: q, page: location.href });
-      try {
-        const res = await rawFetch.call(window, u, {
-          method: 'GET',
-          credentials: 'include',
-          cache: 'no-store',
-          redirect: 'follow'
-        });
-        emit('quality-probe', { url: u, quality: q, status: res.status, ok: res.ok, page: location.href });
-        try { if (res.body && res.body.cancel) res.body.cancel(); } catch (_) {}
-        if (res.ok) {
-          emit('quality-best', { url: u, quality: q, status: res.status, page: location.href });
-          try {
-            const v = document.querySelector('video');
-            if (v) {
-              v.pause();
-              v.src = u;
-              v.load();
-              const p = v.play();
-              if (p && p.catch) p.catch(() => {});
-              emit('quality-switch', { url: u, quality: q, page: location.href });
-            }
-          } catch (e) {
-            emit('quality-switch-error', { url: u, quality: q, error: String(e), page: location.href });
-          }
-          return;
-        }
-      } catch (e) {
-        emit('quality-probe', { url: u, quality: q, status: 0, ok: false, error: String(e), page: location.href });
+  function clickElement(el, reason) {
+    if (!el) return false;
+    try {
+      emit('quality-ui-action', {
+        url: location.href,
+        action: reason,
+        tag: el.tagName || '',
+        text: ownText(el).slice(0, 120),
+        cls: String(el.className || '').slice(0, 180)
+      });
+      el.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+      el.click();
+      return true;
+    } catch (_) {
+      try { el.click(); return true; } catch (_) { return false; }
+    }
+  }
+
+  function exactQualityNodes(q) {
+    const wanted = String(q) + 'p';
+    const all = Array.from(document.querySelectorAll('button,[role="button"],[role="menuitem"],[role="option"],li,a,span,div'));
+    return all.filter(el => {
+      if (!isVisible(el)) return false;
+      const t = ownText(el).toLowerCase();
+      return t === wanted || t === String(q);
+    }).sort((a,b) => {
+      const ac = a.children ? a.children.length : 0;
+      const bc = b.children ? b.children.length : 0;
+      if (ac !== bc) return ac - bc;
+      return ownText(a).length - ownText(b).length;
+    });
+  }
+
+  function findQualityTrigger() {
+    const all = Array.from(document.querySelectorAll('button,[role="button"],a,span,div'));
+    let candidates = all.filter(el => {
+      if (!isVisible(el)) return false;
+      const text = ownText(el);
+      const attrs = [
+        el.getAttribute && el.getAttribute('aria-label'),
+        el.getAttribute && el.getAttribute('title'),
+        el.getAttribute && el.getAttribute('data-title'),
+        el.getAttribute && el.getAttribute('data-quality'),
+        el.className
+      ].filter(Boolean).join(' ');
+      return /^(?:240|360|480|720|1080)p$/i.test(text) ||
+             /quality|resolution|settings|gear|جودة|إعدادات/i.test(attrs);
+    });
+    candidates.sort((a,b) => {
+      const ta = ownText(a), tb = ownText(b);
+      const aq = /p$/i.test(ta) ? 0 : 1;
+      const bq = /p$/i.test(tb) ? 0 : 1;
+      if (aq !== bq) return aq - bq;
+      return (a.children ? a.children.length : 0) - (b.children ? b.children.length : 0);
+    });
+    return candidates[0] || null;
+  }
+
+  function trySelect1080FromPlayerUi() {
+    if (qualityUiDone || !/cdnmovies-stream\.online$/i.test(location.hostname)) return;
+    qualityUiPasses++;
+
+    const q1080 = exactQualityNodes(1080);
+    if (q1080.length) {
+      const target = q1080[0];
+      const text = ownText(target);
+      if (clickElement(target, 'select-1080')) {
+        qualityUiDone = true;
+        emit('quality-ui-selected', { url: location.href, quality: 1080, text: text });
+        return;
       }
     }
-    emit('quality-best', { url: template, quality: 0, status: 0, page: location.href, fallback: true });
+
+    if (!qualityMenuOpened || qualityUiPasses % 3 === 0) {
+      const trigger = findQualityTrigger();
+      if (trigger && clickElement(trigger, 'open-quality-menu')) {
+        qualityMenuOpened = true;
+        emit('quality-ui-menu', { url: location.href, text: ownText(trigger) });
+      }
+    }
+
+    if (qualityUiPasses >= 24) {
+      emit('quality-ui-timeout', { url: location.href });
+      clearInterval(qualityUiTimer);
+    }
   }
 
+  const qualityUiTimer = /cdnmovies-stream\.online$/i.test(location.hostname)
+    ? setInterval(trySelect1080FromPlayerUi, 650)
+    : null;
 
   function absUrl(v) {
     try {
@@ -72,7 +130,9 @@
     const u = absUrl(url);
     if (SERVER1_RE.test(u) && M3U8_RE.test(u)) {
       emit('candidate-url', { url: u, source: source || '' });
-      if (rawFetch) probeServer1Qualities(u);
+      if (/cdnmovies-stream\.online$/i.test(location.hostname)) {
+        setTimeout(trySelect1080FromPlayerUi, 120);
+      }
       return true;
     }
     return false;
@@ -189,7 +249,6 @@
   // fetch(): captures POST body and readable API responses without changing the request.
   if (typeof window.fetch === 'function') {
     const nativeFetch = window.fetch;
-    rawFetch = nativeFetch;
     window.fetch = function(input, init) {
       const url = absUrl(input);
       let method = 'GET';
@@ -223,7 +282,7 @@
           if (!/video|audio|octet-stream/.test(ct)) {
             try {
               res.clone().text().then(t => emit('fetch-response-body', {
-                url, status: res.status, body: cap(t, MAX_BODY)
+                url, status: res.status, body: cap(t, M3U8_RE.test(url) ? 1400 : MAX_BODY)
               })).catch(e => emit('fetch-response-body-error', { url, error: String(e) }));
             } catch (_) {}
           }
@@ -317,3 +376,4 @@
     }).observe(document.documentElement || document, { subtree: true, childList: true, attributes: true, attributeFilter: ['src','href'] });
   } catch (_) {}
 })();
+
