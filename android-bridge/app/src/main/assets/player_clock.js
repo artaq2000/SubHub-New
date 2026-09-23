@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  if (window.__subHubClockInstalledV221) return;
-  window.__subHubClockInstalledV221 = true;
+  if (window.__subHubClockInstalledV223) return;
+  window.__subHubClockInstalledV223 = true;
 
   const HOST_RE = /(?:^|\.)(?:onlyflix\.to|cdnm\.ink|cdnmovies-stream\.online|cdnmvs\.online)$/i;
   if (!HOST_RE.test(location.hostname || '')) return;
@@ -266,6 +266,148 @@
     } catch (_) { return null; }
   }
 
+  /* v322.2.3 — OnlyFlix/CDNM deep-player handoff.
+     share.cdnm.ink shows an intermediate movie card before it creates the
+     real cdnmovies-stream player. Advance that wrapper in the background and
+     report the deep-player stage to the SubHub page. No other source is touched. */
+  const stageSent = new Set();
+  const shareInnerTracked = new WeakSet();
+  let shareAdvanceClicked = false;
+
+  function sendStage(stage, extra) {
+    const key = String(stage || '');
+    if (!key || stageSent.has(key)) return;
+    const b = bridge();
+    if (!b) return;
+    stageSent.add(key);
+    const p = Object.assign({
+      source: sourceId,
+      seq: ++seq,
+      event: 'stage:' + key,
+      stage: key,
+      page: location.href,
+      host: location.hostname || '',
+      currentTime: 0,
+      duration: 0,
+      paused: true,
+      seeking: false,
+      waiting: false,
+      playbackRate: 1,
+      readyState: 0,
+      ended: false,
+      visibleArea: 0,
+      score: 0,
+      at: Date.now()
+    }, extra || {});
+    try { b.mediaClock(JSON.stringify(p)); } catch (_) {}
+  }
+
+  function visibleRect(el) {
+    try {
+      if (!el) return null;
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity || 1) <= 0.02) return null;
+      const r = el.getBoundingClientRect();
+      if (!r || r.width < 28 || r.height < 28) return null;
+      if (r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) return null;
+      return r;
+    } catch (_) { return null; }
+  }
+
+  function tryAdvanceShareWrapper() {
+    if (!isShareHost() || shareAdvanceClicked) return false;
+    if (findFrameMatching(/cdnmovies-stream\.online\/imdb\//i)) return false;
+
+    try {
+      const nodes = Array.from(document.querySelectorAll(
+        'button,a,[role="button"],[onclick],[class*="play"],[id*="play"]'
+      ));
+      let best = null;
+      let bestScore = -1;
+
+      for (const el of nodes) {
+        const r = visibleRect(el);
+        if (!r) continue;
+
+        const text = String(el.innerText || el.textContent || '').trim().toLowerCase();
+        const meta = [
+          el.id || '',
+          el.className || '',
+          el.getAttribute && el.getAttribute('title') || '',
+          el.getAttribute && el.getAttribute('aria-label') || ''
+        ].join(' ').toLowerCase();
+
+        if (/trailer|preview|advert|ads|menu|more|share|report/.test(text + ' ' + meta)) continue;
+
+        let score = 0;
+        if (/play|watch|start|تشغيل|مشاهدة/.test(text + ' ' + meta)) score += 18;
+        try {
+          if (el.querySelector && el.querySelector('svg,[class*="play"],[id*="play"]')) score += 7;
+        } catch (_) {}
+
+        const ratio = r.width / Math.max(1, r.height);
+        if (ratio > 0.72 && ratio < 1.38 && r.width >= 44 && r.width <= 150 && r.height <= 150) score += 7;
+        if (r.width * r.height >= 2600) score += 3;
+        if (r.top > innerHeight * 0.22) score += 2;
+
+        if (score > bestScore) {
+          best = el;
+          bestScore = score;
+        }
+      }
+
+      if (!best || bestScore < 9) return false;
+      shareAdvanceClicked = true;
+      sendStage('share-wrapper-advancing', { score: bestScore });
+      try { best.click(); } catch (_) {
+        try {
+          best.dispatchEvent(new MouseEvent('click', { bubbles:true, cancelable:true, view:window }));
+        } catch (_) {}
+      }
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function watchShareInnerPlayer() {
+    if (!isShareHost()) return false;
+    const frame = findFrameMatching(/cdnmovies-stream\.online\/imdb\//i);
+    if (!frame) return false;
+
+    maximizeFrameInCurrentDocument(frame);
+    sendStage('deep-frame-found');
+
+    if (!shareInnerTracked.has(frame)) {
+      shareInnerTracked.add(frame);
+      try {
+        frame.addEventListener('load', function () {
+          sendStage('deep-frame-loaded');
+        }, { once:true });
+      } catch (_) {}
+      /* If the frame existed before our listener was attached, allow the deep
+         document itself to send deep-player-ui-ready below. */
+    }
+    return true;
+  }
+
+  function detectDeepPlayerUi() {
+    if (!isPlayerHost()) return;
+    try {
+      const video = document.querySelector('video');
+      const shell = document.querySelector('#player,.player,.oframeplayer,.jwplayer,.video-js,[class*="player"]');
+      if (!video && !shell) return;
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          sendStage('deep-player-ui-ready', {
+            readyState: video ? Number(video.readyState || 0) : 0,
+            duration: video && Number.isFinite(Number(video.duration)) ? Number(video.duration) : 0
+          });
+        });
+      });
+    } catch (_) {}
+  }
+
   function rectArea(v) {
     try {
       const r = v.getBoundingClientRect();
@@ -433,6 +575,12 @@
       ensurePrepareOverlay();
       maximizeServer1Frame();
       maximizePlayerDocument();
+
+      if (isShareHost()) {
+        if (!watchShareInnerPlayer()) tryAdvanceShareWrapper();
+      }
+      if (isPlayerHost()) detectDeepPlayerUi();
+
       document.querySelectorAll('video').forEach(attach);
       chooseBest(activeVideo);
       if (activeVideo) maybeSignalReady(activeVideo, false);
