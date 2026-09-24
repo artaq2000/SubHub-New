@@ -1,19 +1,32 @@
 plugins { id 'com.android.application' }
 
+def signingKeystorePath = System.getenv('SUBHUB_KEYSTORE_PATH')
+def signingPassword = System.getenv('SUBHUB_KEYSTORE_PASSWORD')
+
 android {
     namespace 'com.artaq.subhub'
     compileSdk 35
+
+    signingConfigs {
+        release {
+            storeFile file(signingKeystorePath)
+            storePassword signingPassword
+            keyAlias 'subhub-release'
+            keyPassword signingPassword
+        }
+    }
 
     defaultConfig {
         applicationId 'com.artaq.subhub.bridge'
         minSdk 26
         targetSdk 35
-        versionCode 8
+        versionCode 9
         versionName '322.3.0'
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
