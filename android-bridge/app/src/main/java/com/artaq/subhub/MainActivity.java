@@ -136,7 +136,7 @@ public class MainActivity extends Activity {
     }
 
     private void installSystemBarInsets() {
-        webView.setOnApplyWindowInsetsListener((v, insets) -> {
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
             int left;
             int top;
             int right;
@@ -157,14 +157,22 @@ public class MainActivity extends Activity {
             }
 
             /*
-             * Android 15/16 can draw an SDK 35 app edge-to-edge by default.
-             * Keep the normal SubHub page below the status bar on every phone.
-             * The native fullscreen player is a different layer and remains truly fullscreen.
+             * API 35+ may draw apps edge-to-edge. Move the WHOLE WebView below
+             * the real system bars instead of only padding WebView's internals.
+             * The extra 6dp gives the header a little breathing room on phones
+             * with tall status bars/notches. Fullscreen video stays fullscreen.
              */
-            v.setPadding(left, top, right, bottom);
+            FrameLayout.LayoutParams lp =
+                    (FrameLayout.LayoutParams) webView.getLayoutParams();
+            lp.leftMargin = left;
+            lp.topMargin = top + dp(6);
+            lp.rightMargin = right;
+            lp.bottomMargin = bottom;
+            webView.setLayoutParams(lp);
+            webView.setPadding(0, 0, 0, 0);
             return insets;
         });
-        webView.requestApplyInsets();
+        root.requestApplyInsets();
     }
 
     private void setupWebView() {
