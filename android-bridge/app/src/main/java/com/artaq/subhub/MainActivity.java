@@ -52,7 +52,12 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.5";
+    private static final String NATIVE_VERSION = "322.3.6";
+    private static final int NATIVE_VERSION_CODE = 15;
+    private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
+    private static final String KEY_UPDATE_META = "updateMetadata";
+    private boolean updateCheckBusy = false;
+    private volatile boolean updateDownloadBusy = false;
     private static final String NATIVE_PREFS = "subhub_native_pair_v1";
     private static final String KEY_APP_DEVICE_ID = "appDeviceId";
     private static final String KEY_APP_SECRET = "appSecret";
@@ -250,6 +255,7 @@ public class MainActivity extends Activity {
                             view.evaluateJavascript(siteBridgeScript, null);
                         }
                         injectNativeSessionIfReady();
+                        notifyUpdateState();
                     }
                 } catch (Exception ignored) {}
             }
@@ -258,6 +264,12 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 if (!request.isForMainFrame()) return false;
                 String url = request.getUrl().toString();
+                if ("subhub-update://download".equals(url)) {
+                    Uri page = Uri.parse(view.getUrl() == null ? "" : view.getUrl());
+                    if (request.hasGesture() && "https".equals(page.getScheme())
+                            && HOME_HOST.equalsIgnoreCase(page.getHost())) downloadNativeUpdate();
+                    return true;
+                }
                 String host = request.getUrl().getHost();
                 if (host != null && host.equalsIgnoreCase(HOME_HOST)) return false;
                 if (url.startsWith("about:")) return false;
@@ -549,22 +561,26 @@ public class MainActivity extends Activity {
     }
 
     private JSONObject postWorkerJson(String path, JSONObject body) throws Exception {
+        return workerJson(path, body);
+    }
+
+    private JSONObject workerJson(String path, JSONObject body) throws Exception {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(UPDATES_WORKER_URL + path);
             conn = (HttpURLConnection) url.openConnection();
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(15000);
-            conn.setRequestMethod("POST");
-            conn.setDoOutput(true);
+            conn.setRequestMethod(body == null ? "GET" : "POST");
+            conn.setDoOutput(body != null);
             conn.setUseCaches(false);
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
             conn.setRequestProperty("Accept", "application/json");
 
-            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
-            conn.setFixedLengthStreamingMode(bytes.length);
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(bytes);
+            if (body != null) {
+                byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+                conn.setFixedLengthStreamingMode(bytes.length);
+                try (OutputStream os = conn.getOutputStream()) { os.write(bytes); }
             }
 
             int status = conn.getResponseCode();
@@ -593,6 +609,96 @@ public class MainActivity extends Activity {
         } finally {
             if (conn != null) conn.disconnect();
         }
+    }
+
+    private JSONObject cachedUpdate() {
+        try { return new JSONObject(nativePrefs.getString(KEY_UPDATE_META, "{}")); }
+        catch (Exception e) { return new JSONObject(); }
+    }
+
+    private boolean newerUpdate(JSONObject d) {
+        return d.optBoolean("ok", false)
+                && getPackageName().equals(d.optString("packageName", ""))
+                && d.optInt("versionCode", 0) > NATIVE_VERSION_CODE;
+    }
+
+    private String nativeUpdateState() {
+        JSONObject d = cachedUpdate();
+        try {
+            JSONObject out = new JSONObject();
+            out.put("available", newerUpdate(d));
+            out.put("versionName", d.optString("versionName", ""));
+            out.put("currentVersion", NATIVE_VERSION);
+            out.put("busy", updateDownloadBusy);
+            return out.toString();
+        } catch (Exception e) { return "{}"; }
+    }
+
+    private void notifyUpdateState() {
+        if (isFinishing() || isDestroyed() || webView == null || !homePageReady) return;
+        Uri page = Uri.parse(webView.getUrl() == null ? "" : webView.getUrl());
+        if (!"https".equals(page.getScheme()) || !HOME_HOST.equalsIgnoreCase(page.getHost())) return;
+        webView.evaluateJavascript("window.dispatchEvent(new Event('subhub-update-state'));", null);
+    }
+
+    private void checkNativeUpdateIfDue() {
+        if (nativePrefs == null || updateCheckBusy) return;
+        long now = System.currentTimeMillis();
+        long last = nativePrefs.getLong(KEY_UPDATE_CHECK, 0L);
+        if (!UpdatePolicy.isDue(now, last)) return;
+        // Persist BEFORE starting the request: failures and restarts cannot cause a request loop.
+        if (!nativePrefs.edit().putLong(KEY_UPDATE_CHECK, now).commit()) return;
+        updateCheckBusy = true;
+        new Thread(() -> {
+            try {
+                JSONObject d = workerJson("/latest?current=" + NATIVE_VERSION_CODE, null);
+                if (d.optBoolean("ok", false) && getPackageName().equals(d.optString("packageName", ""))) {
+                    nativePrefs.edit().putString(KEY_UPDATE_META, d.toString()).apply();
+                }
+            } catch (Exception ignored) {
+                // Keep any known update; retry only on a later foreground visit after 24 hours.
+            } finally {
+                ui.post(() -> { updateCheckBusy = false; notifyUpdateState(); });
+            }
+        }, "SubHub-update-check").start();
+    }
+
+    private void downloadNativeUpdate() {
+        if (updateDownloadBusy || !newerUpdate(cachedUpdate())) return;
+        if (!isNativeAppPaired()) {
+            Toast.makeText(this, "اربط اشتراكك بالتطبيق أولاً لتنزيل التحديث", Toast.LENGTH_LONG).show();
+            return;
+        }
+        updateDownloadBusy = true;
+        notifyUpdateState();
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("appDeviceId", appDeviceId());
+                body.put("appSecret", appSecret());
+                JSONObject d = postWorkerJson("/update", body);
+                if (!d.optBoolean("ok", false)) throw new Exception(d.optString("error", "update-failed"));
+                if (d.optInt("versionCode", 0) <= NATIVE_VERSION_CODE) {
+                    nativePrefs.edit().remove(KEY_UPDATE_META).apply();
+                    ui.post(() -> Toast.makeText(this, "أنت تستخدم أحدث إصدار", Toast.LENGTH_SHORT).show());
+                    return;
+                }
+                String download = d.optString("downloadUrl", "");
+                Uri link = Uri.parse(download);
+                Uri worker = Uri.parse(UPDATES_WORKER_URL);
+                if (!"https".equals(link.getScheme()) || !worker.getHost().equals(link.getHost())
+                        || link.getPort() != -1 || link.getUserInfo() != null
+                        || !"/download".equals(link.getPath())) throw new Exception("bad-download");
+                ui.post(() -> { if (!isFinishing() && !isDestroyed()) openExternal(download); });
+            } catch (Exception e) {
+                ui.post(() -> {
+                    if (!isFinishing() && !isDestroyed()) Toast.makeText(this,
+                            "تعذر تنزيل التحديث. تحقق من اتصالك وصلاحية اشتراكك ثم حاول مجدداً", Toast.LENGTH_LONG).show();
+                });
+            } finally {
+                ui.post(() -> { updateDownloadBusy = false; notifyUpdateState(); });
+            }
+        }, "SubHub-update-download").start();
     }
 
     private void openExternal(String url) {
@@ -846,12 +952,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        checkNativeUpdateIfDue();
         ui.postDelayed(() -> checkPendingPair(false), 900L);
     }
 
     @Override
     protected void onDestroy() {
-        ui.removeCallbacks(clockDispatchRunnable);
+        ui.removeCallbacksAndMessages(null);
 
         if (webView != null) {
             webView.stopLoading();
@@ -863,6 +970,9 @@ public class MainActivity extends Activity {
     }
 
     public final class NativeBridge {
+        @JavascriptInterface
+        public String getUpdateState() { return nativeUpdateState(); }
+
         @JavascriptInterface
         public String getNativeVersion() {
             return NATIVE_VERSION;
@@ -950,3 +1060,4 @@ public class MainActivity extends Activity {
         }
     }
 }
+
