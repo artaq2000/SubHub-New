@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.0'" in site
+assert "BRIDGE_BUILD = '322.3.1'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -38,5 +38,18 @@ assert '_onlyflixUseTimeV317' in site
 
 print('source checks OK')
 
-assert "versionName '322.3.0'" in (root/'app/build.gradle').read_text(encoding='utf-8')
-assert '<string name="app_name">SubHub — مكتبة الترجمات</string>' in (root/'app/src/main/res/values/strings.xml').read_text(encoding='utf-8')
+gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
+assert "versionCode 10" in gradle
+assert "versionName '322.3.1'" in gradle
+assert '<string name="app_name">SubHub</string>' in (root/'app/src/main/res/values/strings.xml').read_text(encoding='utf-8')
+
+assert 'installSystemBarInsets' in main
+assert 'WindowInsets.Type.systemBars()' in main
+assert 'installUiPolishV324' in site
+assert 'cleanupLegacyAnnouncementV324' in site
+assert '#brandMark{display:none!important;}' in site
+assert '#ownerVersionTag{display:none!important;}' in site
+assert (root/'app/src/main/res/drawable-nodpi/subhub_launcher.webp').exists()
+manifest=(root/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
+assert 'android:icon="@drawable/subhub_launcher"' in manifest
+assert 'android:roundIcon="@drawable/subhub_launcher"' in manifest

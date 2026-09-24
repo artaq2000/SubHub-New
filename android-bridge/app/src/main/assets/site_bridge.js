@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.0';
+  const BRIDGE_BUILD = '322.3.1';
 
   let lastSig = '';
   let clockSource = '';
@@ -592,7 +592,101 @@
     } catch (_) {}
   }
 
+
+  /* v322.3.1 — Android app chrome cleanup.
+     The native WebView now handles status-bar insets; this part only simplifies
+     the SubHub header and retires the old free-subscription broadcast card. */
+  function cleanupLegacyAnnouncementV324() {
+    try {
+      if (
+        typeof window.getNotifStore !== 'function' ||
+        typeof window.setNotifStore !== 'function'
+      ) return;
+
+      const oldText =
+        'أصبح بإمكانكم الآن الاشتراك مجاناً في SubHub';
+
+      const all = window.getNotifStore();
+      if (!Array.isArray(all) || !all.length) return;
+
+      const removed = all.filter(function (n) {
+        return !!(
+          n &&
+          n.broadcast &&
+          String(n.message || '').indexOf(oldText) >= 0
+        );
+      });
+
+      if (!removed.length) return;
+
+      if (typeof window.addNotifGone === 'function') {
+        window.addNotifGone(
+          removed.map(function (n) {
+            return String(n.nid || n.id || '');
+          }).filter(Boolean)
+        );
+      }
+
+      window.setNotifStore(
+        all.filter(function (n) {
+          return removed.indexOf(n) < 0;
+        })
+      );
+
+      if (typeof window.updateNotifBadge === 'function') {
+        window.updateNotifBadge();
+      }
+
+      if (typeof window.renderNotifList === 'function') {
+        window.renderNotifList('notifList');
+        window.renderNotifList('myNotifsPane');
+      }
+    } catch (_) {}
+  }
+
+  function installUiPolishV324() {
+    try {
+      if (!document.getElementById('subhub-android-ui-v324')) {
+        const style = document.createElement('style');
+        style.id = 'subhub-android-ui-v324';
+        style.textContent = [
+          '#brandMark{display:none!important;}',
+          '#ownerVersionTag{display:none!important;}',
+          '.brand{gap:8px!important;}',
+          '.brand-text{min-width:88px!important;flex:1 1 auto!important;}',
+          '.brand-name{direction:ltr!important;unicode-bidi:isolate!important;white-space:nowrap!important;}'
+        ].join('\n');
+        (document.head || document.documentElement).appendChild(style);
+      }
+
+      const name = document.querySelector('.brand-name');
+      if (name) {
+        name.innerHTML = 'Sub<span>Hub</span>';
+        name.setAttribute('dir', 'ltr');
+      }
+    } catch (_) {}
+
+    cleanupLegacyAnnouncementV324();
+
+    try {
+      const fn = window.pullBroadcastNotifications;
+      if (
+        typeof fn === 'function' &&
+        !fn.__subhubLegacyBroadcastWrappedV324
+      ) {
+        const wrapped = async function () {
+          const result = await fn.apply(this, arguments);
+          cleanupLegacyAnnouncementV324();
+          return result;
+        };
+        wrapped.__subhubLegacyBroadcastWrappedV324 = true;
+        window.pullBroadcastNotifications = wrapped;
+      }
+    } catch (_) {}
+  }
+
   stampBuild();
+  installUiPolishV324();
   installOpeningFeedback();
 
   wrap(
@@ -607,6 +701,7 @@
 
   setTimeout(function () {
     stampBuild();
+    installUiPolishV324();
     installOpeningFeedback();
 
     wrap(

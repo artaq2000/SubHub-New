@@ -10,6 +10,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -18,6 +19,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -90,6 +92,8 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        getWindow().setStatusBarColor(Color.rgb(10, 14, 20));
+        getWindow().setNavigationBarColor(Color.BLACK);
         buildUi();
         setupWebView();
         webView.loadUrl(HOME_URL);
@@ -106,6 +110,7 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
+        installSystemBarInsets();
 
         fullScreenLayer = new FrameLayout(this);
         fullScreenLayer.setBackgroundColor(Color.BLACK);
@@ -128,6 +133,38 @@ public class MainActivity extends Activity {
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    private void installSystemBarInsets() {
+        webView.setOnApplyWindowInsetsListener((v, insets) -> {
+            int left;
+            int top;
+            int right;
+            int bottom;
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.graphics.Insets sys =
+                        insets.getInsets(WindowInsets.Type.systemBars());
+                left = sys.left;
+                top = sys.top;
+                right = sys.right;
+                bottom = sys.bottom;
+            } else {
+                left = insets.getSystemWindowInsetLeft();
+                top = insets.getSystemWindowInsetTop();
+                right = insets.getSystemWindowInsetRight();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+
+            /*
+             * Android 15/16 can draw an SDK 35 app edge-to-edge by default.
+             * Keep the normal SubHub page below the status bar on every phone.
+             * The native fullscreen player is a different layer and remains truly fullscreen.
+             */
+            v.setPadding(left, top, right, bottom);
+            return insets;
+        });
+        webView.requestApplyInsets();
     }
 
     private void setupWebView() {
@@ -469,6 +506,7 @@ public class MainActivity extends Activity {
         fullScreenLayer.setVisibility(View.GONE);
         webView.setVisibility(View.VISIBLE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        webView.requestApplyInsets();
 
         if (customViewCallback != null) customViewCallback.onCustomViewHidden();
         customViewCallback = null;
