@@ -1,4 +1,4 @@
-name: Build SubHub 322.3.0
+name: Build Signed SubHub 322.3.0
 
 on:
   push:
@@ -17,45 +17,82 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      SUBHUB_KEYSTORE_B64: ${{ secrets.SUBHUB_KEYSTORE_B64 }}
+      SUBHUB_KEYSTORE_PASSWORD: ${{ secrets.SUBHUB_KEYSTORE_PASSWORD }}
+      SUBHUB_KEYSTORE_PATH: ${{ github.workspace }}/android-bridge/subhub-release.keystore
+
     defaults:
       run:
         working-directory: android-bridge
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+
       - name: Prepare Android SDK
         run: |
           SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore permanent SubHub signing key
+        run: |
+          test -n "$SUBHUB_KEYSTORE_B64" || (echo "Missing SUBHUB_KEYSTORE_B64" && exit 1)
+          test -n "$SUBHUB_KEYSTORE_PASSWORD" || (echo "Missing SUBHUB_KEYSTORE_PASSWORD" && exit 1)
+          printf '%s' "$SUBHUB_KEYSTORE_B64" | base64 --decode > "$SUBHUB_KEYSTORE_PATH"
+          chmod 600 "$SUBHUB_KEYSTORE_PATH"
+
       - name: Verify SubHub source
         run: python3 tests/test_source.py
-      - name: Build APK
-        run: gradle assembleDebug --no-daemon --stacktrace
-      - name: Prepare official APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk ../SubHub-322.3.0.apk
+
+      - name: Build signed release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Verify package and permanent signing certificate
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          test -f "$APK"
+          "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
+          EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
+          echo "Expected signing SHA-256: $EXPECTED"
+          echo "Actual signing SHA-256:   $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Prepare official signed APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.0-release.apk
+
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.0-apk
-          path: SubHub-322.3.0.apk
-      - name: Publish official APK
+          name: SubHub-322.3.0-signed-apk
+          path: SubHub-322.3.0-release.apk
+
+      - name: Publish signed APK
         working-directory: .
         run: |
           mkdir -p builds
-          cp SubHub-322.3.0.apk builds/SubHub-322.3.0.apk
+          cp SubHub-322.3.0-release.apk builds/SubHub-322.3.0-release.apk
           git config user.name "SubHub Builder"
           git config user.email "subhub-builder@users.noreply.github.com"
-          git add builds/SubHub-322.3.0.apk
+          git add builds/SubHub-322.3.0-release.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish SubHub 322.3.0 APK [skip ci]"
+            git commit -m "Publish signed SubHub 322.3.0 release APK [skip ci]"
             git push origin HEAD:main
           fi
+
+      - name: Remove signing key from runner
+        if: always()
+        run: rm -f "$SUBHUB_KEYSTORE_PATH"
