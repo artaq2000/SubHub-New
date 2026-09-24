@@ -3,6 +3,7 @@ package com.artaq.subhub;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -37,14 +38,25 @@ import androidx.webkit.WebViewFeature;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Locale;
+import java.util.UUID;
 
 public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
+    private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
+    private static final String NATIVE_PREFS = "subhub_native_pair_v1";
+    private static final String KEY_APP_DEVICE_ID = "appDeviceId";
+    private static final String KEY_APP_SECRET = "appSecret";
+    private static final String KEY_APP_PAIRED = "appPaired";
+    private static final String KEY_PENDING_PAIR = "pendingPairId";
 
     /*
      * v322 bridge2:
@@ -67,6 +79,13 @@ public class MainActivity extends Activity {
     private String clockScript = "";
     private String siteBridgeScript = "";
     private JSONObject lastSubtitleState = null;
+
+    private SharedPreferences nativePrefs;
+    private volatile boolean pairingBusy = false;
+    private volatile boolean pairStatusBusy = false;
+    private volatile boolean sessionBusy = false;
+    private volatile boolean homePageReady = false;
+    private JSONObject pendingNativeSession = null;
 
     private String pendingClockRaw = null;
     private boolean clockDispatchScheduled = false;
@@ -94,9 +113,12 @@ public class MainActivity extends Activity {
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         getWindow().setStatusBarColor(Color.rgb(10, 14, 20));
         getWindow().setNavigationBarColor(Color.BLACK);
+        nativePrefs = getSharedPreferences(NATIVE_PREFS, MODE_PRIVATE);
+        ensureNativeIdentity();
         buildUi();
         setupWebView();
         webView.loadUrl(HOME_URL);
+        ui.postDelayed(() -> handlePairIntent(getIntent()), 700L);
     }
 
     private void buildUi() {
@@ -206,6 +228,11 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                try {
+                    Uri u = Uri.parse(url);
+                    if (HOME_HOST.equalsIgnoreCase(u.getHost())) homePageReady = false;
+                } catch (Exception ignored) {}
+
                 if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
                         && !clockScript.isEmpty()) {
                     view.evaluateJavascript(clockScript, null);
@@ -216,8 +243,12 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 try {
                     Uri u = Uri.parse(url);
-                    if (HOME_HOST.equalsIgnoreCase(u.getHost()) && !siteBridgeScript.isEmpty()) {
-                        view.evaluateJavascript(siteBridgeScript, null);
+                    if (HOME_HOST.equalsIgnoreCase(u.getHost())) {
+                        homePageReady = true;
+                        if (!siteBridgeScript.isEmpty()) {
+                            view.evaluateJavascript(siteBridgeScript, null);
+                        }
+                        injectNativeSessionIfReady();
                     }
                 } catch (Exception ignored) {}
             }
@@ -290,6 +321,277 @@ public class MainActivity extends Activity {
                 exitFullScreen();
             }
         });
+    }
+
+
+    private void ensureNativeIdentity() {
+        if (nativePrefs == null) return;
+        String id = nativePrefs.getString(KEY_APP_DEVICE_ID, "");
+        String secret = nativePrefs.getString(KEY_APP_SECRET, "");
+
+        if (id == null || id.length() < 8) {
+            id = "app_" + UUID.randomUUID().toString().replace("-", "");
+            nativePrefs.edit().putString(KEY_APP_DEVICE_ID, id).apply();
+        }
+        if (secret == null || secret.length() < 32) {
+            secret = UUID.randomUUID().toString().replace("-", "")
+                    + UUID.randomUUID().toString().replace("-", "");
+            nativePrefs.edit().putString(KEY_APP_SECRET, secret).apply();
+        }
+    }
+
+    private String appDeviceId() {
+        ensureNativeIdentity();
+        return nativePrefs == null ? "" : nativePrefs.getString(KEY_APP_DEVICE_ID, "");
+    }
+
+    private String appSecret() {
+        ensureNativeIdentity();
+        return nativePrefs == null ? "" : nativePrefs.getString(KEY_APP_SECRET, "");
+    }
+
+    private boolean isNativeAppPaired() {
+        return nativePrefs != null && nativePrefs.getBoolean(KEY_APP_PAIRED, false);
+    }
+
+    private void startPairingFlow() {
+        if (isNativeAppPaired()) {
+            syncNativeSubscription(true);
+            return;
+        }
+        if (pairingBusy) return;
+        pairingBusy = true;
+        Toast.makeText(this, "جارٍ تجهيز ربط الاشتراك…", Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("appDeviceId", appDeviceId());
+                body.put("appSecret", appSecret());
+
+                JSONObject res = postWorkerJson("/pair/start", body);
+                if (!res.optBoolean("ok", false)) {
+                    throw new Exception(res.optString("error", "pair-start-failed"));
+                }
+
+                final String pairId = res.optString("pairId", "");
+                final String browserUrl = res.optString("browserUrl", "");
+                if (pairId.isEmpty() || browserUrl.isEmpty()) {
+                    throw new Exception("pair-start-invalid");
+                }
+
+                nativePrefs.edit().putString(KEY_PENDING_PAIR, pairId).apply();
+                ui.post(() -> {
+                    pairingBusy = false;
+                    openPairBrowser(browserUrl);
+                });
+            } catch (Exception e) {
+                ui.post(() -> {
+                    pairingBusy = false;
+                    Toast.makeText(
+                            MainActivity.this,
+                            "تعذر بدء ربط الاشتراك. حاول مرة أخرى.",
+                            Toast.LENGTH_LONG
+                    ).show();
+                });
+            }
+        }).start();
+    }
+
+    private void openPairBrowser(String url) {
+        try {
+            Intent target = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            Intent chooser = Intent.createChooser(
+                    target,
+                    "اختر المتصفح الذي يظهر فيه اشتراك SubHub"
+            );
+            startActivity(chooser);
+        } catch (ActivityNotFoundException ignored) {
+            Toast.makeText(this, "تعذر فتح المتصفح", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void handlePairIntent(Intent intent) {
+        if (intent == null) return;
+        Uri data = intent.getData();
+        if (data == null) return;
+        if (!"subhub".equalsIgnoreCase(data.getScheme())) return;
+        if (!"paired".equalsIgnoreCase(data.getHost())) return;
+
+        String pairId = data.getQueryParameter("pairId");
+        if (pairId == null || pairId.trim().isEmpty()) return;
+        pairId = pairId.trim();
+        nativePrefs.edit().putString(KEY_PENDING_PAIR, pairId).apply();
+        checkPairStatus(pairId, true);
+    }
+
+    private void checkPendingPair(boolean showFeedback) {
+        if (nativePrefs == null || isNativeAppPaired()) return;
+        String pairId = nativePrefs.getString(KEY_PENDING_PAIR, "");
+        if (pairId == null || pairId.isEmpty()) return;
+        checkPairStatus(pairId, showFeedback);
+    }
+
+    private void checkPairStatus(String pairId, boolean showFeedback) {
+        if (pairStatusBusy) return;
+        pairStatusBusy = true;
+
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("appDeviceId", appDeviceId());
+                body.put("appSecret", appSecret());
+                body.put("pairId", pairId);
+
+                JSONObject res = postWorkerJson("/pair/status", body);
+                boolean paired = res.optBoolean("ok", false)
+                        && res.optBoolean("paired", false);
+
+                ui.post(() -> {
+                    pairStatusBusy = false;
+                    if (paired) {
+                        nativePrefs.edit()
+                                .putBoolean(KEY_APP_PAIRED, true)
+                                .remove(KEY_PENDING_PAIR)
+                                .apply();
+                        if (showFeedback) {
+                            Toast.makeText(
+                                    MainActivity.this,
+                                    "تم ربط التطبيق بالاشتراك ✅",
+                                    Toast.LENGTH_SHORT
+                            ).show();
+                        }
+                        syncNativeSubscription(false);
+                    }
+                });
+            } catch (Exception e) {
+                ui.post(() -> pairStatusBusy = false);
+            }
+        }).start();
+    }
+
+    private void syncNativeSubscription(boolean showFeedback) {
+        if (!isNativeAppPaired()) {
+            if (showFeedback) {
+                Toast.makeText(this, "اربط التطبيق باشتراكك أولاً", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
+        if (sessionBusy) return;
+        sessionBusy = true;
+
+        new Thread(() -> {
+            try {
+                JSONObject body = new JSONObject();
+                body.put("appDeviceId", appDeviceId());
+                body.put("appSecret", appSecret());
+
+                JSONObject res = postWorkerJson("/app/session", body);
+                if (!res.optBoolean("ok", false)) {
+                    throw new Exception(res.optString("error", "session-failed"));
+                }
+
+                ui.post(() -> {
+                    sessionBusy = false;
+                    pendingNativeSession = res;
+                    injectNativeSessionIfReady();
+                    if (showFeedback) {
+                        Toast.makeText(
+                                MainActivity.this,
+                                "تمت مزامنة الاشتراك ✅",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                });
+            } catch (Exception e) {
+                ui.post(() -> {
+                    sessionBusy = false;
+                    if (showFeedback) {
+                        Toast.makeText(
+                                MainActivity.this,
+                                "تعذرت مزامنة الاشتراك الآن",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void injectNativeSessionIfReady() {
+        if (!homePageReady || webView == null || pendingNativeSession == null) return;
+
+        JSONObject d = pendingNativeSession;
+        pendingNativeSession = null;
+
+        String webDeviceId = d.optString("webDeviceId", "");
+        String code = d.optString("code", "");
+        long expiresAt = d.optLong("expiresAt", 0L);
+        String tier = "vip".equalsIgnoreCase(d.optString("tier", "")) ? "vip" : "free";
+
+        if (webDeviceId.isEmpty() || code.isEmpty() || expiresAt <= System.currentTimeMillis()) {
+            return;
+        }
+
+        String js =
+                "(function(){try{"
+                        + "localStorage.setItem('subhub_device_id'," + JSONObject.quote(webDeviceId) + ");"
+                        + "localStorage.setItem('subhub_code'," + JSONObject.quote(code) + ");"
+                        + "localStorage.setItem('subhub_unlock_until'," + JSONObject.quote(String.valueOf(expiresAt)) + ");"
+                        + "localStorage.setItem('subhub_tier'," + JSONObject.quote(tier) + ");"
+                        + "localStorage.setItem('subhub_subcheck_at',String(Date.now()));"
+                        + "if(typeof refreshAfterSubscribe==='function'){try{refreshAfterSubscribe();}catch(e){}}"
+                        + "setTimeout(function(){location.replace(" + JSONObject.quote(HOME_URL) + ");},80);"
+                        + "}catch(e){location.replace(" + JSONObject.quote(HOME_URL) + ");}})();";
+
+        webView.evaluateJavascript(js, null);
+    }
+
+    private JSONObject postWorkerJson(String path, JSONObject body) throws Exception {
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(UPDATES_WORKER_URL + path);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(15000);
+            conn.setRequestMethod("POST");
+            conn.setDoOutput(true);
+            conn.setUseCaches(false);
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            conn.setRequestProperty("Accept", "application/json");
+
+            byte[] bytes = body.toString().getBytes(StandardCharsets.UTF_8);
+            conn.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(bytes);
+            }
+
+            int status = conn.getResponseCode();
+            InputStream in = (status >= 200 && status < 400)
+                    ? conn.getInputStream()
+                    : conn.getErrorStream();
+
+            StringBuilder raw = new StringBuilder();
+            if (in != null) {
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(in, StandardCharsets.UTF_8)
+                )) {
+                    String line;
+                    while ((line = br.readLine()) != null) raw.append(line);
+                }
+            }
+
+            JSONObject out;
+            try {
+                out = raw.length() == 0 ? new JSONObject() : new JSONObject(raw.toString());
+            } catch (Exception ignored) {
+                out = new JSONObject();
+            }
+            out.put("_http", status);
+            return out;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
 
     private void openExternal(String url) {
@@ -534,6 +836,19 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handlePairIntent(intent);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ui.postDelayed(() -> checkPendingPair(false), 900L);
+    }
+
+    @Override
     protected void onDestroy() {
         ui.removeCallbacks(clockDispatchRunnable);
 
@@ -547,6 +862,26 @@ public class MainActivity extends Activity {
     }
 
     public final class NativeBridge {
+        @JavascriptInterface
+        public String getNativeVersion() {
+            return BuildConfig.VERSION_NAME;
+        }
+
+        @JavascriptInterface
+        public boolean isAppPaired() {
+            return isNativeAppPaired();
+        }
+
+        @JavascriptInterface
+        public void startPairing() {
+            ui.post(MainActivity.this::startPairingFlow);
+        }
+
+        @JavascriptInterface
+        public void syncSubscription() {
+            ui.post(() -> syncNativeSubscription(true));
+        }
+
         @JavascriptInterface
         public void mediaClock(String raw) {
             if (raw == null || raw.length() > 8192) return;

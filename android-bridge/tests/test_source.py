@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.4'" in site
+assert "BRIDGE_BUILD = '322.3.5'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,13 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 13" in gradle
-assert "versionName '322.3.4'" in gradle
+assert "versionCode 14" in gradle
+assert "versionName '322.3.5'" in gradle
+assert 'startPairingFlow' in main
+assert 'syncNativeSubscription' in main
+assert 'getNativeVersion' in main
+assert 'isAppPaired' in main
+assert 'UPDATES_WORKER_URL' in main
 assert '<string name="app_name">SubHub</string>' in (root/'app/src/main/res/values/strings.xml').read_text(encoding='utf-8')
 
 assert 'installSystemBarInsets' in main
@@ -53,6 +58,8 @@ assert (root/'app/src/main/res/drawable-nodpi/subhub_launcher_foreground_32232.w
 manifest=(root/'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8')
 assert 'android:icon="@drawable/subhub_launcher_pretty_32234"' in manifest
 assert 'android:roundIcon="@drawable/subhub_launcher_pretty_32234"' in manifest
+assert 'android:scheme="subhub"' in manifest
+assert 'android:host="paired"' in manifest
 
 assert 'root.setOnApplyWindowInsetsListener' in main
 assert 'lp.topMargin = top + dp(6)' in main
