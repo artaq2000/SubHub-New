@@ -5,8 +5,8 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
         android:label="SubHub"
-        android:icon="@mipmap/subhub_launcher_32233"
-        android:roundIcon="@mipmap/subhub_launcher_32233"
+        android:icon="@drawable/subhub_launcher_pretty_32234"
+        android:roundIcon="@drawable/subhub_launcher_pretty_32234"
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"
