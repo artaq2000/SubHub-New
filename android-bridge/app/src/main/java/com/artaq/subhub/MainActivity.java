@@ -370,7 +370,10 @@ public class MainActivity extends Activity {
             catch (Exception ignored) {}
         }
         if (name == null || name.trim().isEmpty()) name = "SubHub-subtitle.srt";
-        name = name.replaceAll("[\\/:*?\\"<>|\\r\\n]+", "_").trim();
+        name = name.replace('\\\\', '_').replace('/', '_').replace(':', '_')
+                .replace('*', '_').replace('?', '_').replace('"', '_')
+                .replace('<', '_').replace('>', '_').replace('|', '_')
+                .replace('\\r', '_').replace('\\n', '_').trim();
         if (name.isEmpty()) name = "SubHub-subtitle.srt";
 
         String lower = name.toLowerCase(Locale.US);
