@@ -1,4 +1,4 @@
-name: Build Signed SubHub 322.3.6
+name: Build Signed SubHub 322.3.7
 
 on:
   push:
@@ -79,23 +79,23 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare official signed APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.6-release.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.7-release.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.6-signed-apk
-          path: SubHub-322.3.6-release.apk
+          name: SubHub-322.3.7-signed-apk
+          path: SubHub-322.3.7-release.apk
 
       - name: Publish signed APK
         working-directory: .
         run: |
           mkdir -p builds
-          cp SubHub-322.3.6-release.apk builds/SubHub-322.3.6-release.apk
+          cp SubHub-322.3.7-release.apk builds/SubHub-322.3.7-release.apk
           git config user.name "SubHub Builder"
           git config user.email "subhub-builder@users.noreply.github.com"
-          git add builds/SubHub-322.3.6-release.apk
+          git add builds/SubHub-322.3.7-release.apk
           if ! git diff --cached --quiet; then
-            git commit -m "Publish signed SubHub 322.3.6 release APK [skip ci]"
+            git commit -m "Publish signed SubHub 322.3.7 release APK [skip ci]"
             git push origin HEAD:main
           fi
 

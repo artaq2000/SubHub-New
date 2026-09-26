@@ -1,7 +1,10 @@
 package com.artaq.subhub;
 
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
@@ -13,9 +16,11 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Handler;
+import android.os.Environment;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.TypedValue;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,11 +31,13 @@ import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
+import android.webkit.URLUtil;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.provider.MediaStore;
 
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
@@ -38,10 +45,13 @@ import androidx.webkit.WebViewFeature;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.URLDecoder;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -52,8 +62,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.6";
-    private static final int NATIVE_VERSION_CODE = 15;
+    private static final String NATIVE_VERSION = "322.3.7";
+    private static final int NATIVE_VERSION_CODE = 16;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -63,6 +73,8 @@ public class MainActivity extends Activity {
     private static final String KEY_APP_SECRET = "appSecret";
     private static final String KEY_APP_PAIRED = "appPaired";
     private static final String KEY_PENDING_PAIR = "pendingPairId";
+    private static final long MAX_SUBTITLE_DOWNLOAD_BYTES = 16L * 1024L * 1024L;
+    private final String downloadBridgeToken = UUID.randomUUID().toString().replace("-", "");
 
     /*
      * v322 bridge2:
@@ -220,6 +232,7 @@ public class MainActivity extends Activity {
         cm.setAcceptThirdPartyCookies(webView, true);
 
         webView.addJavascriptInterface(new NativeBridge(), "SubHubAndroidBridge");
+        installDownloadSupport();
         clockScript = readAsset("player_clock.js");
         siteBridgeScript = readAsset("site_bridge.js");
 
@@ -254,6 +267,7 @@ public class MainActivity extends Activity {
                         if (!siteBridgeScript.isEmpty()) {
                             view.evaluateJavascript(siteBridgeScript, null);
                         }
+                        installDownloadInterceptor(view);
                         injectNativeSessionIfReady();
                         notifyUpdateState();
                     }
@@ -336,6 +350,280 @@ public class MainActivity extends Activity {
         });
     }
 
+
+
+    private boolean isTrustedHomePage() {
+        if (webView == null) return false;
+        try {
+            Uri page = Uri.parse(webView.getUrl() == null ? "" : webView.getUrl());
+            return "https".equalsIgnoreCase(page.getScheme())
+                    && HOME_HOST.equalsIgnoreCase(page.getHost());
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private String safeDownloadName(String raw, String url, String mimeType) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isEmpty()) {
+            try { name = URLUtil.guessFileName(url, null, mimeType); }
+            catch (Exception ignored) {}
+        }
+        if (name == null || name.trim().isEmpty()) name = "SubHub-subtitle.srt";
+        name = name.replaceAll("[\\/:*?\\"<>|\\r\\n]+", "_").trim();
+        if (name.isEmpty()) name = "SubHub-subtitle.srt";
+
+        String lower = name.toLowerCase(Locale.US);
+        if (!lower.contains(".")) {
+            String mt = mimeType == null ? "" : mimeType.toLowerCase(Locale.US);
+            if (mt.contains("vtt")) name += ".vtt";
+            else if (mt.contains("zip")) name += ".zip";
+            else name += ".srt";
+        }
+        if (name.length() > 140) {
+            int dot = name.lastIndexOf('.');
+            String ext = dot > 0 && dot >= name.length() - 10 ? name.substring(dot) : "";
+            name = name.substring(0, Math.max(1, 140 - ext.length())) + ext;
+        }
+        return name;
+    }
+
+    private void installDownloadSupport() {
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimeType, contentLength) -> {
+            if (!isTrustedHomePage()) {
+                if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
+                    openExternal(url);
+                }
+                return;
+            }
+            String name;
+            try { name = URLUtil.guessFileName(url, contentDisposition, mimeType); }
+            catch (Exception ignored) { name = "SubHub-subtitle.srt"; }
+            handleDownloadRequest(url, name, userAgent, mimeType);
+        });
+    }
+
+    private void installDownloadInterceptor(WebView view) {
+        if (view == null || !isTrustedHomePage()) return;
+        String token = JSONObject.quote(downloadBridgeToken);
+        String js =
+                "(function(){try{"
+                        + "if(window.__subhubAndroidDownloadV1)return;"
+                        + "window.__subhubAndroidDownloadV1=true;"
+                        + "var TOKEN=" + token + ";"
+                        + "document.addEventListener('click',function(ev){try{"
+                        + "var t=ev.target;"
+                        + "var a=t&&t.closest?t.closest('a'):null;"
+                        + "if(!a)return;"
+                        + "var href=String(a.href||'');"
+                        + "var dl=a.hasAttribute('download');"
+                        + "if(!dl&&href.indexOf('blob:')!==0&&href.indexOf('data:')!==0)return;"
+                        + "var name=String(a.getAttribute('download')||'');"
+                        + "if(href.indexOf('http://')===0||href.indexOf('https://')===0){"
+                        + "ev.preventDefault();ev.stopPropagation();"
+                        + "SubHubAndroidBridge.downloadUrl(TOKEN,href,name);return;}"
+                        + "if(href.indexOf('data:')===0){"
+                        + "ev.preventDefault();ev.stopPropagation();"
+                        + "SubHubAndroidBridge.saveDataUrl(TOKEN,href,name);return;}"
+                        + "if(href.indexOf('blob:')===0){"
+                        + "ev.preventDefault();ev.stopPropagation();"
+                        + "fetch(href).then(function(r){return r.blob();}).then(function(b){"
+                        + "if(b.size>" + MAX_SUBTITLE_DOWNLOAD_BYTES + ")throw new Error('too-large');"
+                        + "var fr=new FileReader();"
+                        + "fr.onload=function(){SubHubAndroidBridge.saveDataUrl(TOKEN,String(fr.result||''),name);};"
+                        + "fr.readAsDataURL(b);"
+                        + "}).catch(function(){SubHubAndroidBridge.downloadFailed(TOKEN);});"
+                        + "}"
+                        + "}catch(e){}},true);"
+                        + "}catch(e){}})();";
+        view.evaluateJavascript(js, null);
+    }
+
+    private void captureBlobFromPage(String blobUrl, String suggestedName) {
+        if (webView == null || !isTrustedHomePage()) return;
+        String token = JSONObject.quote(downloadBridgeToken);
+        String js =
+                "(function(){try{fetch(" + JSONObject.quote(blobUrl) + ")"
+                        + ".then(function(r){return r.blob();})"
+                        + ".then(function(b){if(b.size>" + MAX_SUBTITLE_DOWNLOAD_BYTES
+                        + ")throw new Error('too-large');var fr=new FileReader();"
+                        + "fr.onload=function(){SubHubAndroidBridge.saveDataUrl(" + token
+                        + ",String(fr.result||'')," + JSONObject.quote(suggestedName == null ? "" : suggestedName)
+                        + ");};fr.readAsDataURL(b);})"
+                        + ".catch(function(){SubHubAndroidBridge.downloadFailed(" + token + ");});"
+                        + "}catch(e){SubHubAndroidBridge.downloadFailed(" + token + ");}})();";
+        webView.evaluateJavascript(js, null);
+    }
+
+    private void handleDownloadRequest(
+            String url,
+            String suggestedName,
+            String userAgent,
+            String mimeType
+    ) {
+        if (!isTrustedHomePage() || url == null || url.trim().isEmpty()) return;
+        String cleanUrl = url.trim();
+
+        if (cleanUrl.startsWith("blob:")) {
+            captureBlobFromPage(cleanUrl, suggestedName);
+            return;
+        }
+        if (cleanUrl.startsWith("data:")) {
+            final String data = cleanUrl;
+            final String name = suggestedName;
+            new Thread(() -> saveDataUrlInternal(data, name), "SubHub-data-download").start();
+            return;
+        }
+
+        Uri uri;
+        try { uri = Uri.parse(cleanUrl); }
+        catch (Exception e) { return; }
+
+        String scheme = uri.getScheme();
+        if (!"https".equalsIgnoreCase(scheme) && !"http".equalsIgnoreCase(scheme)) return;
+
+        String fileName = safeDownloadName(suggestedName, cleanUrl, mimeType);
+        try {
+            DownloadManager.Request request = new DownloadManager.Request(uri);
+            request.setTitle(fileName);
+            request.setDescription("ترجمة SubHub");
+            request.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+            );
+            request.setAllowedOverMetered(true);
+            request.setAllowedOverRoaming(true);
+
+            if (mimeType != null && !mimeType.trim().isEmpty()) request.setMimeType(mimeType);
+
+            String ua = userAgent;
+            if (ua == null || ua.trim().isEmpty()) {
+                try { ua = webView.getSettings().getUserAgentString(); }
+                catch (Exception ignored) {}
+            }
+            if (ua != null && !ua.trim().isEmpty()) request.addRequestHeader("User-Agent", ua);
+
+            String cookies = CookieManager.getInstance().getCookie(cleanUrl);
+            if (cookies != null && !cookies.trim().isEmpty()) {
+                request.addRequestHeader("Cookie", cookies);
+            }
+
+            String referer = webView.getUrl();
+            if (referer != null && referer.startsWith("https://")) {
+                request.addRequestHeader("Referer", referer);
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName);
+            }
+
+            DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+            if (manager == null) throw new IllegalStateException("download-manager-unavailable");
+            manager.enqueue(request);
+            Toast.makeText(this, "بدأ تنزيل الترجمة", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "تعذر بدء تنزيل الترجمة", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String mimeFromDataUrl(String header) {
+        if (header == null || !header.startsWith("data:")) return "text/plain";
+        int semi = header.indexOf(';');
+        String mime = semi > 5 ? header.substring(5, semi) : header.substring(5);
+        return mime == null || mime.trim().isEmpty() ? "text/plain" : mime.trim();
+    }
+
+    private void saveDataUrlInternal(String dataUrl, String suggestedName) {
+        try {
+            if (dataUrl == null || dataUrl.length() > 24 * 1024 * 1024) {
+                throw new IllegalArgumentException("subtitle-download-too-large");
+            }
+            int comma = dataUrl.indexOf(',');
+            if (comma <= 4) throw new IllegalArgumentException("bad-data-url");
+
+            String header = dataUrl.substring(0, comma);
+            String payload = dataUrl.substring(comma + 1);
+            byte[] bytes;
+            if (header.toLowerCase(Locale.US).contains(";base64")) {
+                bytes = Base64.decode(payload, Base64.DEFAULT);
+            } else {
+                bytes = URLDecoder.decode(payload, "UTF-8").getBytes(StandardCharsets.UTF_8);
+            }
+            if (bytes.length <= 0 || bytes.length > MAX_SUBTITLE_DOWNLOAD_BYTES) {
+                throw new IllegalArgumentException("subtitle-download-size");
+            }
+
+            String mime = mimeFromDataUrl(header);
+            String name = safeDownloadName(suggestedName, "", mime);
+            writeDownloadedBytes(bytes, name, mime);
+            ui.post(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    Toast.makeText(this, "تم تنزيل الترجمة", Toast.LENGTH_SHORT).show();
+                }
+            });
+        } catch (Exception e) {
+            ui.post(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    Toast.makeText(this, "تعذر تنزيل الترجمة", Toast.LENGTH_LONG).show();
+                }
+            });
+        }
+    }
+
+    private void writeDownloadedBytes(byte[] bytes, String fileName, String mimeType) throws Exception {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentResolver resolver = getContentResolver();
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
+            values.put(MediaStore.MediaColumns.MIME_TYPE,
+                    mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType);
+            values.put(
+                    MediaStore.MediaColumns.RELATIVE_PATH,
+                    Environment.DIRECTORY_DOWNLOADS + "/SubHub"
+            );
+            values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+            Uri item = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (item == null) throw new IllegalStateException("download-create-failed");
+            boolean ok = false;
+            try (OutputStream out = resolver.openOutputStream(item, "w")) {
+                if (out == null) throw new IllegalStateException("download-open-failed");
+                out.write(bytes);
+                out.flush();
+                ok = true;
+            } finally {
+                if (ok) {
+                    ContentValues done = new ContentValues();
+                    done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                    resolver.update(item, done, null, null);
+                } else {
+                    resolver.delete(item, null, null);
+                }
+            }
+            return;
+        }
+
+        File base = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (base == null) base = getFilesDir();
+        File dir = new File(base, "SubHub");
+        if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("download-dir-failed");
+
+        File outFile = new File(dir, fileName);
+        if (outFile.exists()) {
+            int dot = fileName.lastIndexOf('.');
+            String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+            String ext = dot > 0 ? fileName.substring(dot) : "";
+            int n = 2;
+            while (outFile.exists() && n < 1000) {
+                outFile = new File(dir, stem + "-" + n + ext);
+                n++;
+            }
+        }
+
+        try (FileOutputStream out = new FileOutputStream(outFile)) {
+            out.write(bytes);
+            out.flush();
+        }
+    }
 
     private void ensureNativeIdentity() {
         if (nativePrefs == null) return;
@@ -991,6 +1279,48 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void syncSubscription() {
             ui.post(() -> syncNativeSubscription(true));
+        }
+
+
+        @JavascriptInterface
+        public void downloadUrl(String token, String url, String suggestedName) {
+            if (!downloadBridgeToken.equals(token)) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                handleDownloadRequest(
+                        url,
+                        suggestedName,
+                        webView == null ? "" : webView.getSettings().getUserAgentString(),
+                        ""
+                );
+            });
+        }
+
+        @JavascriptInterface
+        public void saveDataUrl(String token, String dataUrl, String suggestedName) {
+            if (!downloadBridgeToken.equals(token)) return;
+            if (dataUrl == null || dataUrl.length() > 24 * 1024 * 1024) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                new Thread(
+                        () -> saveDataUrlInternal(dataUrl, suggestedName),
+                        "SubHub-blob-download"
+                ).start();
+            });
+        }
+
+        @JavascriptInterface
+        public void downloadFailed(String token) {
+            if (!downloadBridgeToken.equals(token)) return;
+            ui.post(() -> {
+                if (isTrustedHomePage() && !isFinishing() && !isDestroyed()) {
+                    Toast.makeText(
+                            MainActivity.this,
+                            "تعذر تنزيل الترجمة",
+                            Toast.LENGTH_LONG
+                    ).show();
+                }
+            });
         }
 
         @JavascriptInterface

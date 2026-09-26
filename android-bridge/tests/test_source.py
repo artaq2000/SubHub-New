@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.6'" in site
+assert "BRIDGE_BUILD = '322.3.7'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 15" in gradle
-assert "versionName '322.3.6'" in gradle
+assert "versionCode 16" in gradle
+assert "versionName '322.3.7'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -71,3 +71,12 @@ assert (root/'app/src/main/res/values/colors.xml').exists()
 
 assert (root/'app/src/main/res/drawable-nodpi/subhub_launcher_pretty_32234.webp').exists()
 
+
+# Android subtitle downloads must work inside the app, including authenticated and blob URLs.
+assert 'webView.setDownloadListener' in main
+assert 'DownloadManager.Request' in main
+assert 'CookieManager.getInstance().getCookie(cleanUrl)' in main
+assert 'installDownloadInterceptor' in main
+assert 'saveDataUrl' in main
+assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
+assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
