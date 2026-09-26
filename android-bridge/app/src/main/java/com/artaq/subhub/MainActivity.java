@@ -370,10 +370,10 @@ public class MainActivity extends Activity {
             catch (Exception ignored) {}
         }
         if (name == null || name.trim().isEmpty()) name = "SubHub-subtitle.srt";
-        name = name.replace('\\\\', '_').replace('/', '_').replace(':', '_')
+        name = name.replace((char) 92, '_').replace('/', '_').replace(':', '_')
                 .replace('*', '_').replace('?', '_').replace('"', '_')
                 .replace('<', '_').replace('>', '_').replace('|', '_')
-                .replace('\\r', '_').replace('\\n', '_').trim();
+                .replace((char) 13, '_').replace((char) 10, '_').trim();
         if (name.isEmpty()) name = "SubHub-subtitle.srt";
 
         String lower = name.toLowerCase(Locale.US);
