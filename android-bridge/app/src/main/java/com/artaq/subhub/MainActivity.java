@@ -64,8 +64,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.46";
-    private static final int NATIVE_VERSION_CODE = 55;
+    private static final String NATIVE_VERSION = "322.3.47";
+    private static final int NATIVE_VERSION_CODE = 56;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -244,7 +244,7 @@ public class MainActivity extends Activity {
         webView.addJavascriptInterface(new NativeBridge(), "SubHubAndroidBridge");
         installDownloadSupport();
         clockScript = readAsset("player_clock.js");
-        siteBridgeScript = readAsset("site_bridge.js") + "\n" + readAsset("direct_stream.js");
+        siteBridgeScript = readAsset("site_bridge.js") + "\n" + readAsset("direct_stream.js") + "\n" + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(
