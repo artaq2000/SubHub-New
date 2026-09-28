@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.33';
+  const BRIDGE_BUILD = '322.3.34';
 
   let lastSig = '';
   let clockSource = '';
@@ -429,7 +429,6 @@
         if (active) {
           vidSrcProviderUiInactiveTicksV3233 = 0;
           try { ensureVidSrcProviderShortcutsV3231(); } catch (_) {}
-      try { startVidSrcProviderUiSyncV3233(); } catch (_) {}
         } else {
           vidSrcProviderUiInactiveTicksV3233 += 1;
           if (vidSrcProviderUiInactiveTicksV3233 >= 6) {
@@ -496,6 +495,7 @@
       try { ensureVidSrcSubtitleGestureV3229(); } catch (_) {}
       try { syncVidSrcSubPanelLayoutV3230(); } catch (_) {}
       try { ensureVidSrcProviderShortcutsV3231(); } catch (_) {}
+      try { startVidSrcProviderUiSyncV3233(); } catch (_) {}
 
       if (frame) {
         try { frame.removeAttribute('allowfullscreen'); } catch (_) {}
@@ -644,6 +644,9 @@
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-play{font-size:20px;}',
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-time{',
         'min-width:92px;font-size:12px;}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]:not(.pseudo-fullscreen).subhub-subpanel-open-v3230 #subhub-vidsrc-takeover-v3222 .sh-v3222-center,',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]:not(.pseudo-fullscreen).subhub-subpanel-open-v3230 #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
+        'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
         'min-height:54px;padding-top:8px!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #subhub-vidsrc-takeover-v3222 button[data-sh3222="back"]{',
