@@ -511,85 +511,84 @@ public final class DirectStreamPlayer {
         enterImmersive();
     }
 
-    private void toggleQuickSettings() {
-        if (panelOpen && "إعدادات سريعة".contentEquals(panelTitle.getText())) {
-            hidePanel();
-        } else {
-            showQuickSettings();
-        }
+    private void toggleMenu() {
+        menuOpen = !menuOpen;
+        toolbar.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
+        quickStrip.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
+        if (!menuOpen) hidePanel();
+        enterImmersive();
     }
 
-    private void showQuickSettings() {
-        panelTitle.setText("إعدادات سريعة");
-        panelBody.removeAllViews();
-
-        LinearLayout rows = new LinearLayout(activity);
-        rows.setOrientation(LinearLayout.VERTICAL);
-        rows.setGravity(Gravity.CENTER);
-
-        HorizontalScrollView scroll1 = new HorizontalScrollView(activity);
-        scroll1.setHorizontalScrollBarEnabled(false);
-        LinearLayout row1 = new LinearLayout(activity);
-        row1.setGravity(Gravity.CENTER);
-        addQuick(row1, "A−", () -> adjustSubtitleSize(-2));
-        addQuick(row1, "A+", () -> adjustSubtitleSize(2));
-        addQuick(row1, "↑", () -> adjustSubtitlePosition(4));
-        addQuick(row1, "↓", () -> adjustSubtitlePosition(-4));
-        addQuick(row1, "👁", () -> {
-            captions = !captions;
-            if (!captions) subtitle.setVisibility(View.GONE);
-        });
-        addQuick(row1, "▣", () -> {
-            subtitleBackground = !subtitleBackground;
-            prefs.edit().putBoolean("background", subtitleBackground).apply();
-            applySubtitleBackground();
-        });
-        scroll1.addView(row1, new HorizontalScrollView.LayoutParams(-2, dp(48)));
-        rows.addView(scroll1, new LinearLayout.LayoutParams(-1, dp(50)));
-
-        HorizontalScrollView scroll2 = new HorizontalScrollView(activity);
-        scroll2.setHorizontalScrollBarEnabled(false);
-        LinearLayout row2 = new LinearLayout(activity);
-        row2.setGravity(Gravity.CENTER);
-        addQuick(row2, "−0.5", () -> adjustSync(500));
-        addQuick(row2, "0", () -> {
-            subtitleOffsetMs = 0;
-            prefs.edit().putLong("offset_ms", 0).apply();
-        });
-        addQuick(row2, "+0.5", () -> adjustSync(-500));
-        addQuick(row2, "ملاءمة", this::cycleResizeMode);
-        scroll2.addView(row2, new HorizontalScrollView.LayoutParams(-2, dp(48)));
-        rows.addView(scroll2, new LinearLayout.LayoutParams(-1, dp(50)));
-
-        panelBody.addView(rows, new LinearLayout.LayoutParams(-1, -1));
-        showPanel(false);
+    private void collapseMenu() {
+        menuOpen = false;
+        toolbar.setVisibility(View.GONE);
+        quickStrip.setVisibility(View.GONE);
+        hidePanel();
+        enterImmersive();
     }
 
-    private void addQuick(LinearLayout row, String text, Runnable action) {
-        TextView v = chip(text, 14, action);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(74), dp(42));
-        lp.setMargins(dp(3), dp(2), dp(3), dp(2));
-        row.addView(v, lp);
+    private void addCompactQuick(String text, Runnable action) {
+        TextView v = chip(text, 13, action);
+        v.setMinWidth(0);
+        v.setMinimumWidth(0);
+        v.setPadding(dp(5), 0, dp(5), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(54), dp(42));
+        lp.setMargins(dp(2), 0, dp(2), 0);
+        quickRow.addView(v, lp);
     }
 
     private void showPanel(boolean listPanel) {
         panelOpen = true;
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) panel.getLayoutParams();
         boolean landscape = root.getWidth() > root.getHeight();
+        int maxWidth = Math.max(dp(260), root.getWidth() - dp(28));
+        lp.width = Math.min(landscape ? dp(380) : dp(420), maxWidth);
         lp.height = listPanel
-                ? (landscape ? dp(220) : dp(310))
-                : (landscape ? dp(150) : dp(160));
+                ? (landscape ? dp(220) : dp(280))
+                : (landscape ? dp(190) : dp(240));
+        lp.gravity = Gravity.TOP | Gravity.END;
+        lp.topMargin = dp(68);
+        lp.rightMargin = dp(14);
         panel.setLayoutParams(lp);
         panel.setVisibility(View.VISIBLE);
-        positionSubtitle();
         enterImmersive();
     }
 
     private void hidePanel() {
         panelOpen = false;
         panel.setVisibility(View.GONE);
-        positionSubtitle();
         enterImmersive();
+    }
+
+    private void showColorOptions() {
+        panelTitle.setText("لون الترجمة");
+        panelBody.removeAllViews();
+
+        LinearLayout list = new LinearLayout(activity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(4), dp(2), dp(4), dp(6));
+
+        addColorChoice(list, "أبيض", Color.WHITE);
+        addColorChoice(list, "أصفر", Color.rgb(255, 222, 89));
+        addColorChoice(list, "سماوي", Color.rgb(107, 224, 255));
+        addColorChoice(list, "أخضر فاتح", Color.rgb(168, 255, 180));
+
+        panelBody.addView(list, new LinearLayout.LayoutParams(-1, -1));
+        showPanel(true);
+    }
+
+    private void addColorChoice(LinearLayout list, String name, int color) {
+        TextView item = chip((subtitleColor == color ? "✓ " : "") + name, 14, () -> {
+            subtitleColor = color;
+            prefs.edit().putInt("subtitle_color", subtitleColor).apply();
+            subtitle.setTextColor(subtitleColor);
+            applySubtitleText(currentSubtitleText);
+            hidePanel();
+        });
+        item.setTextColor(color);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
+        lp.setMargins(0, dp(2), 0, dp(2));
+        list.addView(item, lp);
     }
 
     private void quality() {
