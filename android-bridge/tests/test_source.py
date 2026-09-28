@@ -43,7 +43,14 @@ assert "versionCode 56" in gradle
 assert "versionName '322.3.47'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
-assert 'getNativeVersion' in main\nassert 'onShowFileChooser' in main\nassert 'FileChooserParams.parseResult' in main\nr2upload=(root/'app/src/main/assets/r2_upload.js').read_text(encoding='utf-8')\nassert 'subhubAndroidR2ResumeV347' in r2upload\nassert '/api/create-multipart' in r2upload\nassert '/api/complete-multipart' in r2upload\nassert 'localStorage' in r2upload
+assert 'getNativeVersion' in main
+assert 'onShowFileChooser' in main
+assert 'FileChooserParams.parseResult' in main
+r2upload=(root/'app/src/main/assets/r2_upload.js').read_text(encoding='utf-8')
+assert 'subhubAndroidR2ResumeV347' in r2upload
+assert '/api/create-multipart' in r2upload
+assert '/api/complete-multipart' in r2upload
+assert 'localStorage' in r2upload
 assert 'isAppPaired' in main
 assert 'UPDATES_WORKER_URL' in main
 assert '<string name="app_name">SubHub</string>' in (root/'app/src/main/res/values/strings.xml').read_text(encoding='utf-8')
