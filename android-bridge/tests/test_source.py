@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.23'" in site
+assert "BRIDGE_BUILD = '322.3.24'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 32" in gradle
-assert "versionName '322.3.23'" in gradle
+assert "versionCode 33" in gradle
+assert "versionName '322.3.24'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.23).
+# VidSrc owner-only Android test guard (322.3.24).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -199,3 +199,11 @@ assert '.video-modal-box:not(.pseudo-fullscreen)' in site
 assert "forceVidSrcCaptionsOffV3221();\n      suppressVidSrcCaptionsV3215();" not in js
 assert '[class*="subtitle" i]' in js
 assert '[class*="caption" i]' in js
+
+assert 'data-sh3222="fullscreen"' in site
+assert "window.toggleEmbedFullscreen()" in site
+assert "setVidSrcTakeoverActiveV3222(true)" in site
+assert 'setVidSrcCaptionScrubV3224' in js
+assert 'scrubVidSrcProviderCaptionsV3224' in js
+assert 'setInterval(' in js
+assert 'data-subhub-hidden-overlay-v3224' in js
