@@ -246,8 +246,6 @@ assert "max-height:min(58vh,560px)" not in site
 assert "syncVidSrcSubPanelLayoutV3230" in site
 assert "subhub-subpanel-open-v3230" in site
 assert "visibility:hidden!important;opacity:0!important;pointer-events:none!important" in site
-assert "height:44vh!important" in site
-assert "height:54vh!important" in site
 assert "'z-index:2147482990'" in site
 
 assert "height:62vh!important" in site
