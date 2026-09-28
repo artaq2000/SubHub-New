@@ -359,6 +359,8 @@
   const vidSrcTakeoverControlsV3222 = new WeakMap();
   let vidSrcTakeoverActiveV3224 = false;
   let vidSrcCaptionScrubTimerV3224 = 0;
+  let vidSrcProviderUiScrubTimerV3234 = 0;
+  const vidSrcProviderUiHiddenV3234 = new WeakMap();
 
   function vidSrcDeepRootsV3226() {
     const roots = [document];
@@ -519,6 +521,130 @@
     } catch (_) {}
   }
 
+  function scrubVidSrcProviderUiV3234() {
+    if (!vidSrcTakeoverActiveV3224) return;
+
+    const selector = [
+      '.vjs-control-bar',
+      '.vjs-big-play-button',
+      '.jw-controlbar',
+      '.jw-display-icon-container',
+      '.jw-display-controls',
+      '.plyr__controls',
+      '.plyr__control--overlaid',
+      '.shaka-controls-container',
+      '.shaka-play-button-container',
+      '.shaka-play-button',
+      '.vds-controls',
+      '.vds-play-button',
+      '[data-media-controls]',
+      'media-control-bar',
+      'media-play-button',
+      'media-seek-backward-button',
+      'media-seek-forward-button',
+      'media-time-range',
+      'media-time-display',
+      'media-duration-display',
+      'media-mute-button',
+      'media-caption-button',
+      'media-settings-menu-button',
+      'media-fullscreen-button',
+      'button[aria-label*="play" i]',
+      'button[aria-label*="pause" i]',
+      '[role="button"][aria-label*="play" i]',
+      '[role="button"][aria-label*="pause" i]',
+      '[title*="play" i]',
+      '[title*="pause" i]',
+      '[aria-label*="rewind" i]',
+      '[aria-label*="forward" i]',
+      '[title*="rewind" i]',
+      '[title*="forward" i]',
+      '[class*="big-play" i]',
+      '[class*="play-button" i]',
+      '[class*="player-controls" i]',
+      '[class*="video-controls" i]',
+      '[class*="control-bar" i]',
+      '[class*="controlbar" i]'
+    ].join(',');
+
+    const roots = typeof vidSrcDeepRootsV3226 === 'function'
+      ? vidSrcDeepRootsV3226()
+      : [document];
+
+    roots.forEach(function (root) {
+      try {
+        root.querySelectorAll(selector).forEach(function (el) {
+          try {
+            if (!el || el.tagName === 'VIDEO') return;
+            if (!vidSrcProviderUiHiddenV3234.has(el)) {
+              vidSrcProviderUiHiddenV3234.set(el, {
+                display: el.style.getPropertyValue('display') || '',
+                displayPriority: el.style.getPropertyPriority('display') || '',
+                visibility: el.style.getPropertyValue('visibility') || '',
+                visibilityPriority: el.style.getPropertyPriority('visibility') || '',
+                opacity: el.style.getPropertyValue('opacity') || '',
+                opacityPriority: el.style.getPropertyPriority('opacity') || '',
+                pointerEvents: el.style.getPropertyValue('pointer-events') || '',
+                pointerEventsPriority: el.style.getPropertyPriority('pointer-events') || ''
+              });
+            }
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+            el.style.setProperty('pointer-events', 'none', 'important');
+            el.setAttribute('data-subhub-provider-ui-hidden-v3234', '1');
+          } catch (_) {}
+        });
+      } catch (_) {}
+    });
+  }
+
+  function restoreVidSrcProviderUiV3234() {
+    try {
+      vidSrcDeepQueryAllV3226('[data-subhub-provider-ui-hidden-v3234="1"]').forEach(function (el) {
+        try {
+          const old = vidSrcProviderUiHiddenV3234.get(el);
+          if (old) {
+            old.display
+              ? el.style.setProperty('display', old.display, old.displayPriority)
+              : el.style.removeProperty('display');
+            old.visibility
+              ? el.style.setProperty('visibility', old.visibility, old.visibilityPriority)
+              : el.style.removeProperty('visibility');
+            old.opacity
+              ? el.style.setProperty('opacity', old.opacity, old.opacityPriority)
+              : el.style.removeProperty('opacity');
+            old.pointerEvents
+              ? el.style.setProperty('pointer-events', old.pointerEvents, old.pointerEventsPriority)
+              : el.style.removeProperty('pointer-events');
+          } else {
+            el.style.removeProperty('display');
+            el.style.removeProperty('visibility');
+            el.style.removeProperty('opacity');
+            el.style.removeProperty('pointer-events');
+          }
+          el.removeAttribute('data-subhub-provider-ui-hidden-v3234');
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function setVidSrcProviderUiScrubV3234(active) {
+    clearInterval(vidSrcProviderUiScrubTimerV3234);
+    vidSrcProviderUiScrubTimerV3234 = 0;
+
+    if (!active) {
+      restoreVidSrcProviderUiV3234();
+      return;
+    }
+
+    scrubVidSrcProviderUiV3234();
+    vidSrcProviderUiScrubTimerV3234 = setInterval(
+      scrubVidSrcProviderUiV3234,
+      250
+    );
+  }
+
   function setVidSrcCaptionScrubV3224(active) {
     vidSrcTakeoverActiveV3224 = !!active;
     clearInterval(vidSrcCaptionScrubTimerV3224);
@@ -544,6 +670,7 @@
         if (!active) html.classList.remove('subhub-provider-captions-off-v3231');
       }
       setVidSrcCaptionScrubV3224(!!active);
+      setVidSrcProviderUiScrubV3234(!!active);
 
       let style = document.getElementById('__subhub_vidsrc_takeover_v3222');
       if (!style) {
