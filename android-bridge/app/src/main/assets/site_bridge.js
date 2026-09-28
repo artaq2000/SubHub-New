@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.34';
+  const BRIDGE_BUILD = '322.3.35';
 
   let lastSig = '';
   let clockSource = '';
@@ -374,9 +374,16 @@
       if (!q) {
         q = document.createElement('button');
         q.type = 'button';
-        q.className = 'subhub-provider-shortcut-v3231';
+        const closeClasses =
+          closeEl && typeof closeEl.className === 'string'
+            ? String(closeEl.className || '').trim()
+            : '';
+        q.className =
+          (closeClasses ? closeClasses + ' ' : '') +
+          'subhub-provider-shortcut-v3231';
         q.setAttribute('data-provider-action', 'quality');
         q.setAttribute('aria-label', 'جودة المصدر');
+        q.setAttribute('title', 'جودة المصدر');
         q.textContent = 'HD';
         q.addEventListener('click', function (ev) {
           try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
@@ -397,6 +404,10 @@
         if (q.parentElement !== controls || q.nextElementSibling !== anchor) {
           controls.insertBefore(q, anchor || null);
         }
+
+        // The old close button remains in the DOM but hidden. HD takes its slot.
+        q.style.setProperty('order', '', '');
+        q.removeAttribute('hidden');
       } catch (_) {}
 
       try {
@@ -421,9 +432,13 @@
       const tick = function () {
         let active = false;
         try {
-          active =
-            typeof isVidSrcFrameActiveV328 === 'function' &&
-            isVidSrcFrameActiveV328();
+          const modal = document.querySelector(
+            '#embedPlayerModal.open,#embedPlayerModal.inline-player-v265.open'
+          );
+          const box = document.querySelector(
+            '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]'
+          );
+          active = !!(modal && box);
         } catch (_) {}
 
         if (active) {
@@ -591,7 +606,7 @@
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-center{position:absolute;left:50%;top:50%;',
         'transform:translate(-50%,-50%);width:76px;height:76px;border-radius:50%;',
         'border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.52);color:#fff;',
-        'font-size:34px;display:flex;align-items:center;justify-content:center;pointer-events:auto;}',
+        'font-size:34px;display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-bar{position:absolute;left:18px;right:18px;bottom:18px;',
         'padding:12px 14px;border-radius:18px;background:linear-gradient(180deg,rgba(0,0,0,.18),rgba(0,0,0,.78));',
         'display:flex;align-items:center;gap:10px;pointer-events:auto;transition:opacity .18s ease;}',
