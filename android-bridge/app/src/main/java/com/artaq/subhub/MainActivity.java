@@ -22,6 +22,7 @@ import android.os.SystemClock;
 import android.util.TypedValue;
 import android.util.Base64;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -62,8 +63,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.12";
-    private static final int NATIVE_VERSION_CODE = 21;
+    private static final String NATIVE_VERSION = "322.3.13";
+    private static final int NATIVE_VERSION_CODE = 22;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -293,7 +294,7 @@ public class MainActivity extends Activity {
                 }
 
                 /*
-                 * v322.3.12 VidSrc test guard:
+                 * v322.3.13 VidSrc test guard:
                  * - new windows are already rejected by WebChromeClient;
                  * - while the owner-only VidSrc player is open, never let an ad
                  *   replace SubHub's top page or launch an external app/site;
@@ -1379,6 +1380,37 @@ public class MainActivity extends Activity {
                         activeClockSeenAt = 0L;
                         activeClockScore = -100000.0;
                     }
+                }
+            });
+        }
+
+
+        @JavascriptInterface
+        public void tapVidSrc(String token, double normalizedX, double normalizedY) {
+            if (!vidSrcGuardToken.equals(token)) return;
+
+            ui.post(() -> {
+                if (!vidSrcGuardActive || !isTrustedHomePage() || webView == null) return;
+
+                double nx = Math.max(0.02d, Math.min(0.98d, normalizedX));
+                double ny = Math.max(0.02d, Math.min(0.98d, normalizedY));
+                float x = (float) (webView.getWidth() * nx);
+                float y = (float) (webView.getHeight() * ny);
+                long downAt = SystemClock.uptimeMillis();
+
+                MotionEvent down = MotionEvent.obtain(
+                        downAt, downAt, MotionEvent.ACTION_DOWN, x, y, 0
+                );
+                MotionEvent up = MotionEvent.obtain(
+                        downAt, downAt + 55L, MotionEvent.ACTION_UP, x, y, 0
+                );
+
+                try {
+                    webView.dispatchTouchEvent(down);
+                    webView.dispatchTouchEvent(up);
+                } finally {
+                    down.recycle();
+                    up.recycle();
                 }
             });
         }
