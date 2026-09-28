@@ -94,7 +94,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout root;
     private WebView webView;
-    private DirectStreamPlayer directStreamPlayer;
+    private DirectStreamCapture directStreamCapture;
     private String directStreamSession = "";
     private FrameLayout fullScreenLayer;
     private View customView;
@@ -1375,7 +1375,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (directStreamPlayer != null) { directStreamPlayer.close(); return; }
+        if (directStreamCapture != null) { directStreamCapture.close(true); return; }
         if (customView != null) {
             exitFullScreen();
             return;
@@ -1403,13 +1403,12 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
-        if (directStreamPlayer != null) directStreamPlayer.pause();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
-        if (directStreamPlayer != null) directStreamPlayer.close();
+        if (directStreamCapture != null) directStreamCapture.close(false);
         ui.removeCallbacksAndMessages(null);
 
         if (webView != null) {
@@ -1431,40 +1430,54 @@ public class MainActivity extends Activity {
                     JSONObject config = new JSONObject(raw);
                     String id = config.optString("movieId");
                     String session = config.optString("session");
-                    if (!id.matches("[A-Za-z0-9_-]{1,80}") || !session.matches("[A-Za-z0-9_-]{1,100}")) return;
-                    if (directStreamPlayer != null) directStreamPlayer.close();
+                    String mode = config.optString("mode");
+                    if (!"capture_to_r2".equals(mode)) return;
+                    if (!id.matches("[A-Za-z0-9_-]{1,80}") ||
+                            !session.matches("[A-Za-z0-9_-]{1,100}")) return;
+
+                    if (directStreamCapture != null) {
+                        directStreamCapture.close(false);
+                        directStreamCapture = null;
+                    }
+
                     directStreamSession = session;
-                    org.json.JSONArray catalog = config.optJSONArray("catalog");
-                    if (catalog == null) catalog = new org.json.JSONArray();
-                    directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
-                            "https://vidsrc.to/embed/movie/" + Uri.encode(id), catalog,
-                            new DirectStreamPlayer.Listener() {
-                        public void closed() {
-                            directStreamPlayer = null;
-                            directStreamSession = "";
-                            webView.evaluateJavascript("window.__subhubDirectClosed && window.__subhubDirectClosed(" + JSONObject.quote(session) + ")", null);
-                        }
-                        public void subtitleRequested(int index) {
-                            webView.evaluateJavascript("window.__subhubDirectSubtitle && window.__subhubDirectSubtitle(" + JSONObject.quote(session) + "," + index + ")", null);
-                        }
-                    });
-                    directStreamPlayer.selectDefault(config.optInt("defaultIndex", -1));
+                    directStreamCapture = new DirectStreamCapture(
+                            MainActivity.this,
+                            root,
+                            "https://vidsrc.to/embed/movie/" + Uri.encode(id),
+                            new DirectStreamCapture.Listener() {
+                                @Override public void captured(String url) {
+                                    if (!session.equals(directStreamSession)) return;
+                                    directStreamCapture = null;
+                                    String js =
+                                            "window.__subhubDirectCaptured && " +
+                                            "window.__subhubDirectCaptured(" +
+                                            JSONObject.quote(session) + "," +
+                                            JSONObject.quote(url) + ")";
+                                    webView.evaluateJavascript(js, null);
+                                }
+
+                                @Override public void closed() {
+                                    if (!session.equals(directStreamSession)) return;
+                                    directStreamCapture = null;
+                                    directStreamSession = "";
+                                    webView.evaluateJavascript(
+                                            "window.__subhubDirectClosed && " +
+                                            "window.__subhubDirectClosed(" +
+                                            JSONObject.quote(session) + ")",
+                                            null
+                                    );
+                                }
+                            }
+                    );
                 } catch (Exception ignored) {
-                    Toast.makeText(MainActivity.this, "تعذّر فتح المشغّل المباشر", Toast.LENGTH_LONG).show();
+                    Toast.makeText(
+                            MainActivity.this,
+                            "تعذّر جلب البث المباشر",
+                            Toast.LENGTH_LONG
+                    ).show();
                 }
             });
-        }
-
-        @JavascriptInterface
-        public void directStreamSubtitles(String token, String session, int index, String raw, String error) {
-            if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 8000000) return;
-            try {
-                org.json.JSONArray cues = new org.json.JSONArray(raw);
-                ui.post(() -> {
-                    if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session))
-                        directStreamPlayer.setCues(index, cues, error);
-                });
-            } catch (Exception ignored) {}
         }
 
         @JavascriptInterface
