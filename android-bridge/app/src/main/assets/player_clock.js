@@ -3,12 +3,13 @@
   if (window.__subHubClockInstalledV223) return;
   window.__subHubClockInstalledV223 = true;
 
-  const HOST_RE = /(?:^|\.)(?:onlyflix\.to|cdnm\.ink|cdnmovies-stream\.online|cdnmvs\.online)$/i;
+  const HOST_RE = /(?:^|\.)(?:onlyflix\.to|cdnm\.ink|cdnmovies-stream\.online|cdnmvs\.online|vidsrc\.to)$/i;
   if (!HOST_RE.test(location.hostname || '')) return;
 
   function isOnlyFlixHost() { return /(?:^|\.)onlyflix\.to$/i.test(location.hostname || ''); }
   function isShareHost() { return /(?:^|\.)share\.cdnm\.ink$/i.test(location.hostname || ''); }
   function isPlayerHost() { return /(?:^|\.)cdnmovies-stream\.online$/i.test(location.hostname || ''); }
+  function isVidSrcHostV3215() { return /(?:^|\.)vidsrc\.to$/i.test(location.hostname || ''); }
 
   /*
    * Preparation screen ported from the proven SoapDiag 1.16 behavior.
@@ -687,6 +688,24 @@
     maybeSignalReady(video, false);
   }
 
+  function suppressVidSrcCaptionsV3215() {
+    if (!isVidSrcHostV3215()) return;
+
+    try {
+      document.querySelectorAll('video').forEach(function (video) {
+        try {
+          const tracks = video.textTracks;
+          if (!tracks) return;
+          for (let i = 0; i < tracks.length; i++) {
+            try {
+              if (tracks[i].mode !== 'disabled') tracks[i].mode = 'disabled';
+            } catch (_) {}
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
   function scan() {
     try {
       ensurePrepareOverlay();
@@ -699,6 +718,7 @@
       if (isPlayerHost()) detectDeepPlayerUi();
 
       document.querySelectorAll('video').forEach(attach);
+      suppressVidSrcCaptionsV3215();
       chooseBest(activeVideo);
       if (activeVideo) maybeSignalReady(activeVideo, false);
     } catch (_) {}
