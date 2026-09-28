@@ -524,47 +524,32 @@
   function scrubVidSrcProviderUiV3234() {
     if (!vidSrcTakeoverActiveV3224) return;
 
+    /*
+     * 322.3.35:
+     * Hide only the provider's bottom control bars and its rewind/forward
+     * shortcuts. Never hide play/pause or the central play target: doing that
+     * made a reopened VidSrc player look normal but ignore taps.
+     */
     const selector = [
       '.vjs-control-bar',
-      '.vjs-big-play-button',
       '.jw-controlbar',
-      '.jw-display-icon-container',
-      '.jw-display-controls',
       '.plyr__controls',
-      '.plyr__control--overlaid',
       '.shaka-controls-container',
-      '.shaka-play-button-container',
-      '.shaka-play-button',
       '.vds-controls',
-      '.vds-play-button',
-      '[data-media-controls]',
       'media-control-bar',
-      'media-play-button',
       'media-seek-backward-button',
       'media-seek-forward-button',
-      'media-time-range',
-      'media-time-display',
-      'media-duration-display',
-      'media-mute-button',
-      'media-caption-button',
-      'media-settings-menu-button',
-      'media-fullscreen-button',
-      'button[aria-label*="play" i]',
-      'button[aria-label*="pause" i]',
-      '[role="button"][aria-label*="play" i]',
-      '[role="button"][aria-label*="pause" i]',
-      '[title*="play" i]',
-      '[title*="pause" i]',
       '[aria-label*="rewind" i]',
-      '[aria-label*="forward" i]',
+      '[aria-label*="seek backward" i]',
+      '[aria-label*="seek forward" i]',
+      '[aria-label*="back 10" i]',
+      '[aria-label*="forward 10" i]',
       '[title*="rewind" i]',
-      '[title*="forward" i]',
-      '[class*="big-play" i]',
-      '[class*="play-button" i]',
-      '[class*="player-controls" i]',
-      '[class*="video-controls" i]',
-      '[class*="control-bar" i]',
-      '[class*="controlbar" i]'
+      '[title*="seek backward" i]',
+      '[title*="seek forward" i]',
+      '[class*="rewind" i]',
+      '[class*="seek-back" i]',
+      '[class*="seek-forward" i]'
     ].join(',');
 
     const roots = typeof vidSrcDeepRootsV3226 === 'function'
