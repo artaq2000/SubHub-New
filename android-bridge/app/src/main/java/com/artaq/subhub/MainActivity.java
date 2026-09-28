@@ -63,8 +63,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.18";
-    private static final int NATIVE_VERSION_CODE = 27;
+    private static final String NATIVE_VERSION = "322.3.19";
+    private static final int NATIVE_VERSION_CODE = 28;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -78,6 +78,7 @@ public class MainActivity extends Activity {
     private final String downloadBridgeToken = UUID.randomUUID().toString().replace("-", "");
     private final String vidSrcGuardToken = UUID.randomUUID().toString().replace("-", "");
     private volatile boolean vidSrcGuardActive = false;
+    private volatile boolean vidSrcPseudoFullscreenActive = false;
     private long lastVidSrcBlockedAt = 0L;
 
     /*
@@ -294,7 +295,7 @@ public class MainActivity extends Activity {
                 }
 
                 /*
-                 * v322.3.18 VidSrc test guard:
+                 * v322.3.19 VidSrc test guard:
                  * - new windows are already rejected by WebChromeClient;
                  * - while the owner-only VidSrc player is open, never let an ad
                  *   replace SubHub's top page or launch an external app/site;
@@ -1301,6 +1302,58 @@ public class MainActivity extends Activity {
         return b.toString();
     }
 
+    private void applyVidSrcImmersiveUi(boolean enabled) {
+        vidSrcPseudoFullscreenActive = enabled;
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                android.view.WindowInsetsController controller =
+                        getWindow().getInsetsController();
+                if (controller != null) {
+                    if (enabled) {
+                        controller.hide(
+                                WindowInsets.Type.statusBars()
+                                        | WindowInsets.Type.navigationBars()
+                        );
+                        controller.setSystemBarsBehavior(
+                                android.view.WindowInsetsController
+                                        .BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                        );
+                    } else {
+                        controller.show(
+                                WindowInsets.Type.statusBars()
+                                        | WindowInsets.Type.navigationBars()
+                        );
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        if (enabled) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            );
+        } else if (customView == null) {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_VISIBLE
+            );
+            if (webView != null) webView.requestApplyInsets();
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && vidSrcPseudoFullscreenActive) {
+            ui.postDelayed(() -> applyVidSrcImmersiveUi(true), 80L);
+        }
+    }
+
     private void exitFullScreen() {
         if (customView == null) return;
 
@@ -1309,8 +1362,10 @@ public class MainActivity extends Activity {
         customView = null;
         fullScreenLayer.setVisibility(View.GONE);
         webView.setVisibility(View.VISIBLE);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
-        webView.requestApplyInsets();
+        if (!vidSrcPseudoFullscreenActive) {
+            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+            webView.requestApplyInsets();
+        }
 
         if (customViewCallback != null) customViewCallback.onCustomViewHidden();
         customViewCallback = null;
@@ -1393,6 +1448,9 @@ public class MainActivity extends Activity {
                 vidSrcGuardActive = active;
                 if (!active) {
                     lastVidSrcBlockedAt = 0L;
+                    if (vidSrcPseudoFullscreenActive) {
+                        applyVidSrcImmersiveUi(false);
+                    }
                     synchronized (clockLock) {
                         activeClockSource = "";
                         activeClockSeq = -1L;
@@ -1400,6 +1458,21 @@ public class MainActivity extends Activity {
                         activeClockScore = -100000.0;
                     }
                 }
+            });
+        }
+
+
+        @JavascriptInterface
+        public void setVidSrcImmersive(String token, boolean enabled) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (!vidSrcGuardActive || !isTrustedHomePage()) {
+                    if (!enabled && vidSrcPseudoFullscreenActive) {
+                        applyVidSrcImmersiveUi(false);
+                    }
+                    return;
+                }
+                applyVidSrcImmersiveUi(enabled);
             });
         }
 
