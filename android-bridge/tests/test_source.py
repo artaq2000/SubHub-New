@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.25'" in site
+assert "BRIDGE_BUILD = '322.3.26'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 34" in gradle
-assert "versionName '322.3.25'" in gradle
+assert "versionCode 35" in gradle
+assert "versionName '322.3.26'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.25).
+# VidSrc owner-only Android test guard (322.3.26).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -214,3 +214,12 @@ assert "overlay.style.setProperty('bottom'" in site
 assert 'vidSrcTrackHookedV3225' in js
 assert "tracks.addEventListener('change'" in js
 assert '80\n    );' in js
+
+assert "z-index:2147483400" in site
+assert "video-top-controls" in site
+assert "box.appendChild(tools)" in site
+assert "touchmove" in site
+assert "passive:false" in site
+assert "vidSrcDeepQueryAllV3226" in js
+assert "video::cue" in js
+assert "::-webkit-media-text-track-container" in js
