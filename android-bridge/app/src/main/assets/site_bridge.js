@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.10';
+  const BRIDGE_BUILD = '322.3.11';
 
   let lastSig = '';
   let clockSource = '';
@@ -96,6 +96,99 @@
    * sandbox, while the native WebView guard blocks popup/new-window escapes.
    * The public website is untouched.
    */
+
+  function sendVidSrcSafeCommandV3211(command, extra) {
+    try {
+      const frame = document.querySelector('#embedFrameContainer iframe');
+      if (!frame || !frame.contentWindow) return false;
+      const msg = Object.assign({
+        type: 'SUBHUB_SAFE_PLAYER_V1',
+        command: String(command || '')
+      }, (extra && typeof extra === 'object') ? extra : {});
+      frame.contentWindow.postMessage(msg, '*');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function installVidSrcSafeControlsV3211() {
+    try {
+      if (window.__subhubVidSrcSafeControlsV3211) return;
+      window.__subhubVidSrcSafeControlsV3211 = true;
+
+      const oldToggle = window._vidfastToggleV294;
+      const oldSeekDelta = window._vidfastSeekDeltaV294;
+      const oldSeekInput = window._vidfastSeekInputV294;
+
+      window._vidfastToggleV294 = function () {
+        if (
+          typeof isVidSrcFrameActiveV328 === 'function' &&
+          isVidSrcFrameActiveV328()
+        ) {
+          const playing =
+            (typeof _vidfastPlayingV294 !== 'undefined')
+              ? !!_vidfastPlayingV294
+              : false;
+          sendVidSrcSafeCommandV3211(playing ? 'pause' : 'play');
+          try {
+            if (typeof _vidfastSetStateV294 === 'function') {
+              _vidfastSetStateV294(
+                playing ? '⏸ إيقاف…' : '▶ تشغيل…',
+                false
+              );
+            }
+          } catch (_) {}
+          return;
+        }
+        if (typeof oldToggle === 'function') {
+          return oldToggle.apply(this, arguments);
+        }
+      };
+
+      window._vidfastSeekDeltaV294 = function (delta) {
+        if (
+          typeof isVidSrcFrameActiveV328 === 'function' &&
+          isVidSrcFrameActiveV328()
+        ) {
+          const base =
+            (typeof _bridgeTime !== 'undefined')
+              ? Number(_bridgeTime || 0)
+              : 0;
+          const dur = Number(window.__subhubVidSrcDurationV3211 || 0);
+          let t = Math.max(0, base + Number(delta || 0));
+          if (dur > 0) t = Math.min(dur, t);
+          sendVidSrcSafeCommandV3211('seek', {time: t});
+          try {
+            if (typeof _vidfastUiV294 === 'function') {
+              _vidfastUiV294(t, dur, false);
+            }
+          } catch (_) {}
+          return;
+        }
+        if (typeof oldSeekDelta === 'function') {
+          return oldSeekDelta.apply(this, arguments);
+        }
+      };
+
+      window._vidfastSeekInputV294 = function (el) {
+        if (
+          typeof isVidSrcFrameActiveV328 === 'function' &&
+          isVidSrcFrameActiveV328()
+        ) {
+          const dur = Number(window.__subhubVidSrcDurationV3211 || 0);
+          if (!dur || !el) return;
+          const t = dur * (Number(el.value || 0) / 1000);
+          sendVidSrcSafeCommandV3211('seek', {time: t});
+          return;
+        }
+        if (typeof oldSeekInput === 'function') {
+          return oldSeekInput.apply(this, arguments);
+        }
+      };
+    } catch (_) {}
+  }
+
   function installVidSrcNoSandboxV329() {
     try {
       const trial = window.openVidSrcTrialV355;
@@ -175,9 +268,19 @@
 
           syncVidSrcGuardV328(true);
           openEmbedPlayer(url, {
-            vidfastNoSandbox: true
+            vidfastNoSandbox: true,
+            vidfastTimeBridge: true
           });
           syncVidSrcGuardV328(true);
+          installVidSrcSafeControlsV3211();
+          try {
+            if (typeof _vidfastSetStateV294 === 'function') {
+              _vidfastSetStateV294('🛡️ أدوات SubHub مفعّلة', true);
+            }
+          } catch (_) {}
+          setTimeout(function () {
+            sendVidSrcSafeCommandV3211('getStatus');
+          }, 300);
         } finally {
           window.isVidFastUrlV293 = originalDetector;
         }
@@ -284,6 +387,34 @@
     const t = estimatedTime();
 
     try {
+      /*
+       * VidSrc uses the same protected SubHub control skin that was already
+       * proven on VidFast, but its actual clock comes from Android's injected
+       * player bridge instead of provider postMessage events.
+       */
+      if (
+        typeof isVidSrcFrameActiveV328 === 'function' &&
+        isVidSrcFrameActiveV328()
+      ) {
+        if (typeof _bridgeTime !== 'undefined') _bridgeTime = t;
+        if (typeof _bridgeActive !== 'undefined') _bridgeActive = true;
+
+        if (typeof _vidfastUiV294 === 'function') {
+          _vidfastUiV294(
+            t,
+            Number.isFinite(Number(window.__subhubVidSrcDurationV3211))
+              ? Number(window.__subhubVidSrcDurationV3211)
+              : 0,
+            !clockPaused && !clockEnded
+          );
+        }
+
+        if (typeof updateSubtitleOverlay === 'function') {
+          updateSubtitleOverlay();
+        }
+        return true;
+      }
+
       if (typeof _onlyflixStopProbeV317 === 'function') {
         _onlyflixStopProbeV317();
       }
@@ -372,6 +503,26 @@
 
     clockReadyState = Number(payload.readyState || 0);
     clockLinked = true;
+
+    if (
+      typeof isVidSrcFrameActiveV328 === 'function' &&
+      isVidSrcFrameActiveV328()
+    ) {
+      const d = Number(payload.duration || 0);
+      if (Number.isFinite(d) && d > 0) {
+        window.__subhubVidSrcDurationV3211 = d;
+      }
+      try {
+        if (typeof _vidfastSetStateV294 === 'function') {
+          _vidfastSetStateV294(
+            clockReadyState >= 2
+              ? '🛡️ أدوات SubHub مفعّلة'
+              : '⏳ جارٍ تجهيز الفيديو…',
+            clockReadyState >= 2
+          );
+        }
+      } catch (_) {}
+    }
 
     applyClock();
     return true;
@@ -854,6 +1005,7 @@
   installUiPolishV324();
   installOpeningFeedback();
   installVidSrcGuardV328();
+  installVidSrcSafeControlsV3211();
   installVidSrcNoSandboxV329();
 
   wrap(
@@ -871,6 +1023,7 @@
     installUiPolishV324();
     installOpeningFeedback();
     installVidSrcGuardV328();
+    installVidSrcSafeControlsV3211();
     installVidSrcNoSandboxV329();
 
     wrap(

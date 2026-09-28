@@ -62,8 +62,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.10";
-    private static final int NATIVE_VERSION_CODE = 19;
+    private static final String NATIVE_VERSION = "322.3.11";
+    private static final int NATIVE_VERSION_CODE = 20;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -293,7 +293,7 @@ public class MainActivity extends Activity {
                 }
 
                 /*
-                 * v322.3.10 VidSrc test guard:
+                 * v322.3.11 VidSrc test guard:
                  * - new windows are already rejected by WebChromeClient;
                  * - while the owner-only VidSrc player is open, never let an ad
                  *   replace SubHub's top page or launch an external app/site;
@@ -1101,6 +1101,13 @@ public class MainActivity extends Activity {
 
     private boolean trustedPlayerPage(JSONObject p) {
         try {
+            /*
+             * While the owner-only VidSrc test guard is active, player_clock.js
+             * may live in VidSrc's nested CDN/player frame rather than vidsrc.to
+             * itself. Accept those clock packets only for that active session.
+             */
+            if (vidSrcGuardActive) return true;
+
             String host = p.optString("host", "").toLowerCase(Locale.US);
             return host.equals("onlyflix.to") || host.endsWith(".onlyflix.to")
                     || host.equals("cdnm.ink") || host.endsWith(".cdnm.ink")
@@ -1364,7 +1371,15 @@ public class MainActivity extends Activity {
             ui.post(() -> {
                 if (!isTrustedHomePage()) return;
                 vidSrcGuardActive = active;
-                if (!active) lastVidSrcBlockedToastAt = 0L;
+                if (!active) {
+                    lastVidSrcBlockedToastAt = 0L;
+                    synchronized (clockLock) {
+                        activeClockSource = "";
+                        activeClockSeq = -1L;
+                        activeClockSeenAt = 0L;
+                        activeClockScore = -100000.0;
+                    }
+                }
             });
         }
 

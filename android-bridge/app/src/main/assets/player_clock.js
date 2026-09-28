@@ -259,6 +259,69 @@
   let lastSentAt = 0;
   let lastSig = '';
 
+  /*
+   * v322.3.11 — safe generic controls for the VidSrc experiment.
+   * SubHub's top page never needs cross-origin DOM access: it sends a small
+   * command to the first iframe, and this document-start bridge relays it
+   * downward until the frame that owns the real <video> handles it.
+   */
+  const SAFE_PLAYER_TYPE_V3211 = 'SUBHUB_SAFE_PLAYER_V1';
+
+  function safePlayerCommandV3211(raw) {
+    let d = raw;
+    if (typeof d === 'string') {
+      try { d = JSON.parse(d); } catch (_) { return null; }
+    }
+    if (!d || typeof d !== 'object' || d.type !== SAFE_PLAYER_TYPE_V3211) return null;
+    return d;
+  }
+
+  function relaySafeCommandDownV3211(d) {
+    try {
+      document.querySelectorAll('iframe').forEach(function (fr) {
+        try {
+          if (fr && fr.contentWindow) fr.contentWindow.postMessage(d, '*');
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
+  function handleSafeCommandV3211(d) {
+    const cmd = String(d.command || '').toLowerCase();
+    const v = activeVideo && document.contains(activeVideo) ? activeVideo : null;
+
+    try {
+      if (v) {
+        if (cmd === 'play') {
+          const p = v.play();
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+        } else if (cmd === 'pause') {
+          v.pause();
+        } else if (cmd === 'seek') {
+          const t = Number(d.time);
+          if (Number.isFinite(t)) {
+            const dur = Number(v.duration);
+            v.currentTime = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t);
+          }
+        } else if (cmd === 'getstatus') {
+          send(v, true, 'safe-status');
+        }
+      }
+    } catch (_) {}
+
+    /* The actual media can be one or more nested frames deeper. */
+    relaySafeCommandDownV3211(d);
+  }
+
+  try {
+    window.addEventListener('message', function (ev) {
+      if (!ev || window.parent === window || ev.source !== window.parent) return;
+      const d = safePlayerCommandV3211(ev.data);
+      if (!d) return;
+      handleSafeCommandV3211(d);
+    }, true);
+  } catch (_) {}
+
   function bridge() {
     try {
       return window.SubHubAndroidBridge && typeof window.SubHubAndroidBridge.mediaClock === 'function'

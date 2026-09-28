@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.10'" in site
+assert "BRIDGE_BUILD = '322.3.11'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 19" in gradle
-assert "versionName '322.3.10'" in gradle
+assert "versionCode 20" in gradle
+assert "versionName '322.3.11'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.10).
+# VidSrc owner-only Android test guard (322.3.11).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -101,3 +101,14 @@ assert "typeof currentMovie !== 'undefined'" in site
 assert "typeof isLoggedIn !== 'undefined'" in site
 assert "typeof vidsrcTrialAddedV355 !== 'function'" in site
 assert "openEmbedPlayer(url, {" in site
+
+assert 'SAFE_PLAYER_TYPE_V3211' in js
+assert 'SUBHUB_SAFE_PLAYER_V1' in js
+assert 'relaySafeCommandDownV3211' in js
+assert 'handleSafeCommandV3211' in js
+assert "cmd === 'seek'" in js
+assert 'installVidSrcSafeControlsV3211' in site
+assert 'sendVidSrcSafeCommandV3211' in site
+assert 'vidfastTimeBridge: true' in site
+assert '__subhubVidSrcDurationV3211' in site
+assert 'if (vidSrcGuardActive) return true;' in main
