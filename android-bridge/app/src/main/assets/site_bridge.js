@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.18';
+  const BRIDGE_BUILD = '322.3.19';
 
   let lastSig = '';
   let clockSource = '';
@@ -358,6 +358,17 @@
     }
   }
 
+  function setVidSrcImmersiveV3219(enabled) {
+    try {
+      const b = window.SubHubAndroidBridge;
+      if (!b || typeof b.setVidSrcImmersive !== 'function') return false;
+      b.setVidSrcImmersive(VIDSRC_GUARD_TOKEN, !!enabled);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function installVidSrcPseudoFullscreenV3216() {
     try {
       const current = window.toggleEmbedFullscreen;
@@ -395,6 +406,7 @@
             box.classList.remove('pseudo-fullscreen');
             document.body.classList.remove('pseudo-fs-lock');
           }
+          setVidSrcImmersiveV3219(false);
         } else {
           if (typeof _activatePseudoFullscreen === 'function') {
             _activatePseudoFullscreen(box);
@@ -409,6 +421,8 @@
            * تمديد work in VidSrc fullscreen instead of being overwritten by
            * the fullscreen layout.
            */
+          setVidSrcImmersiveV3219(true);
+
           setTimeout(function () {
             try {
               if (typeof _applyScreenModeV342 === 'function') {
