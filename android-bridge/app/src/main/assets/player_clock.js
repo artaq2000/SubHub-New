@@ -286,30 +286,84 @@
     } catch (_) {}
   }
 
+  function findSafePlayTargetV3212() {
+    const selectors = [
+      'button[aria-label*="play" i]',
+      '[role="button"][aria-label*="play" i]',
+      '[title*="play" i]',
+      '.vjs-big-play-button',
+      '.jw-icon-playback',
+      '.plyr__control--overlaid',
+      '[data-plyr="play"]',
+      'button.play',
+      '.play-button',
+      '.big-play-button',
+      'button[class*="play"]'
+    ];
+    for (const sel of selectors) {
+      try {
+        const list = document.querySelectorAll(sel);
+        for (const el of list) {
+          const rect = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          if (rect.width >= 12 && rect.height >= 12 &&
+              cs.display !== 'none' && cs.visibility !== 'hidden' &&
+              Number(cs.opacity || 1) > 0.05) return el;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function bootstrapSafePlayV3212() {
+    try {
+      const videos = document.querySelectorAll('video');
+      for (const video of videos) {
+        try {
+          attach(video);
+          chooseBest(video);
+          const p = video.play();
+          if (p && typeof p.catch === 'function') p.catch(function () {});
+          return true;
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    try {
+      const target = findSafePlayTargetV3212();
+      if (target) {
+        target.click();
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   function handleSafeCommandV3211(d) {
     const cmd = String(d.command || '').toLowerCase();
     const v = activeVideo && document.contains(activeVideo) ? activeVideo : null;
 
     try {
-      if (v) {
-        if (cmd === 'play') {
+      if (cmd === 'play') {
+        if (v) {
           const p = v.play();
           if (p && typeof p.catch === 'function') p.catch(function () {});
-        } else if (cmd === 'pause') {
-          v.pause();
-        } else if (cmd === 'seek') {
-          const t = Number(d.time);
-          if (Number.isFinite(t)) {
-            const dur = Number(v.duration);
-            v.currentTime = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t);
-          }
-        } else if (cmd === 'getstatus') {
-          send(v, true, 'safe-status');
+        } else {
+          bootstrapSafePlayV3212();
         }
+      } else if (v && cmd === 'pause') {
+        v.pause();
+      } else if (v && cmd === 'seek') {
+        const t = Number(d.time);
+        if (Number.isFinite(t)) {
+          const dur = Number(v.duration);
+          v.currentTime = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t);
+        }
+      } else if (v && cmd === 'getstatus') {
+        send(v, true, 'safe-status');
       }
     } catch (_) {}
 
-    /* The actual media can be one or more nested frames deeper. */
     relaySafeCommandDownV3211(d);
   }
 
