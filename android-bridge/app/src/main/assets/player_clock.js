@@ -704,6 +704,82 @@
     maybeSignalReady(video, false);
   }
 
+  function installVidSrcInteractionGuardV3217() {
+    if (!isVidSrcChainV3216()) return;
+
+    try {
+      if (!window.__subhubVidSrcWindowOpenV3217) {
+        window.__subhubVidSrcWindowOpenV3217 = true;
+        window.open = function () { return null; };
+      }
+    } catch (_) {}
+
+    try {
+      const id = '__subhub_vidsrc_controls_v3217';
+      if (!document.getElementById(id)) {
+        const style = document.createElement('style');
+        style.id = id;
+        style.textContent = [
+          '.vjs-fullscreen-control{display:none!important;}',
+          '.jw-icon-fullscreen{display:none!important;}',
+          '.plyr__control[data-plyr="fullscreen"]{display:none!important;}',
+          'button[aria-label*="fullscreen" i]{display:none!important;}',
+          '[role="button"][aria-label*="fullscreen" i]{display:none!important;}',
+          '[title*="fullscreen" i]{display:none!important;}',
+          '[data-fullscreen]{display:none!important;}'
+        ].join('');
+        (document.head || document.documentElement).appendChild(style);
+      }
+    } catch (_) {}
+
+    try {
+      if (!window.__subhubVidSrcClickGuardV3217) {
+        window.__subhubVidSrcClickGuardV3217 = true;
+        document.addEventListener('click', function (ev) {
+          try {
+            const t = ev && ev.target && ev.target.closest ? ev.target : null;
+            if (!t) return;
+
+            const fs = t.closest(
+              '.vjs-fullscreen-control,.jw-icon-fullscreen,' +
+              '.plyr__control[data-plyr="fullscreen"],' +
+              'button[aria-label*="fullscreen" i],' +
+              '[role="button"][aria-label*="fullscreen" i],' +
+              '[title*="fullscreen" i],[data-fullscreen]'
+            );
+            if (fs) {
+              ev.preventDefault();
+              ev.stopImmediatePropagation();
+              return;
+            }
+
+            const a = t.closest('a[href],a[target="_blank"]');
+            if (a) {
+              const href = String(a.getAttribute('href') || '');
+              if (/^(?:https?:)?\/\//i.test(href) || a.target === '_blank') {
+                ev.preventDefault();
+                ev.stopImmediatePropagation();
+                return;
+              }
+            }
+
+            const control = t.closest(
+              '.vjs-control,.vjs-progress-control,.jw-controlbar,.jw-slider-time,' +
+              '.plyr__controls,.plyr__progress,[role="slider"],input[type="range"]'
+            );
+            if (control) {
+              /*
+               * Let the control's own target/root handler run first, then stop
+               * the click before document/window popunder handlers see it.
+               */
+              ev.stopImmediatePropagation();
+            }
+          } catch (_) {}
+        }, false);
+      }
+    } catch (_) {}
+  }
+
   function suppressVidSrcCaptionsV3215() {
     if (!isVidSrcChainV3216()) return;
 
@@ -755,6 +831,7 @@
       if (isPlayerHost()) detectDeepPlayerUi();
 
       document.querySelectorAll('video').forEach(attach);
+      installVidSrcInteractionGuardV3217();
       suppressVidSrcCaptionsV3215();
       chooseBest(activeVideo);
       if (activeVideo) maybeSignalReady(activeVideo, false);
