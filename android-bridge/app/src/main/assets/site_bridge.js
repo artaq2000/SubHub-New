@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.19';
+  const BRIDGE_BUILD = '322.3.20';
 
   let lastSig = '';
   let clockSource = '';
