@@ -63,8 +63,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.41";
-    private static final int NATIVE_VERSION_CODE = 50;
+    private static final String NATIVE_VERSION = "322.3.42";
+    private static final int NATIVE_VERSION_CODE = 51;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -1381,7 +1381,11 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (directStreamPlayer != null) { directStreamPlayer.close(); return; }
+        if (directStreamPlayer != null) {
+            if (directStreamPlayer.handleBack()) return;
+            directStreamPlayer.close();
+            return;
+        }
         if (customView != null) {
             exitFullScreen();
             return;
