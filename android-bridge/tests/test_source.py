@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.31'" in site
+assert "BRIDGE_BUILD = '322.3.32'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 40" in gradle
-assert "versionName '322.3.31'" in gradle
+assert "versionCode 41" in gradle
+assert "versionName '322.3.32'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.31).
+# VidSrc owner-only Android test guard (322.3.32).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -261,3 +261,9 @@ assert "forceVidSrcProviderCaptionsOffV3231" in js
 assert "subhub-provider-captions-off-v3231" in js
 assert 'button[data-sh3222="back"]' in site
 assert 'button[data-sh3222="forward"]' in site
+
+# VidSrc 322.3.32 compact top controls.
+assert 'subhub-provider-close-hidden-v3232' in site
+assert 'data-subhub-hidden-close-v3232' in site
+assert 'data-sh3222="provider-subs"' in site
+assert "sendVidSrcSafeCommandV3211('providersubs')" in site
