@@ -8,6 +8,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.style.BackgroundColorSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -70,7 +73,10 @@ public final class DirectStreamPlayer {
     private final FrameLayout root;
     private final TextView status;
     private final TextView subtitle;
+    private final TextView menuButton;
     private final LinearLayout toolbar;
+    private final HorizontalScrollView quickStrip;
+    private final LinearLayout quickRow;
     private final FrameLayout panel;
     private final LinearLayout panelBody;
     private final TextView panelTitle;
@@ -92,9 +98,12 @@ public final class DirectStreamPlayer {
     private int subtitlePosition;
     private int subtitleSizeSp;
     private boolean subtitleBackground;
+    private int subtitleColor;
     private int resizeMode;
     private int previousSystemUi;
     private boolean panelOpen;
+    private boolean menuOpen;
+    private String currentSubtitleText = "";
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
                               JSONArray catalog, Listener listener) {
@@ -108,6 +117,7 @@ public final class DirectStreamPlayer {
         subtitlePosition = prefs.getInt("position", 12);
         subtitleSizeSp = prefs.getInt("size_sp", 26);
         subtitleBackground = prefs.getBoolean("background", true);
+        subtitleColor = prefs.getInt("subtitle_color", Color.WHITE);
         resizeMode = prefs.getInt("resize_mode", 0);
 
         root = new FrameLayout(activity);
@@ -121,15 +131,17 @@ public final class DirectStreamPlayer {
         enterImmersive();
 
         subtitle = new TextView(activity);
-        subtitle.setTextColor(Color.WHITE);
+        subtitle.setTextColor(subtitleColor);
         subtitle.setTextSize(subtitleSizeSp);
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
-        subtitle.setShadowLayer(dp(2), 0, 0, Color.BLACK);
-        subtitle.setLineSpacing(0, 1.05f);
-        subtitle.setPadding(dp(12), dp(5), dp(12), dp(5));
+        subtitle.setShadowLayer(
+                1.25f * activity.getResources().getDisplayMetrics().density,
+                0, 0, Color.BLACK);
+        subtitle.setLineSpacing(0, 1.04f);
+        subtitle.setPadding(dp(6), dp(2), dp(6), dp(3));
+        subtitle.setBackgroundColor(Color.TRANSPARENT);
         subtitle.setVisibility(View.GONE);
-        applySubtitleBackground();
         FrameLayout.LayoutParams subLp =
                 new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         subLp.leftMargin = dp(16);
@@ -147,19 +159,65 @@ public final class DirectStreamPlayer {
         sp.topMargin = dp(58);
         root.addView(status, sp);
 
+        menuButton = new TextView(activity);
+        menuButton.setText("⋮");
+        menuButton.setTextColor(Color.WHITE);
+        menuButton.setTextSize(25);
+        menuButton.setGravity(Gravity.CENTER);
+        menuButton.setBackground(round(0x77101823, 0x664E718B, 1, 28));
+        menuButton.setOnClickListener(v -> toggleMenu());
+        FrameLayout.LayoutParams menuLp =
+                new FrameLayout.LayoutParams(dp(50), dp(50), Gravity.TOP | Gravity.START);
+        menuLp.leftMargin = dp(10);
+        menuLp.topMargin = dp(8);
+        root.addView(menuButton, menuLp);
+
         toolbar = new LinearLayout(activity);
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER);
-        toolbar.setPadding(dp(4), dp(4), dp(4), dp(4));
-        tool("✕", 21, this::close);
-        tool("⋮", 24, this::toggleQuickSettings);
+        toolbar.setPadding(dp(3), dp(3), dp(3), dp(3));
+        toolbar.setBackground(round(0x99101823, 0x443D6B8E, 1, 22));
+        tool("✕", 20, this::close);
         tool("HD", 12, this::quality);
         tool("CC", 13, this::chooseSubtitle);
+        toolbar.setVisibility(View.GONE);
         FrameLayout.LayoutParams toolsLp =
-                new FrameLayout.LayoutParams(-2, dp(54), Gravity.TOP | Gravity.END);
+                new FrameLayout.LayoutParams(-2, dp(50), Gravity.TOP | Gravity.START);
         toolsLp.topMargin = dp(8);
-        toolsLp.rightMargin = dp(10);
+        toolsLp.leftMargin = dp(66);
         root.addView(toolbar, toolsLp);
+
+        quickRow = new LinearLayout(activity);
+        quickRow.setOrientation(LinearLayout.HORIZONTAL);
+        quickRow.setGravity(Gravity.CENTER_VERTICAL);
+        quickRow.setPadding(dp(4), dp(3), dp(4), dp(3));
+        quickRow.setBackground(round(0x99101823, 0x443D6B8E, 1, 18));
+        addCompactQuick("A−", () -> adjustSubtitleSize(-2));
+        addCompactQuick("A+", () -> adjustSubtitleSize(2));
+        addCompactQuick("↑", () -> adjustSubtitlePosition(4));
+        addCompactQuick("↓", () -> adjustSubtitlePosition(-4));
+        addCompactQuick("−.5", () -> adjustSync(500));
+        addCompactQuick("+.5", () -> adjustSync(-500));
+        addCompactQuick("▣", () -> {
+            subtitleBackground = !subtitleBackground;
+            prefs.edit().putBoolean("background", subtitleBackground).apply();
+            applySubtitleText(currentSubtitleText);
+        });
+        addCompactQuick("🎨", this::showColorOptions);
+        addCompactQuick("▭", this::cycleResizeMode);
+
+        quickStrip = new HorizontalScrollView(activity);
+        quickStrip.setHorizontalScrollBarEnabled(false);
+        quickStrip.setFillViewport(false);
+        quickStrip.setBackgroundColor(Color.TRANSPARENT);
+        quickStrip.addView(quickRow, new HorizontalScrollView.LayoutParams(-2, dp(48)));
+        quickStrip.setVisibility(View.GONE);
+        FrameLayout.LayoutParams quickLp =
+                new FrameLayout.LayoutParams(-1, dp(50), Gravity.TOP);
+        quickLp.topMargin = dp(64);
+        quickLp.leftMargin = dp(10);
+        quickLp.rightMargin = dp(10);
+        root.addView(quickStrip, quickLp);
 
         panel = new FrameLayout(activity);
         panel.setBackground(round(PANEL, BORDER, 1, 20));
@@ -192,10 +250,9 @@ public final class DirectStreamPlayer {
         panelOuter.addView(panelBody, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         FrameLayout.LayoutParams panelLp =
-                new FrameLayout.LayoutParams(-1, dp(150), Gravity.BOTTOM);
-        panelLp.leftMargin = dp(10);
-        panelLp.rightMargin = dp(10);
-        panelLp.bottomMargin = dp(8);
+                new FrameLayout.LayoutParams(dp(420), dp(220), Gravity.TOP | Gravity.END);
+        panelLp.topMargin = dp(68);
+        panelLp.rightMargin = dp(14);
         root.addView(panel, panelLp);
 
         root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
