@@ -63,8 +63,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.14";
-    private static final int NATIVE_VERSION_CODE = 23;
+    private static final String NATIVE_VERSION = "322.3.15";
+    private static final int NATIVE_VERSION_CODE = 24;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -78,7 +78,7 @@ public class MainActivity extends Activity {
     private final String downloadBridgeToken = UUID.randomUUID().toString().replace("-", "");
     private final String vidSrcGuardToken = UUID.randomUUID().toString().replace("-", "");
     private volatile boolean vidSrcGuardActive = false;
-    private long lastVidSrcBlockedToastAt = 0L;
+    private long lastVidSrcBlockedAt = 0L;
 
     /*
      * v322 bridge2:
@@ -294,7 +294,7 @@ public class MainActivity extends Activity {
                 }
 
                 /*
-                 * v322.3.14 VidSrc test guard:
+                 * v322.3.15 VidSrc test guard:
                  * - new windows are already rejected by WebChromeClient;
                  * - while the owner-only VidSrc player is open, never let an ad
                  *   replace SubHub's top page or launch an external app/site;
@@ -353,7 +353,7 @@ public class MainActivity extends Activity {
                  * already part of the fullscreen view on this player; adding a native
                  * copy is exactly what caused the two simultaneous subtitles.
                  */
-                if (USE_NATIVE_FULLSCREEN_SUBTITLE) {
+                if (useNativeFullscreenSubtitle()) {
                     fullScreenLayer.addView(nativeSubtitle, subtitleLayoutParams(7));
                 }
 
@@ -366,11 +366,28 @@ public class MainActivity extends Activity {
                                 | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
                 );
 
-                if (USE_NATIVE_FULLSCREEN_SUBTITLE) applySubtitleState(lastSubtitleState);
+                if (useNativeFullscreenSubtitle()) applySubtitleState(lastSubtitleState);
             }
 
             @Override
             public void onHideCustomView() {
+                /*
+                 * VidSrc ad taps can ask WebView to leave fullscreen at the same
+                 * moment their popup/navigation is blocked. Keep the current
+                 * custom view only for that short blocked-ad window. A normal
+                 * fullscreen exit still works because it has no recent block.
+                 */
+                long age = SystemClock.elapsedRealtime() - lastVidSrcBlockedAt;
+                if (vidSrcGuardActive && customView != null && age >= 0L && age < 2500L) {
+                    fullScreenLayer.setVisibility(View.VISIBLE);
+                    webView.setVisibility(View.GONE);
+                    getWindow().getDecorView().setSystemUiVisibility(
+                            View.SYSTEM_UI_FLAG_FULLSCREEN
+                                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    );
+                    return;
+                }
                 exitFullScreen();
             }
         });
@@ -413,18 +430,11 @@ public class MainActivity extends Activity {
     }
 
     private void notifyVidSrcBlocked() {
-        long now = SystemClock.elapsedRealtime();
-        if (now - lastVidSrcBlockedToastAt < 1400L) return;
-        lastVidSrcBlockedToastAt = now;
-        ui.post(() -> {
-            if (!isFinishing() && !isDestroyed()) {
-                Toast.makeText(
-                        MainActivity.this,
-                        "تم منع نافذة إعلانية",
-                        Toast.LENGTH_SHORT
-                ).show();
-            }
-        });
+        /*
+         * Silent on purpose. The block remains active, but subscribers should
+         * never see a popup-blocking message while watching.
+         */
+        lastVidSrcBlockedAt = SystemClock.elapsedRealtime();
     }
 
     private boolean isTrustedHomePage() {
@@ -1209,8 +1219,12 @@ public class MainActivity extends Activity {
         return fallback;
     }
 
+    private boolean useNativeFullscreenSubtitle() {
+        return USE_NATIVE_FULLSCREEN_SUBTITLE || vidSrcGuardActive;
+    }
+
     private void applySubtitleState(JSONObject state) {
-        if (!USE_NATIVE_FULLSCREEN_SUBTITLE) {
+        if (!useNativeFullscreenSubtitle()) {
             nativeSubtitle.setVisibility(View.GONE);
             return;
         }
@@ -1367,13 +1381,18 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean isVidSrcGuardActive() {
+            return vidSrcGuardActive;
+        }
+
+        @JavascriptInterface
         public void setVidSrcGuard(String token, boolean active) {
             if (!vidSrcGuardToken.equals(token)) return;
             ui.post(() -> {
                 if (!isTrustedHomePage()) return;
                 vidSrcGuardActive = active;
                 if (!active) {
-                    lastVidSrcBlockedToastAt = 0L;
+                    lastVidSrcBlockedAt = 0L;
                     synchronized (clockLock) {
                         activeClockSource = "";
                         activeClockSeq = -1L;
@@ -1476,7 +1495,7 @@ public class MainActivity extends Activity {
                 JSONObject p = new JSONObject(raw);
                 lastSubtitleState = p;
 
-                if (USE_NATIVE_FULLSCREEN_SUBTITLE) {
+                if (useNativeFullscreenSubtitle()) {
                     ui.post(() -> applySubtitleState(p));
                 }
             } catch (Exception ignored) {}
