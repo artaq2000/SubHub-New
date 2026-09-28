@@ -360,6 +360,40 @@
   let vidSrcTakeoverActiveV3224 = false;
   let vidSrcCaptionScrubTimerV3224 = 0;
 
+  function vidSrcDeepRootsV3226() {
+    const roots = [document];
+    const seen = new WeakSet();
+    for (let i = 0; i < roots.length; i++) {
+      const root = roots[i];
+      if (!root || seen.has(root)) continue;
+      seen.add(root);
+      try {
+        root.querySelectorAll('*').forEach(function (el) {
+          try {
+            if (el.shadowRoot && !seen.has(el.shadowRoot)) roots.push(el.shadowRoot);
+          } catch (_) {}
+        });
+      } catch (_) {}
+    }
+    return roots;
+  }
+
+  function vidSrcDeepQueryAllV3226(selector) {
+    const out = [];
+    const seen = new WeakSet();
+    vidSrcDeepRootsV3226().forEach(function (root) {
+      try {
+        root.querySelectorAll(selector).forEach(function (el) {
+          if (!seen.has(el)) {
+            seen.add(el);
+            out.push(el);
+          }
+        });
+      } catch (_) {}
+    });
+    return out;
+  }
+
   const vidSrcTrackHookedV3225 = new WeakSet();
 
   function hookVidSrcTracksV3225(video) {
@@ -400,7 +434,7 @@
     if (!vidSrcTakeoverActiveV3224) return;
 
     try {
-      document.querySelectorAll('video').forEach(function (video) {
+      vidSrcDeepQueryAllV3226('video').forEach(function (video) {
         try {
           hookVidSrcTracksV3225(video);
           const tracks = video.textTracks;
@@ -425,7 +459,7 @@
 
     // Common caption renderers used by embedded players.
     try {
-      document.querySelectorAll(
+      vidSrcDeepQueryAllV3226(
         '.vjs-text-track-display,.jw-text-track-display,.jw-captions,' +
         '.plyr__captions,.shaka-text-container,' +
         '[class*="subtitle" i],[class*="caption" i],[class*="text-track" i],' +
@@ -446,13 +480,16 @@
      * Provider controls are already replaced by SubHub at this point.
      */
     try {
-      const video = activeVideo && document.contains(activeVideo) ? activeVideo : null;
+      const video =
+        (activeVideo && activeVideo.isConnected ? activeVideo : null) ||
+        vidSrcDeepQueryAllV3226('video')[0] ||
+        null;
       if (video) {
         const vr = video.getBoundingClientRect();
         const minY = vr.top + vr.height * 0.28;
         const maxY = vr.bottom - 2;
 
-        document.querySelectorAll('div,span,p').forEach(function (el) {
+        vidSrcDeepQueryAllV3226('div,span,p').forEach(function (el) {
           try {
             if (!el || el === video || el.contains(video)) return;
             const txt = String(el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -524,6 +561,11 @@
           'html.subhub-vidsrc-takeover-v3222 .shaka-text-container,',
           'html.subhub-vidsrc-takeover-v3222 [class*="text-track" i],',
           'html.subhub-vidsrc-takeover-v3222 [class*="cue" i]{',
+          'display:none!important;visibility:hidden!important;opacity:0!important;}',
+          'html.subhub-vidsrc-takeover-v3222 video::cue{',
+          'color:transparent!important;background:transparent!important;text-shadow:none!important;}',
+          'html.subhub-vidsrc-takeover-v3222 video::-webkit-media-text-track-container,',
+          'html.subhub-vidsrc-takeover-v3222 video::-webkit-media-text-track-display{',
           'display:none!important;visibility:hidden!important;opacity:0!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(style);
@@ -1218,6 +1260,8 @@
           '.jw-text-track-display{display:none!important;}',
           '.jw-captions{display:none!important;}',
           '.plyr__captions{display:none!important;}',
+          'video::cue{color:transparent!important;background:transparent!important;text-shadow:none!important;}',
+          'video::-webkit-media-text-track-container,video::-webkit-media-text-track-display{display:none!important;visibility:hidden!important;opacity:0!important;}',
           '[class*="subtitle" i][class*="display" i]{display:none!important;}',
           '[class*="caption" i][class*="display" i]{display:none!important;}'
         ].join('');
