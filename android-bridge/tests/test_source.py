@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.18'" in site
+assert "BRIDGE_BUILD = '322.3.19'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 27" in gradle
-assert "versionName '322.3.18'" in gradle
+assert "versionCode 28" in gradle
+assert "versionName '322.3.19'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.18).
+# VidSrc owner-only Android test guard (322.3.19).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -159,3 +159,12 @@ assert "width:100%!important;height:100%!important" in site
 assert "transform-origin:center center!important" in site
 assert "_applyScreenModeV342(false, false)" in site
 assert "transform:none!important" not in site[site.find("__subhub_vidsrc_layout_v3217"):site.find("__subhub_vidsrc_layout_v3217")+5000]
+
+assert 'setVidSrcImmersive' in main
+assert 'vidSrcPseudoFullscreenActive' in main
+assert 'BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE' in main
+assert 'SYSTEM_UI_FLAG_IMMERSIVE_STICKY' in main
+assert 'onWindowFocusChanged' in main
+assert 'setVidSrcImmersiveV3219' in site
+assert 'setVidSrcImmersiveV3219(true)' in site
+assert 'setVidSrcImmersiveV3219(false)' in site
