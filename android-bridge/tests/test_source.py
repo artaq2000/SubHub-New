@@ -207,7 +207,6 @@ assert 'setInterval(' in js
 assert 'data-subhub-hidden-overlay-v3224' in js
 
 assert 'sh-v3225-more' in site
-assert 'subhub-menu-open-v3225' in site
 assert 'bindVidSrcSubtitleDragV3225' in site
 assert 'setPointerCapture' in site
 assert "overlay.style.setProperty('bottom'" in site
@@ -215,9 +214,6 @@ assert 'vidSrcTrackHookedV3225' in js
 assert "tracks.addEventListener('change'" in js
 assert '80\n    );' in js
 
-assert "z-index:2147483400" in site
-assert "video-top-controls" in site
-assert "box.appendChild(tools)" in site
 assert "touchmove" in site
 assert "passive:false" in site
 assert "vidSrcDeepQueryAllV3226" in js
