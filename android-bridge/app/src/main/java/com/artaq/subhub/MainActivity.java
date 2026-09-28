@@ -58,13 +58,15 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.Map;
+import java.util.HashMap;
 
 public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.39";
-    private static final int NATIVE_VERSION_CODE = 48;
+    private static final String NATIVE_VERSION = "322.3.40";
+    private static final int NATIVE_VERSION_CODE = 49;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -95,7 +97,10 @@ public class MainActivity extends Activity {
     private FrameLayout root;
     private WebView webView;
     private DirectStreamCapture directStreamCapture;
+    private DirectR2Playback directR2Playback;
     private String directStreamSession = "";
+    private String directR2Url = "";
+    private Map<String,String> directR2Headers = new HashMap<>();
     private FrameLayout fullScreenLayer;
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
@@ -152,7 +157,9 @@ public class MainActivity extends Activity {
         setContentView(root);
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.rgb(10, 14, 20));
+        // Normal page backgrounds still paint themselves. Transparency is needed
+        // only so the video-only DirectR2 backend can show through R2's video area.
+        webView.setBackgroundColor(Color.TRANSPARENT);
         root.addView(webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -1403,12 +1410,23 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        if (directR2Playback != null) directR2Playback.pause();
         super.onPause();
+    }
+
+    private void releaseDirectR2Playback() {
+        if (directR2Playback != null) {
+            directR2Playback.release();
+            directR2Playback = null;
+        }
+        directR2Url = "";
+        directR2Headers.clear();
     }
 
     @Override
     protected void onDestroy() {
         if (directStreamCapture != null) directStreamCapture.close(false);
+        releaseDirectR2Playback();
         ui.removeCallbacksAndMessages(null);
 
         if (webView != null) {
@@ -1446,14 +1464,17 @@ public class MainActivity extends Activity {
                             root,
                             "https://vidsrc.to/embed/movie/" + Uri.encode(id),
                             new DirectStreamCapture.Listener() {
-                                @Override public void captured(String url) {
+                                @Override public void captured(String url, Map<String,String> headers) {
                                     if (!session.equals(directStreamSession)) return;
                                     directStreamCapture = null;
+                                    directR2Url = url == null ? "" : url;
+                                    directR2Headers = headers == null
+                                            ? new HashMap<>()
+                                            : new HashMap<>(headers);
                                     String js =
                                             "window.__subhubDirectCaptured && " +
                                             "window.__subhubDirectCaptured(" +
-                                            JSONObject.quote(session) + "," +
-                                            JSONObject.quote(url) + ")";
+                                            JSONObject.quote(session) + ")";
                                     webView.evaluateJavascript(js, null);
                                 }
 
@@ -1478,6 +1499,83 @@ public class MainActivity extends Activity {
                     ).show();
                 }
             });
+        }
+
+        @JavascriptInterface
+        public void startDirectR2Playback(
+                String token, String session,
+                double nx, double ny, double nw, double nh) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()
+                        || !session.equals(directStreamSession)
+                        || directR2Url == null
+                        || directR2Url.isEmpty()
+                        || webView == null) return;
+
+                releaseDirectR2Playback();
+
+                directR2Playback = new DirectR2Playback(
+                        MainActivity.this,
+                        root,
+                        directR2Url,
+                        directR2Headers
+                );
+
+                int left = webView.getLeft() + (int)Math.round(webView.getWidth() * Math.max(0d, nx));
+                int top = webView.getTop() + (int)Math.round(webView.getHeight() * Math.max(0d, ny));
+                int width = (int)Math.round(webView.getWidth() * Math.max(0.01d, nw));
+                int height = (int)Math.round(webView.getHeight() * Math.max(0.01d, nh));
+                directR2Playback.setBounds(left, top, width, height);
+            });
+        }
+
+        @JavascriptInterface
+        public void updateDirectR2Bounds(
+                String token, String session,
+                double nx, double ny, double nw, double nh,
+                String mode) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (!session.equals(directStreamSession)
+                        || directR2Playback == null
+                        || webView == null) return;
+                int left = webView.getLeft() + (int)Math.round(webView.getWidth() * Math.max(0d, nx));
+                int top = webView.getTop() + (int)Math.round(webView.getHeight() * Math.max(0d, ny));
+                int width = (int)Math.round(webView.getWidth() * Math.max(0.01d, nw));
+                int height = (int)Math.round(webView.getHeight() * Math.max(0.01d, nh));
+                directR2Playback.setBounds(left, top, width, height);
+                directR2Playback.setResizeMode(mode == null ? "fit" : mode);
+            });
+        }
+
+        @JavascriptInterface
+        public void directR2Command(
+                String token, String session, String command, double value) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (!session.equals(directStreamSession) || directR2Playback == null) return;
+                String cmd = command == null ? "" : command;
+                if ("play".equals(cmd)) directR2Playback.play();
+                else if ("pause".equals(cmd)) directR2Playback.pause();
+                else if ("seek".equals(cmd)) directR2Playback.seekTo(Math.round(value));
+                else if ("volume".equals(cmd)) directR2Playback.setVolume((float)value);
+                else if ("fit".equals(cmd) || "fill".equals(cmd)
+                        || "cover".equals(cmd) || "zoom".equals(cmd)) {
+                    directR2Playback.setResizeMode(cmd);
+                } else if ("close".equals(cmd)) {
+                    releaseDirectR2Playback();
+                    directStreamSession = "";
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public String getDirectR2State(String token, String session) {
+            if (!vidSrcGuardToken.equals(token)
+                    || !session.equals(directStreamSession)
+                    || directR2Playback == null) return "{}";
+            return directR2Playback.state().toString();
         }
 
         @JavascriptInterface
