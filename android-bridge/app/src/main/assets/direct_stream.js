@@ -71,7 +71,17 @@
       if (!src || typeof src !== 'object') return;
       const candidates = mediaCandidates(src, [], []).sort(function (a,b) { return b.score-a.score; });
       if (!candidates.length) return;
-      const score = candidates[0].score - sourcePenalty(src);
+
+      const raw = JSON.stringify(src || {}).toLowerCase();
+      const adminKey = String(src.adminKey || '').toLowerCase();
+      let r2Bonus = 0;
+
+      // Prefer the exact R2/native-video source object whenever it exists.
+      if (adminKey === 'r2' || adminKey.indexOf('r2') >= 0) r2Bonus += 120;
+      if (/(^|[^a-z0-9])r2([^a-z0-9]|$)/i.test(raw)) r2Bonus += 55;
+      if (/onlyflix|vidsrc|embed|iframe|youtube|trailer/.test(raw)) r2Bonus -= 160;
+
+      const score = candidates[0].score - sourcePenalty(src) + r2Bonus;
       if (!best || score > best.score) {
         best = {index:index, source:src, slot:candidates[0], score:score};
       }
@@ -198,11 +208,10 @@
     const selected = movie();
 
     try {
-      // Keep this experimental button owner-only until the R2/HLS path is verified.
+      // Available to signed-in subscribers. The URL itself is never stored:
+      // Android captures a fresh HLS session on every press.
       if (!selected ||
           typeof isLoggedIn === 'undefined' || !isLoggedIn ||
-          typeof checkOwnerAccess !== 'function' ||
-          !(await checkOwnerAccess()) ||
           movie() !== selected) return;
 
       const bridge = window.SubHubAndroidBridge;
@@ -252,7 +261,9 @@
       active = null;
       return false;
     }
-    return openInExistingR2(String(url || ''));
+    const ok = openInExistingR2(String(url || ''));
+    if (!ok && active === state) active = null;
+    return ok;
   };
 
   window.__subhubDirectClosed = function (session) {
