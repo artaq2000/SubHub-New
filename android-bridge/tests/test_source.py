@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.21'" in site
+assert "BRIDGE_BUILD = '322.3.22'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 30" in gradle
-assert "versionName '322.3.21'" in gradle
+assert "versionCode 31" in gradle
+assert "versionName '322.3.22'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.21).
+# VidSrc owner-only Android test guard (322.3.22).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -179,3 +179,16 @@ assert "cc.click()" in js
 assert "setTimeout(clickVidSrcOffV3221, 80)" in js
 assert "off.click()" in js
 assert "player.setCurrentCaptions(-1)" in js
+
+assert 'ensureVidSrcTakeoverV3222' in site
+assert 'setVidSrcTakeoverActiveV3222' in site
+assert 'updateVidSrcTakeoverV3222' in site
+assert 'subhub-vidsrc-takeover-v3222' in site
+assert "data-sh3222=\"play\"" in site
+assert "sendVidSrcSafeCommandV3211('takeover'" in site
+assert 'applyVidSrcTakeoverV3222' in js
+assert '__subhub_vidsrc_takeover_v3222' in js
+assert "cmd === 'takeover'" in js
+assert 'video.controls = false' in js
+assert '.jw-controlbar' in js
+assert '.vjs-control-bar' in js
