@@ -356,12 +356,64 @@
     return false;
   }
 
+  const vidSrcTakeoverControlsV3222 = new WeakMap();
+
+  function applyVidSrcTakeoverV3222(active) {
+    try {
+      const html = document.documentElement;
+      if (html) html.classList.toggle('subhub-vidsrc-takeover-v3222', !!active);
+
+      let style = document.getElementById('__subhub_vidsrc_takeover_v3222');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = '__subhub_vidsrc_takeover_v3222';
+        style.textContent = [
+          'html.subhub-vidsrc-takeover-v3222 .vjs-control-bar,',
+          'html.subhub-vidsrc-takeover-v3222 .vjs-big-play-button,',
+          'html.subhub-vidsrc-takeover-v3222 .jw-controlbar,',
+          'html.subhub-vidsrc-takeover-v3222 .jw-display-icon-container,',
+          'html.subhub-vidsrc-takeover-v3222 .jw-captions,',
+          'html.subhub-vidsrc-takeover-v3222 .jw-text-track-display,',
+          'html.subhub-vidsrc-takeover-v3222 .plyr__controls,',
+          'html.subhub-vidsrc-takeover-v3222 .plyr__control--overlaid,',
+          'html.subhub-vidsrc-takeover-v3222 .plyr__captions,',
+          'html.subhub-vidsrc-takeover-v3222 .vjs-text-track-display{',
+          'display:none!important;visibility:hidden!important;opacity:0!important;}'
+        ].join('');
+        (document.head || document.documentElement).appendChild(style);
+      }
+
+      document.querySelectorAll('video').forEach(function (video) {
+        try {
+          if (active) {
+            if (!vidSrcTakeoverControlsV3222.has(video)) {
+              vidSrcTakeoverControlsV3222.set(video, !!video.controls);
+            }
+            video.controls = false;
+
+            const tracks = video.textTracks;
+            if (tracks) {
+              for (let i = 0; i < tracks.length; i++) {
+                try { tracks[i].mode = 'disabled'; } catch (_) {}
+              }
+            }
+          } else if (vidSrcTakeoverControlsV3222.has(video)) {
+            video.controls = !!vidSrcTakeoverControlsV3222.get(video);
+            vidSrcTakeoverControlsV3222.delete(video);
+          }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  }
+
   function handleSafeCommandV3211(d) {
     const cmd = String(d.command || '').toLowerCase();
     const v = activeVideo && document.contains(activeVideo) ? activeVideo : null;
 
     try {
-      if (cmd === 'play') {
+      if (cmd === 'takeover') {
+        applyVidSrcTakeoverV3222(!!d.active);
+      } else if (cmd === 'play') {
         if (v) {
           const p = v.play();
           if (p && typeof p.catch === 'function') p.catch(function () {});
