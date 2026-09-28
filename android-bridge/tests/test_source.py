@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.42'" in site
+assert "BRIDGE_BUILD = '322.3.43'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 51" in gradle
-assert "versionName '322.3.42'" in gradle
+assert "versionCode 52" in gradle
+assert "versionName '322.3.43'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -301,10 +301,13 @@ assert 'player.setMediaSource' in direct_player
 assert 'player.play()' in direct_player
 assert 'beginCapture()' in direct_player
 
-# Direct stream 322.3.42 compact menu, slim selectors, colors and text-only background.
+# Direct stream 322.3.43 compact single-row menu, subtitle size feedback and lower subtitle range.
 direct_player = (root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
 assert 'menuButton.setText("⋮")' in direct_player
 assert 'quickStrip.setVisibility(View.GONE)' in direct_player
+assert 'showSubtitleSizePercent' in direct_player
+assert 'Math.max(dp(6), root.getHeight() * subtitlePosition / 100)' in direct_player
+assert 'subtitlePosition = Math.max(0, Math.min(72' in direct_player
 assert 'showColorOptions' in direct_player
 assert 'subtitle_color' in direct_player
 assert 'BackgroundColorSpan' in direct_player
