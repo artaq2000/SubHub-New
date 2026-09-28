@@ -78,6 +78,7 @@ public final class DirectStreamPlayer {
     private final LinearLayout toolbar;
     private final HorizontalScrollView quickStrip;
     private final LinearLayout quickRow;
+    private final LinearLayout colorStrip;
     private final FrameLayout panel;
     private final LinearLayout panelBody;
     private final TextView panelTitle;
@@ -104,6 +105,7 @@ public final class DirectStreamPlayer {
     private int previousSystemUi;
     private boolean panelOpen;
     private boolean menuOpen;
+    private boolean colorStripOpen;
     private String currentSubtitleText = "";
     private Runnable valueToastHideTask;
 
@@ -236,6 +238,23 @@ public final class DirectStreamPlayer {
         quickLp.rightMargin = dp(10);
         root.addView(quickStrip, quickLp);
 
+        colorStrip = new LinearLayout(activity);
+        colorStrip.setOrientation(LinearLayout.HORIZONTAL);
+        colorStrip.setGravity(Gravity.CENTER);
+        colorStrip.setPadding(dp(6), dp(4), dp(6), dp(4));
+        colorStrip.setBackground(round(0xb30a1b29, 0x553D6B8E, 1, 18));
+        addColorDot(Color.WHITE);
+        addColorDot(Color.rgb(255, 222, 89));
+        addColorDot(Color.rgb(107, 224, 255));
+        addColorDot(Color.rgb(168, 255, 180));
+        colorStrip.setVisibility(View.GONE);
+        colorStrip.setElevation(dp(20));
+        FrameLayout.LayoutParams colorLp =
+                new FrameLayout.LayoutParams(-2, dp(42), Gravity.TOP | Gravity.END);
+        colorLp.topMargin = dp(56);
+        colorLp.rightMargin = dp(16);
+        root.addView(colorStrip, colorLp);
+
         panel = new FrameLayout(activity);
         panel.setBackground(round(PANEL, BORDER, 1, 20));
         panel.setVisibility(View.GONE);
@@ -365,8 +384,11 @@ public final class DirectStreamPlayer {
     }
 
     private void message(String text) {
-        status.setText(text);
-        status.setVisibility(View.VISIBLE);
+        status.setVisibility(View.GONE);
+        if (text == null) return;
+        if (text.startsWith("تعذّر") || text.startsWith("لم يُلتقط")) {
+            showTransientValue(text, 1600);
+        }
     }
 
     private void beginCapture() {
@@ -532,7 +554,10 @@ public final class DirectStreamPlayer {
         menuOpen = !menuOpen;
         toolbar.setVisibility(View.GONE);
         quickStrip.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
-        if (!menuOpen) hidePanel();
+        if (!menuOpen) {
+            hideColorStrip();
+            hidePanel();
+        }
         enterImmersive();
     }
 
@@ -540,6 +565,7 @@ public final class DirectStreamPlayer {
         menuOpen = false;
         toolbar.setVisibility(View.GONE);
         quickStrip.setVisibility(View.GONE);
+        hideColorStrip();
         hidePanel();
         enterImmersive();
     }
@@ -578,34 +604,50 @@ public final class DirectStreamPlayer {
     }
 
     private void showColorOptions() {
-        panelTitle.setText("لون الترجمة");
-        panelBody.removeAllViews();
-
-        LinearLayout list = new LinearLayout(activity);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(4), dp(2), dp(4), dp(6));
-
-        addColorChoice(list, "أبيض", Color.WHITE);
-        addColorChoice(list, "أصفر", Color.rgb(255, 222, 89));
-        addColorChoice(list, "سماوي", Color.rgb(107, 224, 255));
-        addColorChoice(list, "أخضر فاتح", Color.rgb(168, 255, 180));
-
-        panelBody.addView(list, new LinearLayout.LayoutParams(-1, -1));
-        showPanel(true);
+        hidePanel();
+        colorStripOpen = !colorStripOpen;
+        refreshColorDots();
+        colorStrip.setVisibility(colorStripOpen ? View.VISIBLE : View.GONE);
+        enterImmersive();
     }
 
-    private void addColorChoice(LinearLayout list, String name, int color) {
-        TextView item = chip((subtitleColor == color ? "✓ " : "") + name, 14, () -> {
+    private void hideColorStrip() {
+        colorStripOpen = false;
+        colorStrip.setVisibility(View.GONE);
+    }
+
+    private void addColorDot(int color) {
+        TextView dot = new TextView(activity);
+        dot.setTag(color);
+        dot.setGravity(Gravity.CENTER);
+        dot.setText("");
+        dot.setOnClickListener(v -> {
             subtitleColor = color;
             prefs.edit().putInt("subtitle_color", subtitleColor).apply();
             subtitle.setTextColor(subtitleColor);
             applySubtitleText(currentSubtitleText);
-            hidePanel();
+            refreshColorDots();
+            hideColorStrip();
+            showTransientValue("●", 550);
         });
-        item.setTextColor(color);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
-        lp.setMargins(0, dp(2), 0, dp(2));
-        list.addView(item, lp);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(30), dp(30));
+        lp.setMargins(dp(4), 0, dp(4), 0);
+        colorStrip.addView(dot, lp);
+    }
+
+    private void refreshColorDots() {
+        for (int i = 0; i < colorStrip.getChildCount(); i++) {
+            View child = colorStrip.getChildAt(i);
+            Object tag = child.getTag();
+            if (!(tag instanceof Integer)) continue;
+            int color = (Integer) tag;
+            GradientDrawable d = new GradientDrawable();
+            d.setShape(GradientDrawable.OVAL);
+            d.setColor(color);
+            d.setStroke(dp(color == subtitleColor ? 3 : 1),
+                    color == subtitleColor ? Color.WHITE : 0x667A9AB0);
+            child.setBackground(d);
+        }
     }
 
     private void quality() {
@@ -733,13 +775,17 @@ public final class DirectStreamPlayer {
 
     private void showSubtitleSizePercent() {
         int percent = Math.round((subtitleSizeSp / 26f) * 20f) * 5;
-        valueToast.setText(toArabicDigits(percent) + "٪");
+        showTransientValue(toArabicDigits(percent) + "٪", 750);
+    }
+
+    private void showTransientValue(String text, long durationMs) {
+        valueToast.setText(text);
         valueToast.setVisibility(View.VISIBLE);
         if (valueToastHideTask != null) handler.removeCallbacks(valueToastHideTask);
         valueToastHideTask = () -> {
             if (!closed) valueToast.setVisibility(View.GONE);
         };
-        handler.postDelayed(valueToastHideTask, 900);
+        handler.postDelayed(valueToastHideTask, durationMs);
     }
 
     private String toArabicDigits(int value) {
@@ -793,6 +839,9 @@ public final class DirectStreamPlayer {
         resizeMode = (resizeMode + 1) % 3;
         prefs.edit().putInt("resize_mode", resizeMode).apply();
         applyResizeMode();
+        if (resizeMode == 0) showTransientValue("▭  ملاءمة", 800);
+        else if (resizeMode == 1) showTransientValue("▭  تمديد", 800);
+        else showTransientValue("▭  قص", 800);
     }
 
     private void applyResizeMode() {
@@ -899,6 +948,10 @@ public final class DirectStreamPlayer {
     }
 
     public boolean handleBack() {
+        if (colorStripOpen) {
+            hideColorStrip();
+            return true;
+        }
         if (panelOpen || menuOpen) {
             collapseMenu();
             return true;
