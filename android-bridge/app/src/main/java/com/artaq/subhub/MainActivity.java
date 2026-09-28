@@ -33,6 +33,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.URLUtil;
+import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
@@ -63,8 +64,9 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.42";
-    private static final int NATIVE_VERSION_CODE = 51;
+    private static final String NATIVE_VERSION = "322.3.46";
+    private static final int NATIVE_VERSION_CODE = 55;
+    private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -94,6 +96,7 @@ public class MainActivity extends Activity {
 
     private FrameLayout root;
     private WebView webView;
+    private ValueCallback<Uri[]> fileChooserCallback;
     private DirectStreamPlayer directStreamPlayer;
     private String directStreamSession = "";
     private FrameLayout fullScreenLayer;
@@ -321,6 +324,55 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(
+                    WebView view,
+                    ValueCallback<Uri[]> filePathCallback,
+                    FileChooserParams fileChooserParams
+            ) {
+                /*
+                 * Android WebView does not open <input type="file"> by itself.
+                 * The owner R2 uploader uses a hidden file input, so hand it to
+                 * Android's system document picker and return the selected Uri.
+                 * No storage permission is required.
+                 */
+                if (fileChooserCallback != null) {
+                    fileChooserCallback.onReceiveValue(null);
+                }
+                fileChooserCallback = filePathCallback;
+
+                Intent picker;
+                try {
+                    picker = fileChooserParams != null
+                            ? fileChooserParams.createIntent()
+                            : null;
+                } catch (Exception ignored) {
+                    picker = null;
+                }
+
+                if (picker == null) {
+                    picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    picker.addCategory(Intent.CATEGORY_OPENABLE);
+                    picker.setType("*/*");
+                }
+                picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+                try {
+                    startActivityForResult(picker, FILE_CHOOSER_REQUEST);
+                    return true;
+                } catch (ActivityNotFoundException e) {
+                    ValueCallback<Uri[]> cb = fileChooserCallback;
+                    fileChooserCallback = null;
+                    if (cb != null) cb.onReceiveValue(null);
+                    Toast.makeText(
+                            MainActivity.this,
+                            "تعذّر فتح منتقي الملفات",
+                            Toast.LENGTH_LONG
+                    ).show();
+                    return false;
+                }
+            }
+
             @Override
             public boolean onCreateWindow(
                     WebView view,
@@ -1398,6 +1450,20 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_REQUEST) {
+            ValueCallback<Uri[]> cb = fileChooserCallback;
+            fileChooserCallback = null;
+            if (cb != null) {
+                Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                cb.onReceiveValue(result);
+            }
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
@@ -1424,6 +1490,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (fileChooserCallback != null) {
+            fileChooserCallback.onReceiveValue(null);
+            fileChooserCallback = null;
+        }
         if (directStreamPlayer != null) directStreamPlayer.close();
         ui.removeCallbacksAndMessages(null);
 
