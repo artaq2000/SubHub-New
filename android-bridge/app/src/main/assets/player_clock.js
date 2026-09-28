@@ -377,7 +377,11 @@
           'html.subhub-vidsrc-takeover-v3222 .plyr__controls,',
           'html.subhub-vidsrc-takeover-v3222 .plyr__control--overlaid,',
           'html.subhub-vidsrc-takeover-v3222 .plyr__captions,',
-          'html.subhub-vidsrc-takeover-v3222 .vjs-text-track-display{',
+          'html.subhub-vidsrc-takeover-v3222 .vjs-text-track-display,',
+          'html.subhub-vidsrc-takeover-v3222 [class*="subtitle" i],',
+          'html.subhub-vidsrc-takeover-v3222 [class*="caption" i],',
+          'html.subhub-vidsrc-takeover-v3222 [data-testid*="subtitle" i],',
+          'html.subhub-vidsrc-takeover-v3222 [data-testid*="caption" i]{',
           'display:none!important;visibility:hidden!important;opacity:0!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(style);
@@ -1093,7 +1097,6 @@
 
       document.querySelectorAll('video').forEach(attach);
       installVidSrcInteractionGuardV3217();
-      forceVidSrcCaptionsOffV3221();
       suppressVidSrcCaptionsV3215();
       chooseBest(activeVideo);
       if (activeVideo) maybeSignalReady(activeVideo, false);
