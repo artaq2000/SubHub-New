@@ -594,6 +594,197 @@
     } catch (_) {}
   }
 
+  let vidSrcCaptionProbeBusyV3227 = false;
+
+  function activeVidSrcVideoV3227() {
+    try {
+      if (activeVideo && activeVideo.isConnected) return activeVideo;
+      const deep = typeof vidSrcDeepQueryAllV3226 === 'function'
+        ? vidSrcDeepQueryAllV3226('video')
+        : Array.from(document.querySelectorAll('video'));
+      return deep && deep[0] ? deep[0] : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function disableVidSrcTracksNowV3227(video) {
+    if (!video) return false;
+    let changed = false;
+    try {
+      const tracks = video.textTracks;
+      if (tracks) {
+        for (let i = 0; i < tracks.length; i++) {
+          try {
+            if (tracks[i].mode !== 'disabled') {
+              tracks[i].mode = 'disabled';
+              changed = true;
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    try {
+      video.querySelectorAll && video.querySelectorAll('track').forEach(function (tr) {
+        try {
+          tr.default = false;
+          tr.removeAttribute('default');
+          if (tr.track) tr.track.mode = 'disabled';
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    try {
+      if (typeof window.jwplayer === 'function') {
+        const p = window.jwplayer();
+        if (p && typeof p.setCurrentCaptions === 'function') p.setCurrentCaptions(-1);
+      }
+    } catch (_) {}
+
+    return changed;
+  }
+
+  function deepVisibleV3227(el) {
+    try {
+      if (!el || !el.getBoundingClientRect) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      const s = getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0.01;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function deepTextV3227(el) {
+    try {
+      return String(
+        el.textContent ||
+        el.getAttribute('aria-label') ||
+        el.getAttribute('title') ||
+        ''
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function findVidSrcOffDeepV3227() {
+    const all = typeof vidSrcDeepQueryAllV3226 === 'function'
+      ? vidSrcDeepQueryAllV3226('button,li,[role="menuitem"],[role="option"],div,span')
+      : Array.from(document.querySelectorAll('button,li,[role="menuitem"],[role="option"],div,span'));
+
+    for (const el of all) {
+      if (!deepVisibleV3227(el)) continue;
+      if (deepTextV3227(el) !== 'off') continue;
+
+      const target = el.closest && el.closest('button,li,[role="menuitem"],[role="option"],a');
+      return target || el;
+    }
+    return null;
+  }
+
+  function findVidSrcCcDeepV3227() {
+    const selectors = [
+      'button[aria-label*="caption" i]',
+      'button[aria-label*="subtitle" i]',
+      '[role="button"][aria-label*="caption" i]',
+      '[role="button"][aria-label*="subtitle" i]',
+      '.vjs-subs-caps-button',
+      '.vjs-captions-button',
+      '.jw-icon-cc',
+      '.jw-icon-subtitles',
+      '[data-plyr="captions"]'
+    ];
+
+    const roots = typeof vidSrcDeepRootsV3226 === 'function' ? vidSrcDeepRootsV3226() : [document];
+    for (const root of roots) {
+      for (const sel of selectors) {
+        try {
+          const list = root.querySelectorAll(sel);
+          for (const el of list) {
+            if (deepVisibleV3227(el)) return el;
+          }
+        } catch (_) {}
+      }
+    }
+
+    const buttons = typeof vidSrcDeepQueryAllV3226 === 'function'
+      ? vidSrcDeepQueryAllV3226('button,[role="button"]')
+      : Array.from(document.querySelectorAll('button,[role="button"]'));
+
+    for (const el of buttons) {
+      if (!deepVisibleV3227(el)) continue;
+      const t = deepTextV3227(el);
+      if (t === 'cc' || t === 'subtitles' || t === 'captions') return el;
+    }
+    return null;
+  }
+
+  function forceVidSrcCaptionOffV3227() {
+    if (!isVidSrcChainV3216()) return false;
+    const video = activeVidSrcVideoV3227();
+    if (!video) return false;
+
+    disableVidSrcTracksNowV3227(video);
+    scrubVidSrcProviderCaptionsV3224();
+
+    if (vidSrcCaptionProbeBusyV3227) return true;
+
+    const off = findVidSrcOffDeepV3227();
+    if (off) {
+      try { off.click(); } catch (_) {}
+      disableVidSrcTracksNowV3227(video);
+      scrubVidSrcProviderCaptionsV3224();
+      return true;
+    }
+
+    const cc = findVidSrcCcDeepV3227();
+    if (!cc) return true;
+
+    vidSrcCaptionProbeBusyV3227 = true;
+
+    let mask = document.getElementById('__subhub_caption_probe_mask_v3227');
+    if (!mask) {
+      mask = document.createElement('style');
+      mask.id = '__subhub_caption_probe_mask_v3227';
+      mask.textContent = [
+        'html.subhub-caption-probe-v3227 .vjs-menu,',
+        'html.subhub-caption-probe-v3227 .jw-settings-menu,',
+        'html.subhub-caption-probe-v3227 .jw-settings-submenu,',
+        'html.subhub-caption-probe-v3227 .plyr__menu__container,',
+        'html.subhub-caption-probe-v3227 [role="menu"]{',
+        'opacity:0!important;visibility:visible!important;pointer-events:none!important;}'
+      ].join('');
+      (document.head || document.documentElement).appendChild(mask);
+    }
+
+    try { document.documentElement.classList.add('subhub-caption-probe-v3227'); } catch (_) {}
+    try { cc.click(); } catch (_) {}
+
+    const finish = function () {
+      try {
+        const x = findVidSrcOffDeepV3227();
+        if (x) {
+          try { x.click(); } catch (_) {}
+        }
+        disableVidSrcTracksNowV3227(video);
+        scrubVidSrcProviderCaptionsV3224();
+      } catch (_) {}
+    };
+
+    setTimeout(finish, 60);
+    setTimeout(finish, 180);
+    setTimeout(function () {
+      finish();
+      try { document.documentElement.classList.remove('subhub-caption-probe-v3227'); } catch (_) {}
+      vidSrcCaptionProbeBusyV3227 = false;
+    }, 420);
+
+    return true;
+  }
+
   function handleSafeCommandV3211(d) {
     const cmd = String(d.command || '').toLowerCase();
     const v = activeVideo && document.contains(activeVideo) ? activeVideo : null;
@@ -601,6 +792,8 @@
     try {
       if (cmd === 'takeover') {
         applyVidSrcTakeoverV3222(!!d.active);
+      } else if (cmd === 'captionoff') {
+        forceVidSrcCaptionOffV3227();
       } else if (cmd === 'play') {
         if (v) {
           const p = v.play();
