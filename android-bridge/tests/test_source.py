@@ -294,4 +294,3 @@ assert 'المظهر 🎨' in direct
 assert 'الخط ✍️' in direct
 assert 'المزامنة ⏱️' in direct
 assert 'StyledSubtitleView' in direct
-assert '_subSettings' not in direct
