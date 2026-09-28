@@ -289,7 +289,7 @@ assert "modal && box" in site
 direct_player = (root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
 assert 'subhub_direct_stream_ui_v1' in direct_player
 assert 'tool("✕"' in direct_player
-assert 'tool("⋮"' in direct_player
+assert 'menuButton.setText("⋮")' in direct_player
 assert 'tool("HD"' in direct_player
 assert 'tool("CC"' in direct_player
 assert 'installSubtitleGesture' in direct_player
