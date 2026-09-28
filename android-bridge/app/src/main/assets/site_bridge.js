@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.8';
+  const BRIDGE_BUILD = '322.3.9';
 
   let lastSig = '';
   let clockSource = '';
@@ -88,6 +88,81 @@
     } catch (_) {}
 
     syncVidSrcGuardV328(true);
+  }
+
+  /*
+   * v322.3.9 — VidSrc refuses SubHub's normal sandbox. In the Android app only,
+   * replace the owner trial opener so this one provider is rendered without
+   * sandbox, while the native WebView guard blocks popup/new-window escapes.
+   * The public website is untouched.
+   */
+  function installVidSrcNoSandboxV329() {
+    try {
+      const trial = window.openVidSrcTrialV355;
+      if (
+        typeof trial !== 'function' ||
+        trial.__subhubVidSrcNoSandboxV329
+      ) return;
+
+      const wrapped = async function () {
+        const movieId = window.currentMovie && window.currentMovie.id;
+        if (
+          typeof window.checkOwnerAccess !== 'function' ||
+          !(await window.checkOwnerAccess()) ||
+          !window.isLoggedIn ||
+          !window.currentMovie ||
+          window.currentMovie.id !== movieId
+        ) return;
+
+        const id =
+          (typeof window._vidfastMovieIdV302 === 'function')
+            ? window._vidfastMovieIdV302()
+            : '';
+
+        if (
+          !id ||
+          typeof window.vidsrcTrialAddedV355 !== 'function' ||
+          !window.vidsrcTrialAddedV355() ||
+          typeof window.openEmbedPlayer !== 'function'
+        ) return;
+
+        const url =
+          'https://vidsrc.to/embed/movie/' +
+          encodeURIComponent(id);
+
+        const originalDetector = window.isVidFastUrlV293;
+
+        try {
+          /*
+           * _renderEmbedPlayer already has a tested provider-specific
+           * no-sandbox path. Borrow ONLY that switch for VidSrc; do not enable
+           * VidFast's overlay/time bridge.
+           */
+          window.isVidFastUrlV293 = function (candidate) {
+            try {
+              const u = new URL(String(candidate || ''), location.href);
+              const h = String(u.hostname || '').toLowerCase();
+              if (h === 'vidsrc.to' || h.endsWith('.vidsrc.to')) return true;
+            } catch (_) {}
+
+            return typeof originalDetector === 'function'
+              ? originalDetector.apply(this, arguments)
+              : false;
+          };
+
+          syncVidSrcGuardV328(true);
+          window.openEmbedPlayer(url, {
+            vidfastNoSandbox: true
+          });
+          syncVidSrcGuardV328(true);
+        } finally {
+          window.isVidFastUrlV293 = originalDetector;
+        }
+      };
+
+      wrapped.__subhubVidSrcNoSandboxV329 = true;
+      window.openVidSrcTrialV355 = wrapped;
+    } catch (_) {}
   }
 
   function nowPerf() {
@@ -756,6 +831,7 @@
   installUiPolishV324();
   installOpeningFeedback();
   installVidSrcGuardV328();
+  installVidSrcNoSandboxV329();
 
   wrap(
     'updateSubtitleOverlay',
@@ -772,6 +848,7 @@
     installUiPolishV324();
     installOpeningFeedback();
     installVidSrcGuardV328();
+    installVidSrcNoSandboxV329();
 
     wrap(
       'updateSubtitleOverlay',
