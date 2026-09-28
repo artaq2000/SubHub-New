@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.36'" in site
+assert "BRIDGE_BUILD = '322.3.37'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 45" in gradle
-assert "versionName '322.3.36'" in gradle
+assert "versionCode 46" in gradle
+assert "versionName '322.3.37'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -284,3 +284,14 @@ assert "display:none!important;visibility:hidden!important;opacity:0!important;p
 assert "media-control-bar" in js
 assert "button[aria-label*=\"play\" i]" not in js[js.find("function scrubVidSrcProviderUiV3234"):js.find("function restoreVidSrcProviderUiV3234")]
 assert "modal && box" in site
+
+# Direct stream 322.3.37 independent R2-style subtitle settings.
+direct = (ROOT / 'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
+assert 'subhub_direct_stream_settings_v1' in direct
+assert 'إعدادات الترجمة' in direct
+assert 'الترجمة 💬' in direct
+assert 'المظهر 🎨' in direct
+assert 'الخط ✍️' in direct
+assert 'المزامنة ⏱️' in direct
+assert 'StyledSubtitleView' in direct
+assert '_subSettings' not in direct
