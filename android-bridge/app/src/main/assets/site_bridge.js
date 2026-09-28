@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.11';
+  const BRIDGE_BUILD = '322.3.12';
 
   let lastSig = '';
   let clockSource = '';
@@ -105,7 +105,25 @@
         type: 'SUBHUB_SAFE_PLAYER_V1',
         command: String(command || '')
       }, (extra && typeof extra === 'object') ? extra : {});
-      frame.contentWindow.postMessage(msg, '*');
+
+      const post = function () {
+        try {
+          const f = document.querySelector('#embedFrameContainer iframe');
+          if (!f || !f.contentWindow) return;
+          if (
+            typeof isVidSrcFrameActiveV328 === 'function' &&
+            !isVidSrcFrameActiveV328()
+          ) return;
+          f.contentWindow.postMessage(msg, '*');
+        } catch (_) {}
+      };
+
+      post();
+      if (String(command || '').toLowerCase() === 'play') {
+        setTimeout(post, 260);
+        setTimeout(post, 700);
+        setTimeout(post, 1350);
+      }
       return true;
     } catch (_) {
       return false;
