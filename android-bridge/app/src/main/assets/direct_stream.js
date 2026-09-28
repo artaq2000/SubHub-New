@@ -90,24 +90,20 @@
   }
 
   function cleanupInjected() {
-    if (!active || !active.injected) return;
+    if (!active) return;
     try {
-      const sources = window._watchSources;
-      if (Array.isArray(sources)) {
-        const idx = sources.indexOf(active.injected);
-        if (idx >= 0) sources.splice(idx, 1);
-      }
       if (typeof active.previousIndex === 'number') {
         window._watchSelectedIdx = active.previousIndex;
       }
     } catch (_) {}
-    active.injected = null;
+    active.r2Video = null;
+    active.originalVideoSrc = '';
   }
 
   function watchPlayerClose() {
     clearInterval(cleanupTimer);
     cleanupTimer = setInterval(function () {
-      if (!active || !active.injected) {
+      if (!active || !active.r2Opened) {
         clearInterval(cleanupTimer);
         cleanupTimer = 0;
         return;
@@ -127,6 +123,57 @@
     }, 500);
   }
 
+  function findR2VideoElement() {
+    try {
+      const modal = document.querySelector(
+        '#videoPlayerModal.open,#videoPlayerModal.inline-player-v265.open'
+      );
+      if (!modal) return null;
+      return modal.querySelector('video');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function swapExistingR2VideoToHls(state, url) {
+    const video = findR2VideoElement();
+    if (!video || active !== state) return false;
+
+    try {
+      // Preserve the exact R2 modal, controls, subtitle overlay and subPanel.
+      // Only the already-created R2 <video> media URL is replaced in memory.
+      state.r2Video = video;
+      state.originalVideoSrc = String(video.currentSrc || video.src || '');
+
+      try { video.pause(); } catch (_) {}
+      try {
+        Array.prototype.slice.call(video.querySelectorAll('source')).forEach(function (s) {
+          s.removeAttribute('src');
+        });
+      } catch (_) {}
+
+      video.src = String(url);
+      video.setAttribute('src', String(url));
+      video.preload = 'auto';
+      video.load();
+
+      const playResult = video.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(function () {
+          try {
+            if (active === state) notify('تم فتح مشغّل R2، اضغط تشغيل مرة واحدة إذا لم يبدأ تلقائياً.');
+          } catch (_) {}
+        });
+      }
+
+      state.r2Opened = true;
+      watchPlayerClose();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function openInExistingR2(url) {
     const state = active;
     if (!state || !/^https:\/\//i.test(String(url || ''))) return false;
@@ -137,19 +184,7 @@
       return false;
     }
 
-    const clone = deepClone(template.source);
-    if (!clone || !setPath(clone, template.slot.path, String(url))) {
-      notify('تعذّر تجهيز مصدر المشاهدة المباشرة.');
-      return false;
-    }
-
-    /*
-     * Important: preserve every R2-specific field from the real source object.
-     * We replace ONLY the media URL in this in-memory clone. No subtitle
-     * setting, panel setting, style or stored movie data is changed.
-     */
     try {
-      clone.__subhubDirectSession = state.session;
       const sources = window._watchSources;
       if (!Array.isArray(sources)) throw new Error('sources');
 
@@ -158,9 +193,12 @@
           ? window._watchSelectedIdx
           : 0;
 
-      sources.push(clone);
-      state.injected = clone;
-      window._watchSelectedIdx = sources.length - 1;
+      /*
+       * Open the REAL R2 source object first so SubHub creates the exact same
+       * R2 modal/controls/subPanel that already works today. We do not clone
+       * or edit the R2 source object at all.
+       */
+      window._watchSelectedIdx = template.index;
 
       if (typeof stopInlinePlayersV265 === 'function') {
         try { stopInlinePlayersV265(); } catch (_) {}
@@ -168,36 +206,40 @@
       if (typeof closeEmbedPlayer === 'function') {
         try { closeEmbedPlayer(); } catch (_) {}
       }
-
       if (typeof playSelectedWatchSource !== 'function') {
         throw new Error('player opener');
       }
 
       playSelectedWatchSource();
 
-      setTimeout(function () {
+      let attempts = 0;
+      const attach = function () {
         if (active !== state) return;
-        try {
-          state.r2Opened = !!document.querySelector(
-            '#videoPlayerModal.open,#videoPlayerModal.inline-player-v265.open'
-          );
-        } catch (_) {
-          state.r2Opened = false;
+        attempts += 1;
+
+        const modalOpen = !!document.querySelector(
+          '#videoPlayerModal.open,#videoPlayerModal.inline-player-v265.open'
+        );
+
+        if (modalOpen && swapExistingR2VideoToHls(state, String(url))) {
+          return;
         }
 
-        if (!state.r2Opened) {
-          cleanupInjected();
-          notify('لم يفتح مشغّل R2 هذا البث. سنراجع مسار m3u8 في الاختبار التالي.');
-          active = null;
-        } else {
-          watchPlayerClose();
+        if (attempts < 30) {
+          setTimeout(attach, 100);
+          return;
         }
-      }, 900);
 
+        window._watchSelectedIdx = state.previousIndex;
+        notify('فتح R2 لكن لم أجد عنصر الفيديو لاستبدال البث. سنجرب المسار التالي.');
+        active = null;
+      };
+
+      setTimeout(attach, 0);
       return true;
     } catch (_) {
-      cleanupInjected();
-      notify('تعذّر تمرير البث إلى مشغّل R2.');
+      try { window._watchSelectedIdx = state.previousIndex; } catch (_) {}
+      notify('تعذّر فتح مشغّل R2.');
       return false;
     }
   }
@@ -236,9 +278,10 @@
       active = {
         session:session,
         movieId:selected.id,
-        injected:null,
         previousIndex:0,
-        r2Opened:false
+        r2Opened:false,
+        r2Video:null,
+        originalVideoSrc:''
       };
 
       bridge.openDirectStream(token, JSON.stringify({
