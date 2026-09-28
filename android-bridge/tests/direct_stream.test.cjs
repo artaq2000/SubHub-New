@@ -124,8 +124,7 @@ vm.runInContext(source,context);
   assert.equal(fakeVideo.hasAttribute('src'),false,'browser R2 media is detached to avoid duplicate R2 bandwidth');
 
   // Run one native clock/bounds sync iteration.
-  const sync=intervalFns[intervalFns.length-1];
-  sync();
+  intervalFns.slice().forEach(fn=>fn());
   assert(bounds.length>=1);
   assert.equal(bounds[bounds.length-1].mode,'fit');
   assert.equal(fakeVideo.currentTime,12.34);
