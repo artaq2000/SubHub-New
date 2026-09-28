@@ -360,12 +360,49 @@
   let vidSrcTakeoverActiveV3224 = false;
   let vidSrcCaptionScrubTimerV3224 = 0;
 
+  const vidSrcTrackHookedV3225 = new WeakSet();
+
+  function hookVidSrcTracksV3225(video) {
+    if (!video || vidSrcTrackHookedV3225.has(video)) return;
+    vidSrcTrackHookedV3225.add(video);
+
+    const disable = function () {
+      if (!vidSrcTakeoverActiveV3224) return;
+      try {
+        const tracks = video.textTracks;
+        if (!tracks) return;
+        for (let i = 0; i < tracks.length; i++) {
+          try { tracks[i].mode = 'disabled'; } catch (_) {}
+        }
+      } catch (_) {}
+    };
+
+    try {
+      const tracks = video.textTracks;
+      if (tracks && typeof tracks.addEventListener === 'function') {
+        tracks.addEventListener('change', disable);
+        tracks.addEventListener('addtrack', function () {
+          setTimeout(disable, 0);
+          setTimeout(disable, 50);
+          setTimeout(disable, 180);
+        });
+      }
+    } catch (_) {}
+
+    ['loadedmetadata','loadeddata','canplay','play','playing','timeupdate','seeked'].forEach(function (name) {
+      try { video.addEventListener(name, disable, true); } catch (_) {}
+    });
+
+    disable();
+  }
+
   function scrubVidSrcProviderCaptionsV3224() {
     if (!vidSrcTakeoverActiveV3224) return;
 
     try {
       document.querySelectorAll('video').forEach(function (video) {
         try {
+          hookVidSrcTracksV3225(video);
           const tracks = video.textTracks;
           if (tracks) {
             for (let i = 0; i < tracks.length; i++) {
@@ -423,17 +460,19 @@
 
             const cs = getComputedStyle(el);
             if (cs.display === 'none' || cs.visibility === 'hidden') return;
-            if (cs.position !== 'absolute' && cs.position !== 'fixed') return;
-
             const r = el.getBoundingClientRect();
             if (r.width < 24 || r.height < 12) return;
             if (r.bottom < minY || r.top > maxY) return;
             if (r.left > vr.right || r.right < vr.left) return;
-            if (r.height > vr.height * 0.34) return;
-            if (r.width > vr.width * 0.96) return;
+            if (r.height > vr.height * 0.42) return;
+            if (r.width > vr.width * 0.98) return;
+            if ((r.width * r.height) > (vr.width * vr.height * 0.42)) return;
 
             const fs = parseFloat(cs.fontSize || '0') || 0;
-            if (fs < 12) return;
+            if (fs < 11) return;
+
+            const tag = String(el.tagName || '').toLowerCase();
+            if (tag === 'button' || tag === 'a') return;
 
             el.style.setProperty('display', 'none', 'important');
             el.setAttribute('data-subhub-hidden-overlay-v3224', '1');
@@ -453,7 +492,7 @@
     scrubVidSrcProviderCaptionsV3224();
     vidSrcCaptionScrubTimerV3224 = setInterval(
       scrubVidSrcProviderCaptionsV3224,
-      240
+      80
     );
   }
 
