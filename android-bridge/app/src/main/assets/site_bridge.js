@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.15';
+  const BRIDGE_BUILD = '322.3.16';
 
   let lastSig = '';
   let clockSource = '';
@@ -257,6 +257,110 @@
     } catch (_) {}
   }
 
+  function prepareVidSrcSubHubUiV3216() {
+    try {
+      if (
+        typeof isVidSrcFrameActiveV328 !== 'function' ||
+        !isVidSrcFrameActiveV328()
+      ) return false;
+
+      const box = document.querySelector('#embedPlayerModal .video-modal-box');
+      const frame = document.querySelector('#embedFrameContainer iframe');
+      const cc = document.getElementById('embedCcBtn');
+
+      if (cc) cc.style.display = 'flex';
+
+      if (box && typeof _moveSubPanelTo === 'function') {
+        try { _moveSubPanelTo(box); } catch (_) {}
+      }
+
+      if (typeof _mountEmbedSubtitleOverlayV336 === 'function') {
+        try { _mountEmbedSubtitleOverlayV336(); } catch (_) {}
+      }
+
+      if (typeof applySubtitleStyle === 'function') {
+        try { applySubtitleStyle(); } catch (_) {}
+      }
+
+      if (frame) {
+        try { frame.removeAttribute('allowfullscreen'); } catch (_) {}
+        try { frame.removeAttribute('webkitallowfullscreen'); } catch (_) {}
+        try {
+          const allow = String(frame.getAttribute('allow') || '')
+            .split(';')
+            .map(function (x) { return x.trim(); })
+            .filter(function (x) { return x && !/^fullscreen\b/i.test(x); })
+            .join('; ');
+          frame.setAttribute(
+            'allow',
+            allow || 'autoplay; encrypted-media; picture-in-picture'
+          );
+        } catch (_) {}
+      }
+
+      if (typeof _autoSelectFirstSub === 'function') {
+        Promise.resolve(_autoSelectFirstSub()).catch(function () {});
+      }
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function installVidSrcPseudoFullscreenV3216() {
+    try {
+      const current = window.toggleEmbedFullscreen;
+      if (
+        typeof current !== 'function' ||
+        current.__subhubVidSrcPseudoFullscreenV3216
+      ) return;
+
+      const wrapped = function () {
+        const box = document.querySelector('#embedPlayerModal .video-modal-box');
+        const vidsrcActive =
+          typeof isVidSrcFrameActiveV328 === 'function' &&
+          isVidSrcFrameActiveV328();
+
+        if (!vidsrcActive || !box) {
+          return current.apply(this, arguments);
+        }
+
+        /*
+         * VidSrc + Android WebView freezes the picture when Chromium moves the
+         * iframe into a native custom-view fullscreen. Keep the complete SubHub
+         * box in the normal WebView and expand it with the existing CSS pseudo
+         * fullscreen instead. This also keeps our CC button, subtitle panel and
+         * Arabic overlay in the same DOM as the video.
+         */
+        const pseudo = box.classList.contains('pseudo-fullscreen');
+
+        if (pseudo) {
+          if (typeof _exitAnyFullscreen === 'function') {
+            _exitAnyFullscreen(box);
+          } else {
+            box.classList.remove('pseudo-fullscreen');
+            document.body.classList.remove('pseudo-fs-lock');
+          }
+        } else {
+          if (typeof _activatePseudoFullscreen === 'function') {
+            _activatePseudoFullscreen(box);
+          } else {
+            box.classList.add('pseudo-fullscreen');
+            document.body.classList.add('pseudo-fs-lock');
+          }
+        }
+
+        try {
+          if (typeof _syncEmbedFsIcon === 'function') _syncEmbedFsIcon();
+        } catch (_) {}
+      };
+
+      wrapped.__subhubVidSrcPseudoFullscreenV3216 = true;
+      window.toggleEmbedFullscreen = wrapped;
+    } catch (_) {}
+  }
+
   function installVidSrcNoSandboxV329() {
     try {
       const trial = window.openVidSrcTrialV355;
@@ -346,6 +450,10 @@
             vidfastNoSandbox: true
           });
           syncVidSrcGuardV328(true);
+          installVidSrcPseudoFullscreenV3216();
+          prepareVidSrcSubHubUiV3216();
+          setTimeout(prepareVidSrcSubHubUiV3216, 120);
+          setTimeout(prepareVidSrcSubHubUiV3216, 500);
         } finally {
           window.isVidFastUrlV293 = originalDetector;
         }
@@ -1070,6 +1178,7 @@
   installUiPolishV324();
   installOpeningFeedback();
   installVidSrcGuardV328();
+  installVidSrcPseudoFullscreenV3216();
   installVidSrcNoSandboxV329();
 
   wrap(
@@ -1087,6 +1196,7 @@
     installUiPolishV324();
     installOpeningFeedback();
     installVidSrcGuardV328();
+    installVidSrcPseudoFullscreenV3216();
     installVidSrcNoSandboxV329();
 
     wrap(
