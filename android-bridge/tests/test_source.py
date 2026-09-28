@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.44'" in site
+assert "BRIDGE_BUILD = '322.3.45'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 53" in gradle
-assert "versionName '322.3.44'" in gradle
+assert "versionCode 54" in gradle
+assert "versionName '322.3.45'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -301,7 +301,7 @@ assert 'player.setMediaSource' in direct_player
 assert 'player.play()' in direct_player
 assert 'beginCapture()' in direct_player
 
-# Direct stream 322.3.44 color dots, transient zoom/screen-mode feedback, and no routine capture banner.
+# Direct stream 322.3.45 rounded per-line subtitle background with adjustable opacity.
 direct_player = (root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
 assert 'menuButton.setText("⋮")' in direct_player
 assert 'quickStrip.setVisibility(View.GONE)' in direct_player
@@ -314,6 +314,10 @@ assert 'GradientDrawable.OVAL' in direct_player
 assert 'showTransientValue("▭  ملاءمة"' in direct_player
 assert 'status.setVisibility(View.GONE)' in direct_player
 assert 'subtitle_color' in direct_player
-assert 'BackgroundColorSpan' in direct_player
+assert 'RoundedLineBackgroundSpan' in direct_player
+assert 'LineBackgroundSpan' in direct_player
+assert 'background_opacity' in direct_player
+assert 'adjustSubtitleBackground' in direct_player
+assert 'showTransientValue("خلفية "' in direct_player
 assert 'applySubtitleText' in direct_player
 assert 'public boolean handleBack()' in direct_player
