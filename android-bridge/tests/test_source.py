@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.37'" in site
+assert "BRIDGE_BUILD = '322.3.38'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 46" in gradle
-assert "versionName '322.3.37'" in gradle
+assert "versionCode 47" in gradle
+assert "versionName '322.3.38'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -285,12 +285,16 @@ assert "media-control-bar" in js
 assert "button[aria-label*=\"play\" i]" not in js[js.find("function scrubVidSrcProviderUiV3234"):js.find("function restoreVidSrcProviderUiV3234")]
 assert "modal && box" in site
 
-# Direct stream 322.3.37 independent R2-style subtitle settings.
-direct = (root / 'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
-assert 'subhub_direct_stream_settings_v1' in direct
-assert 'إعدادات الترجمة' in direct
-assert 'الترجمة 💬' in direct
-assert 'المظهر 🎨' in direct
-assert 'الخط ✍️' in direct
-assert 'المزامنة ⏱️' in direct
-assert 'StyledSubtitleView' in direct
+
+# Direct stream 322.3.38 capture-to-R2 path: reuse existing R2 UI untouched.
+direct_js = (root / 'app/src/main/assets/direct_stream.js').read_text(encoding='utf-8')
+capture = (root / 'app/src/main/java/com/artaq/subhub/DirectStreamCapture.java').read_text(encoding='utf-8')
+assert "mode:'capture_to_r2'" in direct_js
+assert 'window._watchSources' in direct_js
+assert 'playSelectedWatchSource()' in direct_js
+assert '__subhubDirectCaptured' in direct_js
+assert '_subSettings' not in direct_js
+assert 'subPanel' not in direct_js
+assert 'DirectStreamCapture' in main
+assert 'endsWith(".m3u8")' in capture
+assert 'DirectStreamPlayer(MainActivity.this' not in main
