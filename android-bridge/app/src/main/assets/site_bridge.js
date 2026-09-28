@@ -316,13 +316,41 @@
           'padding:0 10px;border:0;border-radius:999px;background:rgba(8,12,18,.78);color:#fff;',
           'font:800 13px/1 system-ui,sans-serif;backdrop-filter:blur(8px);pointer-events:auto!important;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="quality"]{min-width:52px;}',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="subs"]{min-width:56px;}'
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="subs"]{display:none!important;}',
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-close-hidden-v3232{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(s);
       }
 
-      if (!controls.querySelector('[data-provider-action="quality"]')) {
-        const q = document.createElement('button');
+      let closeBtn = null;
+      try {
+        const buttons = Array.prototype.slice.call(controls.querySelectorAll('button'));
+        closeBtn = buttons.find(function (btn) {
+          if (!btn) return false;
+          if (btn.getAttribute('data-provider-action')) return false;
+          if (btn.id === 'embedCcBtn') return false;
+          const txt = String(btn.textContent || '').trim();
+          const aria = String(btn.getAttribute('aria-label') || '');
+          const title = String(btn.getAttribute('title') || '');
+          const ident = String((btn.id || '') + ' ' + (btn.className || ''));
+          return /^[×✕✖xX]$/.test(txt) ||
+            /(close|dismiss|إغلاق|اغلاق)/i.test(aria + ' ' + title + ' ' + ident);
+        }) || null;
+      } catch (_) {}
+
+      if (closeBtn) {
+        try {
+          closeBtn.classList.add('subhub-provider-close-hidden-v3232');
+          closeBtn.setAttribute('data-subhub-hidden-close-v3232', '1');
+          closeBtn.style.setProperty('display', 'none', 'important');
+          closeBtn.style.setProperty('visibility', 'hidden', 'important');
+          closeBtn.style.setProperty('pointer-events', 'none', 'important');
+        } catch (_) {}
+      }
+
+      let q = controls.querySelector('[data-provider-action="quality"]');
+      if (!q) {
+        q = document.createElement('button');
         q.type = 'button';
         q.className = 'subhub-provider-shortcut-v3231';
         q.setAttribute('data-provider-action', 'quality');
@@ -332,22 +360,23 @@
           try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
           try { sendVidSrcSafeCommandV3211('providerquality'); } catch (_) {}
         }, true);
-        controls.appendChild(q);
       }
 
-      if (!controls.querySelector('[data-provider-action="subs"]')) {
-        const s = document.createElement('button');
-        s.type = 'button';
-        s.className = 'subhub-provider-shortcut-v3231';
-        s.setAttribute('data-provider-action', 'subs');
-        s.setAttribute('aria-label', 'ترجمة المصدر');
-        s.textContent = 'SRC CC';
-        s.addEventListener('click', function (ev) {
-          try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
-          try { sendVidSrcSafeCommandV3211('providersubs'); } catch (_) {}
-        }, true);
-        controls.appendChild(s);
-      }
+      try {
+        if (closeBtn && closeBtn.parentElement === controls) {
+          controls.insertBefore(q, closeBtn);
+        } else if (q.parentElement !== controls) {
+          controls.insertBefore(q, controls.firstChild || null);
+        }
+      } catch (_) {}
+
+      try {
+        const oldSubs = controls.querySelector('[data-provider-action="subs"]');
+        if (oldSubs) {
+          oldSubs.style.setProperty('display', 'none', 'important');
+          oldSubs.style.setProperty('pointer-events', 'none', 'important');
+        }
+      } catch (_) {}
 
       return true;
     } catch (_) {
@@ -569,6 +598,7 @@
         '<button class="sh-v3225-more" type="button" data-sh3222="more" aria-label="المزيد">⋮</button>' +
         '<div class="sh-v3227-menu">' +
           '<button type="button" data-sh3222="subtitles">CC</button>' +
+          '<button type="button" data-sh3222="provider-subs">ترجمة المصدر</button>' +
           '<button type="button" data-sh3222="screen">١٠٠٪</button>' +
           '<button type="button" data-sh3222="fullscreen">⛶</button>' +
         '</div>' +
@@ -631,6 +661,12 @@
             }
             if (typeof toggleSubtitleModal === 'function') toggleSubtitleModal();
           } catch (_) {}
+          root.classList.remove('menu-open-v3227');
+          return;
+        }
+
+        if (kind === 'provider-subs') {
+          try { sendVidSrcSafeCommandV3211('providersubs'); } catch (_) {}
           root.classList.remove('menu-open-v3227');
           return;
         }
