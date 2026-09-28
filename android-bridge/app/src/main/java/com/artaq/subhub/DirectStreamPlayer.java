@@ -2,7 +2,10 @@ package com.artaq.subhub;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -10,7 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.Spannable;
 import android.text.SpannableString;
-import android.text.style.BackgroundColorSpan;
+import android.text.style.LineBackgroundSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -99,7 +102,7 @@ public final class DirectStreamPlayer {
     private long subtitleOffsetMs;
     private int subtitlePosition;
     private int subtitleSizeSp;
-    private boolean subtitleBackground;
+    private int subtitleBackgroundOpacity;
     private int subtitleColor;
     private int resizeMode;
     private int previousSystemUi;
@@ -120,7 +123,9 @@ public final class DirectStreamPlayer {
         subtitleOffsetMs = prefs.getLong("offset_ms", 0L);
         subtitlePosition = prefs.getInt("position", 12);
         subtitleSizeSp = prefs.getInt("size_sp", 26);
-        subtitleBackground = prefs.getBoolean("background", true);
+        int savedBgOpacity = prefs.getInt("background_opacity", -1);
+        if (savedBgOpacity < 0) savedBgOpacity = prefs.getBoolean("background", true) ? 60 : 0;
+        subtitleBackgroundOpacity = Math.max(0, Math.min(100, savedBgOpacity));
         subtitleColor = prefs.getInt("subtitle_color", Color.WHITE);
         resizeMode = prefs.getInt("resize_mode", 0);
 
@@ -217,11 +222,8 @@ public final class DirectStreamPlayer {
         addCompactQuick("↓", () -> adjustSubtitlePosition(-4));
         addCompactQuick("−.5", () -> adjustSync(500));
         addCompactQuick("+.5", () -> adjustSync(-500));
-        addCompactQuick("▣", () -> {
-            subtitleBackground = !subtitleBackground;
-            prefs.edit().putBoolean("background", subtitleBackground).apply();
-            applySubtitleText(currentSubtitleText);
-        });
+        addCompactQuick("◐−", () -> adjustSubtitleBackground(-15));
+        addCompactQuick("◐+", () -> adjustSubtitleBackground(15));
         addCompactQuick("🎨", this::showColorOptions);
         addCompactQuick("▭", this::cycleResizeMode);
 
@@ -810,6 +812,16 @@ public final class DirectStreamPlayer {
         prefs.edit().putLong("offset_ms", subtitleOffsetMs).apply();
     }
 
+    private void adjustSubtitleBackground(int delta) {
+        subtitleBackgroundOpacity = Math.max(0, Math.min(100, subtitleBackgroundOpacity + delta));
+        prefs.edit()
+                .putInt("background_opacity", subtitleBackgroundOpacity)
+                .putBoolean("background", subtitleBackgroundOpacity > 0)
+                .apply();
+        applySubtitleText(currentSubtitleText);
+        showTransientValue("خلفية " + toArabicDigits(subtitleBackgroundOpacity) + "٪", 750);
+    }
+
     private void applySubtitleText(String text) {
         currentSubtitleText = text == null ? "" : text;
         subtitle.setTextColor(subtitleColor);
@@ -820,19 +832,72 @@ public final class DirectStreamPlayer {
             return;
         }
 
-        if (!subtitleBackground) {
+        if (subtitleBackgroundOpacity <= 0) {
             subtitle.setText(currentSubtitleText);
             return;
         }
 
         SpannableString styled = new SpannableString(currentSubtitleText);
+        int alpha = Math.round(255f * subtitleBackgroundOpacity / 100f);
         styled.setSpan(
-                new BackgroundColorSpan(0x99000000),
+                new RoundedLineBackgroundSpan(
+                        Color.argb(alpha, 0, 0, 0),
+                        dp(8),
+                        dp(7),
+                        dp(2)
+                ),
                 0,
                 styled.length(),
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
         );
         subtitle.setText(styled);
+    }
+
+    private static final class RoundedLineBackgroundSpan implements LineBackgroundSpan {
+        private final int color;
+        private final float radius;
+        private final float horizontalPadding;
+        private final float verticalPadding;
+
+        RoundedLineBackgroundSpan(int color, float radius, float horizontalPadding,
+                                  float verticalPadding) {
+            this.color = color;
+            this.radius = radius;
+            this.horizontalPadding = horizontalPadding;
+            this.verticalPadding = verticalPadding;
+        }
+
+        @Override
+        public void drawBackground(Canvas canvas, Paint paint, int left, int right,
+                                   int top, int baseline, int bottom,
+                                   CharSequence text, int start, int end, int lineNumber) {
+            int visibleEnd = end;
+            while (visibleEnd > start) {
+                char c = text.charAt(visibleEnd - 1);
+                if (c == '\n' || c == '\r') visibleEnd--;
+                else break;
+            }
+            if (visibleEnd <= start) return;
+
+            float width = paint.measureText(text.subSequence(start, visibleEnd).toString());
+            float center = (left + right) / 2f;
+            float rectLeft = center - width / 2f - horizontalPadding;
+            float rectRight = center + width / 2f + horizontalPadding;
+            RectF rect = new RectF(
+                    rectLeft,
+                    top + verticalPadding,
+                    rectRight,
+                    bottom - verticalPadding
+            );
+
+            int oldColor = paint.getColor();
+            Paint.Style oldStyle = paint.getStyle();
+            paint.setColor(color);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawRoundRect(rect, radius, radius, paint);
+            paint.setStyle(oldStyle);
+            paint.setColor(oldColor);
+        }
     }
 
     private void cycleResizeMode() {
