@@ -286,7 +286,7 @@ assert "button[aria-label*=\"play\" i]" not in js[js.find("function scrubVidSrcP
 assert "modal && box" in site
 
 # Direct stream 322.3.37 independent R2-style subtitle settings.
-direct = (ROOT / 'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
+direct = (root / 'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
 assert 'subhub_direct_stream_settings_v1' in direct
 assert 'إعدادات الترجمة' in direct
 assert 'الترجمة 💬' in direct
