@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.9';
+  const BRIDGE_BUILD = '322.3.10';
 
   let lastSig = '';
   let clockSource = '';
@@ -105,32 +105,55 @@
       ) return;
 
       const wrapped = async function () {
-        const movieId = window.currentMovie && window.currentMovie.id;
+        /*
+         * Important: SubHub's page declares several globals with let/const.
+         * They are visible by name to scripts but are NOT properties of window.
+         * Using window.currentMovie/window.isLoggedIn made the whole VidSrc
+         * button look dead even though the small × control still worked.
+         */
+        const movie =
+          (typeof currentMovie !== 'undefined')
+            ? currentMovie
+            : null;
+        const logged =
+          (typeof isLoggedIn !== 'undefined')
+            ? !!isLoggedIn
+            : false;
+        const ownerCheck =
+          (typeof checkOwnerAccess === 'function')
+            ? checkOwnerAccess
+            : null;
+
+        const movieId = movie && movie.id;
+
         if (
-          typeof window.checkOwnerAccess !== 'function' ||
-          !(await window.checkOwnerAccess()) ||
-          !window.isLoggedIn ||
-          !window.currentMovie ||
-          window.currentMovie.id !== movieId
+          !ownerCheck ||
+          !(await ownerCheck()) ||
+          !logged ||
+          !movie ||
+          movie.id !== movieId
         ) return;
 
         const id =
-          (typeof window._vidfastMovieIdV302 === 'function')
-            ? window._vidfastMovieIdV302()
+          (typeof _vidfastMovieIdV302 === 'function')
+            ? _vidfastMovieIdV302()
             : '';
 
         if (
           !id ||
-          typeof window.vidsrcTrialAddedV355 !== 'function' ||
-          !window.vidsrcTrialAddedV355() ||
-          typeof window.openEmbedPlayer !== 'function'
+          typeof vidsrcTrialAddedV355 !== 'function' ||
+          !vidsrcTrialAddedV355() ||
+          typeof openEmbedPlayer !== 'function'
         ) return;
 
         const url =
           'https://vidsrc.to/embed/movie/' +
           encodeURIComponent(id);
 
-        const originalDetector = window.isVidFastUrlV293;
+        const originalDetector =
+          (typeof isVidFastUrlV293 === 'function')
+            ? isVidFastUrlV293
+            : null;
 
         try {
           /*
@@ -151,7 +174,7 @@
           };
 
           syncVidSrcGuardV328(true);
-          window.openEmbedPlayer(url, {
+          openEmbedPlayer(url, {
             vidfastNoSandbox: true
           });
           syncVidSrcGuardV328(true);
