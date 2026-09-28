@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.34'" in site
+assert "BRIDGE_BUILD = '322.3.35'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 43" in gradle
-assert "versionName '322.3.34'" in gradle
+assert "versionCode 44" in gradle
+assert "versionName '322.3.35'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -278,3 +278,9 @@ assert 'setVidSrcProviderUiScrubV3234' in js
 assert 'media-control-bar' in js
 assert 'data-subhub-provider-ui-hidden-v3234' in js
 assert 'startVidSrcProviderUiSyncV3233();' in site
+
+# 322.3.35 provider center play remains interactive across reopen.
+assert "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}" in site
+assert "media-control-bar" in js
+assert "button[aria-label*=\"play\" i]" not in js[js.find("function scrubVidSrcProviderUiV3234"):js.find("function restoreVidSrcProviderUiV3234")]
+assert "modal && box" in site
