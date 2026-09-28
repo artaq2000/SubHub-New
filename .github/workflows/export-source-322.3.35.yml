@@ -1,0 +1,42 @@
+name: Export SubHub 322.3.35 Full Source
+
+on:
+  push:
+    branches:
+      - 'export/source-322.3.35'
+    paths:
+      - '.github/workflows/export-source-322.3.35.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact SubHub 322.3.35 source
+        uses: actions/checkout@v4
+        with:
+          ref: e548a404282fa6fc00a7566c2f3e1febb7fed0fd
+          fetch-depth: 1
+
+      - name: Verify source version
+        run: |
+          grep -q "versionName '322.3.35'" android-bridge/app/build.gradle
+          test -f android-bridge/app/src/main/assets/site_bridge.js
+          test -f android-bridge/app/src/main/java/com/artaq/subhub/MainActivity.java
+
+      - name: Remove generated or secret material if present
+        run: |
+          rm -rf .git
+          rm -f android-bridge/subhub-release.keystore
+          find . -type f \( -name '*.jks' -o -name '*.keystore' \) -delete
+
+      - name: Upload complete source
+        uses: actions/upload-artifact@v4
+        with:
+          name: SubHub-322.3.35-source-full
+          path: .
+          include-hidden-files: true
+          retention-days: 7
