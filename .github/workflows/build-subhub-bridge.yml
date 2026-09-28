@@ -1,15 +1,16 @@
-name: Build Signed SubHub 322.3.7
+name: Build TEST SubHub 322.3.8 VidSrc
 
 on:
   push:
-    branches: [main]
+    branches:
+      - 'test/vidsrc-322.3.8'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -27,8 +28,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
 
       - uses: actions/setup-java@v4
         with:
@@ -62,44 +61,33 @@ jobs:
           javac -d /tmp/subhub-update-tests app/src/main/java/com/artaq/subhub/UpdatePolicy.java tests/UpdatePolicyTest.java
           java -cp /tmp/subhub-update-tests UpdatePolicyTest
 
-      - name: Build signed release APK
+      - name: Build signed TEST APK
         run: gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Verify package and permanent signing certificate
+      - name: Verify package, version and permanent signing certificate
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
           AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='17'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.8'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
           echo "Actual signing SHA-256:   $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Prepare official signed APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.7-release.apk
+      - name: Prepare VidSrc test APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.8-vidsrc-test.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.7-signed-apk
-          path: SubHub-322.3.7-release.apk
-
-      - name: Publish signed APK
-        working-directory: .
-        run: |
-          mkdir -p builds
-          cp SubHub-322.3.7-release.apk builds/SubHub-322.3.7-release.apk
-          git config user.name "SubHub Builder"
-          git config user.email "subhub-builder@users.noreply.github.com"
-          git add builds/SubHub-322.3.7-release.apk
-          if ! git diff --cached --quiet; then
-            git commit -m "Publish signed SubHub 322.3.7 release APK [skip ci]"
-            git push origin HEAD:main
-          fi
+          name: SubHub-322.3.8-vidsrc-test
+          path: SubHub-322.3.8-vidsrc-test.apk
+          retention-days: 7
 
       - name: Remove signing key from runner
         if: always()
         run: rm -f "$SUBHUB_KEYSTORE_PATH"
-

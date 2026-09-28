@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.7'" in site
+assert "BRIDGE_BUILD = '322.3.8'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 16" in gradle
-assert "versionName '322.3.7'" in gradle
+assert "versionCode 17" in gradle
+assert "versionName '322.3.8'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -80,3 +80,15 @@ assert 'installDownloadInterceptor' in main
 assert 'saveDataUrl' in main
 assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
+
+
+# VidSrc owner-only Android test guard (322.3.8).
+assert 'vidSrcGuardActive' in main
+assert 'setVidSrcGuard' in main
+assert 'shouldBlockVidSrcNavigation' in main
+assert 'notifyVidSrcBlocked' in main
+assert 'تم منع نافذة إعلانية' in main
+assert 'VIDSRC_GUARD_TOKEN' in site
+assert 'installVidSrcGuardV328' in site
+assert 'isVidSrcFrameActiveV328' in site
+assert '__VIDSRC_GUARD_TOKEN__' in site

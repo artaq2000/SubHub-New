@@ -62,8 +62,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.7";
-    private static final int NATIVE_VERSION_CODE = 16;
+    private static final String NATIVE_VERSION = "322.3.8";
+    private static final int NATIVE_VERSION_CODE = 17;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -75,6 +75,9 @@ public class MainActivity extends Activity {
     private static final String KEY_PENDING_PAIR = "pendingPairId";
     private static final long MAX_SUBTITLE_DOWNLOAD_BYTES = 16L * 1024L * 1024L;
     private final String downloadBridgeToken = UUID.randomUUID().toString().replace("-", "");
+    private final String vidSrcGuardToken = UUID.randomUUID().toString().replace("-", "");
+    private volatile boolean vidSrcGuardActive = false;
+    private long lastVidSrcBlockedToastAt = 0L;
 
     /*
      * v322 bridge2:
@@ -265,7 +268,11 @@ public class MainActivity extends Activity {
                     if (HOME_HOST.equalsIgnoreCase(u.getHost())) {
                         homePageReady = true;
                         if (!siteBridgeScript.isEmpty()) {
-                            view.evaluateJavascript(siteBridgeScript, null);
+                            String injectedSiteBridge = siteBridgeScript.replace(
+                                    "__VIDSRC_GUARD_TOKEN__",
+                                    vidSrcGuardToken
+                            );
+                            view.evaluateJavascript(injectedSiteBridge, null);
                         }
                         installDownloadInterceptor(view);
                         injectNativeSessionIfReady();
@@ -276,14 +283,31 @@ public class MainActivity extends Activity {
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                if (!request.isForMainFrame()) return false;
                 String url = request.getUrl().toString();
+
                 if ("subhub-update://download".equals(url)) {
                     Uri page = Uri.parse(view.getUrl() == null ? "" : view.getUrl());
                     if (request.hasGesture() && "https".equals(page.getScheme())
                             && HOME_HOST.equalsIgnoreCase(page.getHost())) downloadNativeUpdate();
                     return true;
                 }
+
+                /*
+                 * v322.3.8 VidSrc test guard:
+                 * - new windows are already rejected by WebChromeClient;
+                 * - while the owner-only VidSrc player is open, never let an ad
+                 *   replace SubHub's top page or launch an external app/site;
+                 * - user-clicked subframe navigations are allowed only inside
+                 *   vidsrc.to itself. Background frame/media loads are untouched,
+                 *   which keeps the actual stream/CDN free to work.
+                 */
+                if (shouldBlockVidSrcNavigation(request)) {
+                    notifyVidSrcBlocked();
+                    return true;
+                }
+
+                if (!request.isForMainFrame()) return false;
+
                 String host = request.getUrl().getHost();
                 if (host != null && host.equalsIgnoreCase(HOME_HOST)) return false;
                 if (url.startsWith("about:")) return false;
@@ -300,6 +324,7 @@ public class MainActivity extends Activity {
                     boolean isUserGesture,
                     android.os.Message resultMsg
             ) {
+                if (vidSrcGuardActive) notifyVidSrcBlocked();
                 return false;
             }
 
@@ -351,6 +376,55 @@ public class MainActivity extends Activity {
     }
 
 
+
+    private boolean isVidSrcHost(String host) {
+        if (host == null) return false;
+        String h = host.toLowerCase(Locale.US);
+        return h.equals("vidsrc.to") || h.endsWith(".vidsrc.to");
+    }
+
+    private boolean shouldBlockVidSrcNavigation(WebResourceRequest request) {
+        if (!vidSrcGuardActive || request == null) return false;
+
+        try {
+            Uri u = request.getUrl();
+            String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(Locale.US);
+            String host = u.getHost();
+
+            if (request.isForMainFrame()) {
+                if ("https".equals(scheme) && HOME_HOST.equalsIgnoreCase(host)) return false;
+                if ("about".equals(scheme)) return false;
+                return true;
+            }
+
+            /*
+             * Do not filter background frame/resource changes: providers often
+             * move the real player through one or more CDN frames. We only stop
+             * a user-clicked navigation that tries to leave VidSrc.
+             */
+            if (!request.hasGesture()) return false;
+            if ("about".equals(scheme) || "blob".equals(scheme) || "data".equals(scheme)) return false;
+            if (("http".equals(scheme) || "https".equals(scheme)) && isVidSrcHost(host)) return false;
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private void notifyVidSrcBlocked() {
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastVidSrcBlockedToastAt < 1400L) return;
+        lastVidSrcBlockedToastAt = now;
+        ui.post(() -> {
+            if (!isFinishing() && !isDestroyed()) {
+                Toast.makeText(
+                        MainActivity.this,
+                        "تم منع نافذة إعلانية",
+                        Toast.LENGTH_SHORT
+                ).show();
+            }
+        });
+    }
 
     private boolean isTrustedHomePage() {
         if (webView == null) return false;
@@ -1282,6 +1356,16 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void syncSubscription() {
             ui.post(() -> syncNativeSubscription(true));
+        }
+
+        @JavascriptInterface
+        public void setVidSrcGuard(String token, boolean active) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                vidSrcGuardActive = active;
+                if (!active) lastVidSrcBlockedToastAt = 0L;
+            });
         }
 
 

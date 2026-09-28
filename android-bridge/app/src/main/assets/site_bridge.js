@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.7';
+  const BRIDGE_BUILD = '322.3.8';
 
   let lastSig = '';
   let clockSource = '';
@@ -22,6 +22,73 @@
   let openingBusy = false;
   let openingFallbackTimer = 0;
   let onlyflixCoverTimer = 0;
+
+  const VIDSRC_GUARD_TOKEN = '__VIDSRC_GUARD_TOKEN__';
+  let lastVidSrcGuardState = null;
+  let vidSrcGuardObserver = null;
+
+  function isVidSrcFrameActiveV328() {
+    try {
+      const modal = document.querySelector(
+        '#embedPlayerModal.open,' +
+        '#embedPlayerModal.inline-player-v265.open'
+      );
+      if (!modal) return false;
+
+      const frame = document.querySelector(
+        '#embedFrameContainer iframe'
+      );
+      if (!frame) return false;
+
+      const src = String(
+        frame.getAttribute('src') ||
+        frame.src ||
+        ''
+      );
+
+      if (!src) return false;
+      const u = new URL(src, location.href);
+      const h = String(u.hostname || '').toLowerCase();
+
+      return (
+        u.protocol === 'https:' &&
+        (h === 'vidsrc.to' || h.endsWith('.vidsrc.to'))
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function syncVidSrcGuardV328(force) {
+    const active = isVidSrcFrameActiveV328();
+    if (!force && active === lastVidSrcGuardState) return;
+    lastVidSrcGuardState = active;
+
+    try {
+      const b = window.SubHubAndroidBridge;
+      if (b && typeof b.setVidSrcGuard === 'function') {
+        b.setVidSrcGuard(VIDSRC_GUARD_TOKEN, active);
+      }
+    } catch (_) {}
+  }
+
+  function installVidSrcGuardV328() {
+    try {
+      if (!vidSrcGuardObserver && document.documentElement) {
+        vidSrcGuardObserver = new MutationObserver(function () {
+          syncVidSrcGuardV328(false);
+        });
+        vidSrcGuardObserver.observe(document.documentElement, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['class', 'src']
+        });
+      }
+    } catch (_) {}
+
+    syncVidSrcGuardV328(true);
+  }
 
   function nowPerf() {
     try { return performance.now(); } catch (_) { return Date.now(); }
@@ -688,6 +755,7 @@
   stampBuild();
   installUiPolishV324();
   installOpeningFeedback();
+  installVidSrcGuardV328();
 
   wrap(
     'updateSubtitleOverlay',
@@ -703,6 +771,7 @@
     stampBuild();
     installUiPolishV324();
     installOpeningFeedback();
+    installVidSrcGuardV328();
 
     wrap(
       'updateSubtitleOverlay',
@@ -718,6 +787,7 @@
   }, 800);
 
   setInterval(function () {
+    syncVidSrcGuardV328(false);
     if (!clockLinked) return;
 
     if (
