@@ -780,27 +780,126 @@
     } catch (_) {}
   }
 
-  let lastVidSrcCaptionOffV3220 = 0;
+  let lastVidSrcCaptionOffV3221 = 0;
+  let vidSrcCaptionOffConfirmedV3221 = false;
+  let vidSrcCaptionMenuOpenedV3221 = false;
 
-  function forceVidSrcCaptionsOffV3220() {
-    if (!isVidSrcChainV3216()) return;
+  function isVisibleV3221(el) {
+    try {
+      if (!el || !el.getBoundingClientRect) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return false;
+      const s = getComputedStyle(el);
+      return s.display !== 'none' &&
+        s.visibility !== 'hidden' &&
+        Number(s.opacity || 1) > 0.02;
+    } catch (_) {
+      return false;
+    }
+  }
 
-    const now = Date.now();
-    if (now - lastVidSrcCaptionOffV3220 < 700) return;
-    lastVidSrcCaptionOffV3220 = now;
+  function exactTextV3221(el) {
+    try {
+      return String(
+        el.textContent ||
+        el.getAttribute('aria-label') ||
+        el.getAttribute('title') ||
+        ''
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
 
-    /*
-     * VidSrc remembers its own caption selection separately from SubHub.
-     * Force the provider to "Off" on every new player/frame so only our Arabic
-     * subtitle overlay remains visible.
-     */
+  function findVidSrcOffItemV3221() {
+    try {
+      const xp = document.evaluate(
+        "//*[normalize-space(translate(text(),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'))='off']",
+        document,
+        null,
+        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+        null
+      );
+
+      for (let i = 0; i < xp.snapshotLength; i++) {
+        let el = xp.snapshotItem(i);
+        if (!el || !isVisibleV3221(el)) continue;
+
+        let p = el;
+        let ok = false;
+        for (let depth = 0; p && depth < 9; depth++, p = p.parentElement) {
+          const txt = String(p.textContent || '').toLowerCase();
+          const cls = String(p.className || '').toLowerCase();
+          if (
+            txt.includes('subtitles') ||
+            txt.includes('subtitle') ||
+            txt.includes('captions') ||
+            txt.includes('search by language') ||
+            cls.includes('subtitle') ||
+            cls.includes('caption')
+          ) {
+            ok = true;
+            break;
+          }
+        }
+
+        if (!ok) continue;
+
+        const target =
+          el.closest('button,[role="menuitem"],[role="option"],li,a') ||
+          el;
+        if (isVisibleV3221(target)) return target;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function findVidSrcCaptionButtonV3221() {
+    const selectors = [
+      'button[aria-label*="caption" i]',
+      'button[aria-label*="subtitle" i]',
+      '[role="button"][aria-label*="caption" i]',
+      '[role="button"][aria-label*="subtitle" i]',
+      '.vjs-subs-caps-button',
+      '.vjs-captions-button',
+      '.jw-icon-cc',
+      '.jw-icon-subtitles',
+      '[data-plyr="captions"]',
+      '[class*="subtitle" i][role="button"]',
+      '[class*="caption" i][role="button"]'
+    ];
+
+    try {
+      for (const sel of selectors) {
+        const list = document.querySelectorAll(sel);
+        for (const el of list) {
+          if (isVisibleV3221(el)) return el;
+        }
+      }
+    } catch (_) {}
+
+    try {
+      const buttons = document.querySelectorAll('button,[role="button"]');
+      for (const el of buttons) {
+        if (!isVisibleV3221(el)) continue;
+        const t = exactTextV3221(el);
+        if (t === 'cc' || t === 'subtitles' || t === 'captions') return el;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function disableVidSrcTextTracksV3221() {
     try {
       document.querySelectorAll('video').forEach(function (video) {
         try {
-          video.querySelectorAll && video.querySelectorAll('track').forEach(function (tr) {
+          video.querySelectorAll('track').forEach(function (tr) {
             try {
               tr.default = false;
               tr.removeAttribute('default');
+              if (tr.track) tr.track.mode = 'disabled';
             } catch (_) {}
           });
         } catch (_) {}
@@ -813,17 +912,8 @@
           }
         } catch (_) {}
       });
-
-      document.querySelectorAll('video track').forEach(function (tr) {
-        try {
-          tr.default = false;
-          tr.removeAttribute('default');
-          if (tr.track) tr.track.mode = 'disabled';
-        } catch (_) {}
-      });
     } catch (_) {}
 
-    /* JW Player: -1 means captions off. */
     try {
       if (typeof window.jwplayer === 'function') {
         const player = window.jwplayer();
@@ -832,50 +922,71 @@
         }
       }
     } catch (_) {}
+  }
+
+  function clickVidSrcOffV3221() {
+    const off = findVidSrcOffItemV3221();
+    if (!off) return false;
+
+    try {
+      off.click();
+      vidSrcCaptionOffConfirmedV3221 = true;
+      vidSrcCaptionMenuOpenedV3221 = false;
+      disableVidSrcTextTracksV3221();
+
+      /*
+       * The menu in VidSrc may stay open after selecting Off. Close it only if
+       * its own CC button is still visible; never touch SubHub's CC button,
+       * because this code runs inside the provider frame chain only.
+       */
+      setTimeout(function () {
+        try {
+          const b = findVidSrcCaptionButtonV3221();
+          if (b && findVidSrcOffItemV3221()) b.click();
+        } catch (_) {}
+      }, 120);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function forceVidSrcCaptionsOffV3221() {
+    if (!isVidSrcChainV3216()) return;
+
+    disableVidSrcTextTracksV3221();
+
+    if (vidSrcCaptionOffConfirmedV3221) return;
+
+    const now = Date.now();
+    if (now - lastVidSrcCaptionOffV3221 < 650) return;
+    lastVidSrcCaptionOffV3221 = now;
+
+    if (clickVidSrcOffV3221()) return;
 
     /*
-     * Most VidSrc player skins keep the "Off" menu entry in the DOM even when
-     * the settings panel is closed. Selecting it is idempotent and avoids
-     * opening the provider's subtitle menu for the viewer.
+     * The Off entry does not exist until VidSrc opens its subtitle panel.
+     * Open the provider's own CC control once, select Off, then close it.
      */
-    try {
-      const candidates = document.querySelectorAll(
-        '.vjs-menu-item,.jw-settings-content-item,.jw-settings-submenu button,' +
-        '.plyr__menu__container button,[role="menuitem"],[role="option"],' +
-        'button,li'
-      );
-
-      for (const el of candidates) {
-        const label = String(
-          (el.textContent || el.getAttribute('aria-label') || el.getAttribute('title') || '')
-        ).replace(/\s+/g, ' ').trim().toLowerCase();
-
-        if (label !== 'off') continue;
-
-        const scope = el.closest(
-          '.vjs-menu,.jw-settings-menu,.jw-settings-submenu,.plyr__menu__container,' +
-          '[class*="caption" i],[class*="subtitle" i],[class*="track" i],[role="menu"]'
-        );
-
-        const scopeText = String(scope && scope.textContent || '').toLowerCase();
-        const cls = String((el.className || '') + ' ' + (scope && scope.className || '')).toLowerCase();
-
-        if (
-          scopeText.includes('subtitle') ||
-          scopeText.includes('caption') ||
-          cls.includes('subtitle') ||
-          cls.includes('caption') ||
-          cls.includes('text-track') ||
-          cls.includes('subs-caps')
-        ) {
-          try {
-            el.click();
-            el.setAttribute('data-subhub-caption-off-v3220', '1');
-          } catch (_) {}
-          break;
+    if (!vidSrcCaptionMenuOpenedV3221) {
+      const cc = findVidSrcCaptionButtonV3221();
+      if (cc) {
+        try {
+          vidSrcCaptionMenuOpenedV3221 = true;
+          cc.click();
+          setTimeout(clickVidSrcOffV3221, 80);
+          setTimeout(clickVidSrcOffV3221, 220);
+          setTimeout(function () {
+            if (!vidSrcCaptionOffConfirmedV3221) {
+              vidSrcCaptionMenuOpenedV3221 = false;
+            }
+          }, 500);
+        } catch (_) {
+          vidSrcCaptionMenuOpenedV3221 = false;
         }
       }
-    } catch (_) {}
+    }
   }
 
   function suppressVidSrcCaptionsV3215() {
@@ -930,7 +1041,7 @@
 
       document.querySelectorAll('video').forEach(attach);
       installVidSrcInteractionGuardV3217();
-      forceVidSrcCaptionsOffV3220();
+      forceVidSrcCaptionsOffV3221();
       suppressVidSrcCaptionsV3215();
       chooseBest(activeVideo);
       if (activeVideo) maybeSignalReady(activeVideo, false);
