@@ -3,7 +3,7 @@ name: Build TEST SubHub 322.3.9 VidSrc
 on:
   push:
     branches:
-      - 'test/vidsrc-322.3.9'
+      - 'test/vidsrc-322.3.8'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
