@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.25';
+  const BRIDGE_BUILD = '322.3.26';
 
   let lastSig = '';
   let clockSource = '';
@@ -332,6 +332,19 @@
         try { applySubtitleStyle(); } catch (_) {}
       }
 
+      try {
+        const overlay = document.getElementById('embedSubtitleOverlay');
+        if (overlay) {
+          overlay.style.setProperty('z-index', '2147483400', 'important');
+          overlay.style.setProperty('pointer-events', 'none', 'important');
+        }
+        const tx = overlay && overlay.querySelector('.sub-text');
+        if (tx) {
+          tx.style.setProperty('pointer-events', 'auto', 'important');
+          tx.style.setProperty('touch-action', 'none', 'important');
+        }
+      } catch (_) {}
+
       try { bindVidSrcSubtitleDragV3225(); } catch (_) {}
 
       if (frame) {
@@ -425,9 +438,17 @@
         'pointer-events:auto!important;z-index:2147483002!important;}',
         '#embedPlayerModal .video-modal-box.subhub-menu-open-v3225 #embedCcBtn{',
         'display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedSubtitleOverlay{',
+        'position:absolute!important;z-index:2147483400!important;pointer-events:none!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedSubtitleOverlay .sub-text{',
         'pointer-events:auto!important;touch-action:none!important;cursor:grab!important;position:relative!important;',
-        'z-index:2147482501!important;}',
+        'z-index:2147483401!important;}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .video-top-controls{',
+        'z-index:2147483600!important;}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].subhub-menu-open-v3225 .video-top-controls{',
+        'position:absolute!important;top:8px!important;left:66px!important;right:auto!important;',
+        'display:flex!important;visibility:visible!important;opacity:1!important;',
+        'pointer-events:auto!important;z-index:2147483600!important;}',
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-center{',
         'width:62px;height:62px;font-size:28px;}',
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
@@ -489,12 +510,28 @@
           root.classList.remove('controls-hidden');
 
           try {
-            const tools = box.querySelector('.video-top-controls');
+            const tools =
+              box.querySelector('.video-top-controls') ||
+              document.querySelector('#embedPlayerModal .video-top-controls') ||
+              document.querySelector('.video-top-controls');
+
             if (tools) {
-              tools.style.setProperty('display', 'flex', 'important');
-              tools.style.setProperty('visibility', 'visible', 'important');
-              tools.style.setProperty('opacity', '1', 'important');
-              tools.style.setProperty('pointer-events', 'auto', 'important');
+              if (tools.parentElement !== box) box.appendChild(tools);
+              tools.style.setProperty('position', 'absolute', 'important');
+              tools.style.setProperty('top', '8px', 'important');
+              tools.style.setProperty('left', '66px', 'important');
+              tools.style.setProperty('right', 'auto', 'important');
+              tools.style.setProperty('display', open ? 'flex' : 'none', 'important');
+              tools.style.setProperty('visibility', open ? 'visible' : 'hidden', 'important');
+              tools.style.setProperty('opacity', open ? '1' : '0', 'important');
+              tools.style.setProperty('pointer-events', open ? 'auto' : 'none', 'important');
+              tools.style.setProperty('z-index', '2147483600', 'important');
+            }
+
+            const cc = document.getElementById('embedCcBtn');
+            if (cc) {
+              cc.style.setProperty('pointer-events', open ? 'auto' : 'none', 'important');
+              cc.style.setProperty('z-index', '2147483601', 'important');
             }
           } catch (_) {}
           return;
@@ -545,17 +582,16 @@
     }
   }
 
-  let vidSrcSubtitleDragBoundV3225 = false;
+  let vidSrcSubtitleDragTargetV3226 = null;
 
   function bindVidSrcSubtitleDragV3225() {
-    if (vidSrcSubtitleDragBoundV3225) return true;
 
     const overlay = document.getElementById('embedSubtitleOverlay');
     const tx = overlay && overlay.querySelector('.sub-text');
     const box = document.querySelector('#embedPlayerModal .video-modal-box');
     if (!overlay || !tx || !box) return false;
-
-    vidSrcSubtitleDragBoundV3225 = true;
+    if (vidSrcSubtitleDragTargetV3226 === tx) return true;
+    vidSrcSubtitleDragTargetV3226 = tx;
 
     let dragging = false;
     let startY = 0;
@@ -628,6 +664,33 @@
 
     tx.addEventListener('pointerup', finish, true);
     tx.addEventListener('pointercancel', finish, true);
+
+    let touchStartY = 0;
+    let touchStartPos = 7;
+    tx.addEventListener('touchstart', function (ev) {
+      try {
+        if (!ev.touches || !ev.touches.length) return;
+        touchStartY = ev.touches[0].clientY;
+        touchStartPos = readPos();
+        ev.preventDefault();
+        ev.stopPropagation();
+      } catch (_) {}
+    }, {capture:true, passive:false});
+
+    tx.addEventListener('touchmove', function (ev) {
+      try {
+        if (!ev.touches || !ev.touches.length) return;
+        const h = Math.max(120, box.getBoundingClientRect().height || 0);
+        const deltaPct = (touchStartY - ev.touches[0].clientY) / h * 100;
+        writePos(touchStartPos + deltaPct);
+        ev.preventDefault();
+        ev.stopPropagation();
+      } catch (_) {}
+    }, {capture:true, passive:false});
+
+    tx.addEventListener('touchend', function (ev) {
+      try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
+    }, {capture:true, passive:false});
     return true;
   }
 
@@ -1001,6 +1064,7 @@
         if (typeof updateSubtitleOverlay === 'function') {
           updateSubtitleOverlay();
         }
+        try { bindVidSrcSubtitleDragV3225(); } catch (_) {}
         return true;
       }
 
