@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.30'" in site
+assert "BRIDGE_BUILD = '322.3.31'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 39" in gradle
-assert "versionName '322.3.30'" in gradle
+assert "versionCode 40" in gradle
+assert "versionName '322.3.31'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.30).
+# VidSrc owner-only Android test guard (322.3.31).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -249,3 +249,17 @@ assert "visibility:hidden!important;opacity:0!important;pointer-events:none!impo
 assert "height:44vh!important" in site
 assert "height:54vh!important" in site
 assert "'z-index:2147482990'" in site
+
+assert "height:62vh!important" in site
+assert "height:36vh!important" in site
+assert "overflow-y:auto!important" in site
+assert "ensureVidSrcProviderShortcutsV3231" in site
+assert "providerquality" in site
+assert "providersubs" in site
+assert "providercaptionsoff" in site
+assert "openVidSrcProviderQualityV3231" in js
+assert "openVidSrcProviderSubsV3231" in js
+assert "forceVidSrcProviderCaptionsOffV3231" in js
+assert "subhub-provider-captions-off-v3231" in js
+assert 'button[data-sh3222="back"]' in site
+assert 'button[data-sh3222="forward"]' in site
