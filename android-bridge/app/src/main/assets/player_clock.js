@@ -357,11 +357,111 @@
   }
 
   const vidSrcTakeoverControlsV3222 = new WeakMap();
+  let vidSrcTakeoverActiveV3224 = false;
+  let vidSrcCaptionScrubTimerV3224 = 0;
+
+  function scrubVidSrcProviderCaptionsV3224() {
+    if (!vidSrcTakeoverActiveV3224) return;
+
+    try {
+      document.querySelectorAll('video').forEach(function (video) {
+        try {
+          const tracks = video.textTracks;
+          if (tracks) {
+            for (let i = 0; i < tracks.length; i++) {
+              try { tracks[i].mode = 'disabled'; } catch (_) {}
+            }
+          }
+        } catch (_) {}
+
+        try {
+          video.querySelectorAll('track').forEach(function (tr) {
+            try {
+              tr.default = false;
+              tr.removeAttribute('default');
+              if (tr.track) tr.track.mode = 'disabled';
+            } catch (_) {}
+          });
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    // Common caption renderers used by embedded players.
+    try {
+      document.querySelectorAll(
+        '.vjs-text-track-display,.jw-text-track-display,.jw-captions,' +
+        '.plyr__captions,.shaka-text-container,' +
+        '[class*="subtitle" i],[class*="caption" i],[class*="text-track" i],' +
+        '[class*="cue" i],[data-testid*="subtitle" i],[data-testid*="caption" i]'
+      ).forEach(function (el) {
+        try {
+          el.style.setProperty('display', 'none', 'important');
+          el.style.setProperty('visibility', 'hidden', 'important');
+          el.style.setProperty('opacity', '0', 'important');
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    /*
+     * Some VidSrc skins draw captions in a generic absolutely-positioned box
+     * without a useful class name. While SubHub takeover is active, hide only
+     * compact text overlays sitting over the lower/central area of the video.
+     * Provider controls are already replaced by SubHub at this point.
+     */
+    try {
+      const video = activeVideo && document.contains(activeVideo) ? activeVideo : null;
+      if (video) {
+        const vr = video.getBoundingClientRect();
+        const minY = vr.top + vr.height * 0.28;
+        const maxY = vr.bottom - 2;
+
+        document.querySelectorAll('div,span,p').forEach(function (el) {
+          try {
+            if (!el || el === video || el.contains(video)) return;
+            const txt = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!txt || txt.length > 220) return;
+
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return;
+            if (cs.position !== 'absolute' && cs.position !== 'fixed') return;
+
+            const r = el.getBoundingClientRect();
+            if (r.width < 24 || r.height < 12) return;
+            if (r.bottom < minY || r.top > maxY) return;
+            if (r.left > vr.right || r.right < vr.left) return;
+            if (r.height > vr.height * 0.34) return;
+            if (r.width > vr.width * 0.96) return;
+
+            const fs = parseFloat(cs.fontSize || '0') || 0;
+            if (fs < 12) return;
+
+            el.style.setProperty('display', 'none', 'important');
+            el.setAttribute('data-subhub-hidden-overlay-v3224', '1');
+          } catch (_) {}
+        });
+      }
+    } catch (_) {}
+  }
+
+  function setVidSrcCaptionScrubV3224(active) {
+    vidSrcTakeoverActiveV3224 = !!active;
+    clearInterval(vidSrcCaptionScrubTimerV3224);
+    vidSrcCaptionScrubTimerV3224 = 0;
+
+    if (!vidSrcTakeoverActiveV3224) return;
+
+    scrubVidSrcProviderCaptionsV3224();
+    vidSrcCaptionScrubTimerV3224 = setInterval(
+      scrubVidSrcProviderCaptionsV3224,
+      240
+    );
+  }
 
   function applyVidSrcTakeoverV3222(active) {
     try {
       const html = document.documentElement;
       if (html) html.classList.toggle('subhub-vidsrc-takeover-v3222', !!active);
+      setVidSrcCaptionScrubV3224(!!active);
 
       let style = document.getElementById('__subhub_vidsrc_takeover_v3222');
       if (!style) {
@@ -381,7 +481,10 @@
           'html.subhub-vidsrc-takeover-v3222 [class*="subtitle" i],',
           'html.subhub-vidsrc-takeover-v3222 [class*="caption" i],',
           'html.subhub-vidsrc-takeover-v3222 [data-testid*="subtitle" i],',
-          'html.subhub-vidsrc-takeover-v3222 [data-testid*="caption" i]{',
+          'html.subhub-vidsrc-takeover-v3222 [data-testid*="caption" i],',
+          'html.subhub-vidsrc-takeover-v3222 .shaka-text-container,',
+          'html.subhub-vidsrc-takeover-v3222 [class*="text-track" i],',
+          'html.subhub-vidsrc-takeover-v3222 [class*="cue" i]{',
           'display:none!important;visibility:hidden!important;opacity:0!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(style);
