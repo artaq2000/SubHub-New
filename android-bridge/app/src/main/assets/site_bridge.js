@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.22';
+  const BRIDGE_BUILD = '322.3.23';
 
   let lastSig = '';
   let clockSource = '';
@@ -63,6 +63,12 @@
     const active = isVidSrcFrameActiveV328();
     if (!force && active === lastVidSrcGuardState) return;
     lastVidSrcGuardState = active;
+
+    try {
+      if (!active && typeof setVidSrcTakeoverActiveV3222 === 'function') {
+        setVidSrcTakeoverActiveV3222(false);
+      }
+    } catch (_) {}
 
     try {
       const b = window.SubHubAndroidBridge;
@@ -361,6 +367,7 @@
 
   let vidSrcTakeoverDraggingV3222 = false;
   let vidSrcTakeoverHideTimerV3222 = 0;
+  let vidSrcTakeoverEnabledV3223 = false;
 
   function fmtVidSrcTimeV3222(v) {
     v = Math.max(0, Number(v || 0));
@@ -399,7 +406,16 @@
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-play{font-size:24px;}',
         '#subhub-vidsrc-takeover-v3222 input[type=range]{flex:1;min-width:80px;accent-color:#f4b83f;}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-time{min-width:126px;text-align:center;color:#fff;',
-        'font:700 15px/1.2 system-ui,sans-serif;direction:ltr;}'
+        'font:700 15px/1.2 system-ui,sans-serif;direction:ltr;}',
+        '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-center{',
+        'width:62px;height:62px;font-size:28px;}',
+        '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
+        'left:10px;right:10px;bottom:8px;padding:8px 9px;gap:6px;border-radius:14px;}',
+        '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 button{',
+        'width:42px;height:38px;border-radius:10px;font-size:15px;}',
+        '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-play{font-size:20px;}',
+        '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-time{',
+        'min-width:92px;font-size:12px;}'
       ].join('');
       (document.head || document.documentElement).appendChild(style);
 
@@ -522,9 +538,14 @@
 
   function setVidSrcTakeoverActiveV3222(active) {
     try {
+      active = !!active;
       const root = ensureVidSrcTakeoverV3222();
       if (!root) return false;
-      root.classList.toggle('on', !!active);
+      if (vidSrcTakeoverEnabledV3223 === active && root.classList.contains('on') === active) {
+        return true;
+      }
+      vidSrcTakeoverEnabledV3223 = active;
+      root.classList.toggle('on', active);
       root.classList.remove('controls-hidden');
 
       sendVidSrcSafeCommandV3211('takeover', {active: !!active});
@@ -952,6 +973,12 @@
       if (Number.isFinite(d) && d > 0) {
         window.__subhubVidSrcDurationV3211 = d;
       }
+      try {
+        if (clockReadyState >= 1 && typeof setVidSrcTakeoverActiveV3222 === 'function') {
+          setVidSrcTakeoverActiveV3222(true);
+        }
+      } catch (_) {}
+
       try {
         if (typeof _vidfastSetStateV294 === 'function') {
           _vidfastSetStateV294(
