@@ -91,13 +91,75 @@
 
   function cleanupInjected() {
     if (!active) return;
+    const state = active;
+
     try {
-      if (typeof active.previousIndex === 'number') {
-        window._watchSelectedIdx = active.previousIndex;
+      if (state.syncTimer) clearInterval(state.syncTimer);
+      state.syncTimer = 0;
+    } catch (_) {}
+
+    try {
+      const bridge = window.SubHubAndroidBridge;
+      if (bridge && typeof bridge.directR2Command === 'function' && state.session) {
+        bridge.directR2Command(token, state.session, 'close', 0);
       }
     } catch (_) {}
-    active.r2Video = null;
-    active.originalVideoSrc = '';
+
+    try {
+      const video = state.r2Video;
+      if (video) {
+        ['currentTime','duration','paused','ended','readyState','networkState'].forEach(function (key) {
+          try { delete video[key]; } catch (_) {}
+        });
+
+        try {
+          if (state.hadOwnPlay) video.play = state.originalPlay;
+          else delete video.play;
+        } catch (_) {}
+        try {
+          if (state.hadOwnPause) video.pause = state.originalPause;
+          else delete video.pause;
+        } catch (_) {}
+
+        try {
+          if (state.originalSrc) video.setAttribute('src', state.originalSrc);
+          else video.removeAttribute('src');
+          if (state.originalPoster) video.setAttribute('poster', state.originalPoster);
+          else video.removeAttribute('poster');
+
+          (state.sourceNodes || []).forEach(function (item) {
+            try {
+              if (item.src) item.node.setAttribute('src', item.src);
+              else item.node.removeAttribute('src');
+            } catch (_) {}
+          });
+
+          if (state.originalVideoStyle != null) {
+            video.setAttribute('style', state.originalVideoStyle);
+          } else {
+            video.removeAttribute('style');
+          }
+          video.load();
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    try {
+      (state.transparentNodes || []).forEach(function (item) {
+        try {
+          if (item.style == null) item.node.removeAttribute('style');
+          else item.node.setAttribute('style', item.style);
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    try {
+      if (typeof state.previousIndex === 'number') {
+        window._watchSelectedIdx = state.previousIndex;
+      }
+    } catch (_) {}
+
+    state.r2Video = null;
   }
 
   function watchPlayerClose() {
@@ -108,19 +170,21 @@
         cleanupTimer = 0;
         return;
       }
+
       let open = false;
       try {
         open = !!document.querySelector(
           '#videoPlayerModal.open,#videoPlayerModal.inline-player-v265.open'
         );
       } catch (_) {}
+
       if (!open && active.r2Opened) {
         cleanupInjected();
         active = null;
         clearInterval(cleanupTimer);
         cleanupTimer = 0;
       }
-    }, 500);
+    }, 350);
   }
 
   function findR2VideoElement() {
@@ -135,48 +199,192 @@
     }
   }
 
-  function swapExistingR2VideoToHls(state, url) {
-    const video = findR2VideoElement();
-    if (!video || active !== state) return false;
+  function normalizeRect(video) {
+    const r = video.getBoundingClientRect();
+    const iw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    const ih = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    return {
+      x:Math.max(0, r.left / iw),
+      y:Math.max(0, r.top / ih),
+      w:Math.max(0.01, r.width / iw),
+      h:Math.max(0.01, r.height / ih)
+    };
+  }
 
+  function resizeModeFor(video) {
     try {
-      // Preserve the exact R2 modal, controls, subtitle overlay and subPanel.
-      // Only the already-created R2 <video> media URL is replaced in memory.
-      state.r2Video = video;
-      state.originalVideoSrc = String(video.currentSrc || video.src || '');
+      const fit = String(getComputedStyle(video).objectFit || '').toLowerCase();
+      if (fit === 'cover') return 'cover';
+      if (fit === 'fill') return 'fill';
+    } catch (_) {}
+    return 'fit';
+  }
 
-      try { video.pause(); } catch (_) {}
+  function makeVideoAreaTransparent(state, video) {
+    state.transparentNodes = [];
+    let node = video.parentElement;
+    const modal = video.closest && video.closest('#videoPlayerModal');
+    let guard = 0;
+    while (node && guard++ < 8) {
+      state.transparentNodes.push({
+        node:node,
+        style:node.hasAttribute('style') ? node.getAttribute('style') : null
+      });
       try {
-        Array.prototype.slice.call(video.querySelectorAll('source')).forEach(function (s) {
-          s.removeAttribute('src');
-        });
+        node.style.setProperty('background-color','transparent','important');
+        node.style.setProperty('background-image','none','important');
       } catch (_) {}
-
-      video.src = String(url);
-      video.setAttribute('src', String(url));
-      video.preload = 'auto';
-      video.load();
-
-      const playResult = video.play();
-      if (playResult && typeof playResult.catch === 'function') {
-        playResult.catch(function () {
-          try {
-            if (active === state) notify('تم فتح مشغّل R2، اضغط تشغيل مرة واحدة إذا لم يبدأ تلقائياً.');
-          } catch (_) {}
-        });
-      }
-
-      state.r2Opened = true;
-      watchPlayerClose();
-      return true;
-    } catch (_) {
-      return false;
+      if (node === modal) break;
+      node = node.parentElement;
     }
   }
 
-  function openInExistingR2(url) {
+  function installR2Facade(state, video) {
+    const bridge = window.SubHubAndroidBridge;
+    if (!bridge ||
+        typeof bridge.startDirectR2Playback !== 'function' ||
+        typeof bridge.getDirectR2State !== 'function') return false;
+
+    state.r2Video = video;
+    state.originalSrc = String(video.getAttribute('src') || '');
+    state.originalPoster = String(video.getAttribute('poster') || '');
+    state.originalVideoStyle = video.hasAttribute('style') ? video.getAttribute('style') : null;
+    state.hadOwnPlay = Object.prototype.hasOwnProperty.call(video,'play');
+    state.hadOwnPause = Object.prototype.hasOwnProperty.call(video,'pause');
+    state.originalPlay = video.play;
+    state.originalPause = video.pause;
+    state.sourceNodes = Array.prototype.slice.call(video.querySelectorAll('source')).map(function (node) {
+      return {node:node, src:String(node.getAttribute('src') || '')};
+    });
+
+    makeVideoAreaTransparent(state, video);
+
+    try { state.originalPause.call(video); } catch (_) {}
+    try { video.muted = true; } catch (_) {}
+    try { video.preload = 'none'; } catch (_) {}
+    try { video.removeAttribute('poster'); } catch (_) {}
+    try { video.removeAttribute('src'); } catch (_) {}
+    try {
+      state.sourceNodes.forEach(function (item) { item.node.removeAttribute('src'); });
+      video.load();
+    } catch (_) {}
+
+    try {
+      video.style.setProperty('background','transparent','important');
+      video.style.setProperty('visibility','hidden','important');
+    } catch (_) {}
+
+    state.native = {
+      position:0,
+      duration:0,
+      buffered:0,
+      playing:true,
+      state:2
+    };
+    state.syncing = false;
+    state.lastPlaying = null;
+
+    function define(name, getter, setter) {
+      try {
+        Object.defineProperty(video, name, {
+          configurable:true,
+          enumerable:true,
+          get:getter,
+          set:setter || function () {}
+        });
+      } catch (_) {}
+    }
+
+    define('currentTime',
+      function () { return Math.max(0, Number(state.native.position || 0) / 1000); },
+      function (seconds) {
+        if (state.syncing) return;
+        const ms = Math.max(0, Number(seconds || 0) * 1000);
+        try { bridge.directR2Command(token,state.session,'seek',ms); } catch (_) {}
+      }
+    );
+    define('duration', function () {
+      const d = Number(state.native.duration || 0);
+      return d > 0 ? d / 1000 : 0;
+    });
+    define('paused', function () { return !state.native.playing; });
+    define('ended', function () {
+      const d=Number(state.native.duration||0), p=Number(state.native.position||0);
+      return d>0 && p>=d-250;
+    });
+    define('readyState', function () { return 4; });
+    define('networkState', function () { return 1; });
+
+    try {
+      video.play = function () {
+        try { bridge.directR2Command(token,state.session,'play',0); } catch (_) {}
+        state.native.playing = true;
+        try { video.dispatchEvent(new Event('play')); } catch (_) {}
+        return Promise.resolve();
+      };
+      video.pause = function () {
+        try { bridge.directR2Command(token,state.session,'pause',0); } catch (_) {}
+        state.native.playing = false;
+        try { video.dispatchEvent(new Event('pause')); } catch (_) {}
+      };
+    } catch (_) {}
+
+    video.addEventListener('volumechange', function () {
+      if (active !== state) return;
+      try {
+        bridge.directR2Command(
+          token,state.session,'volume',
+          video.muted ? 0 : Math.max(0,Math.min(1,Number(video.volume || 0)))
+        );
+      } catch (_) {}
+    });
+
+    const rect = normalizeRect(video);
+    try {
+      bridge.startDirectR2Playback(
+        token,state.session,rect.x,rect.y,rect.w,rect.h
+      );
+    } catch (_) {
+      return false;
+    }
+
+    state.syncTimer = setInterval(function () {
+      if (active !== state) return;
+
+      try {
+        const raw = bridge.getDirectR2State(token,state.session);
+        const next = raw ? JSON.parse(raw) : null;
+        if (next && typeof next === 'object') {
+          state.native = next;
+        }
+      } catch (_) {}
+
+      try {
+        const r = normalizeRect(video);
+        bridge.updateDirectR2Bounds(
+          token,state.session,r.x,r.y,r.w,r.h,resizeModeFor(video)
+        );
+      } catch (_) {}
+
+      try {
+        const playing = !!state.native.playing;
+        if (playing !== state.lastPlaying) {
+          state.lastPlaying = playing;
+          video.dispatchEvent(new Event(playing ? 'play' : 'pause'));
+        }
+        video.dispatchEvent(new Event('timeupdate'));
+        video.dispatchEvent(new Event('progress'));
+      } catch (_) {}
+    }, 180);
+
+    state.r2Opened = true;
+    watchPlayerClose();
+    return true;
+  }
+
+  function openInExistingR2() {
     const state = active;
-    if (!state || !/^https:\/\//i.test(String(url || ''))) return false;
+    if (!state) return false;
 
     const template = findR2Template();
     if (!template) {
@@ -185,19 +393,14 @@
     }
 
     try {
-      const sources = window._watchSources;
-      if (!Array.isArray(sources)) throw new Error('sources');
+      if (!Array.isArray(window._watchSources)) throw new Error('sources');
 
       state.previousIndex =
         typeof window._watchSelectedIdx === 'number'
           ? window._watchSelectedIdx
           : 0;
 
-      /*
-       * Open the REAL R2 source object first so SubHub creates the exact same
-       * R2 modal/controls/subPanel that already works today. We do not clone
-       * or edit the R2 source object at all.
-       */
+      // Open the exact existing R2 UI. No R2 settings/styles are copied or edited.
       window._watchSelectedIdx = template.index;
 
       if (typeof stopInlinePlayersV265 === 'function') {
@@ -217,25 +420,20 @@
         if (active !== state) return;
         attempts += 1;
 
-        const modalOpen = !!document.querySelector(
-          '#videoPlayerModal.open,#videoPlayerModal.inline-player-v265.open'
-        );
+        const video = findR2VideoElement();
+        if (video && installR2Facade(state, video)) return;
 
-        if (modalOpen && swapExistingR2VideoToHls(state, String(url))) {
+        if (attempts < 35) {
+          setTimeout(attach,100);
           return;
         }
 
-        if (attempts < 30) {
-          setTimeout(attach, 100);
-          return;
-        }
-
-        window._watchSelectedIdx = state.previousIndex;
-        notify('فتح R2 لكن لم أجد عنصر الفيديو لاستبدال البث. سنجرب المسار التالي.');
+        try { window._watchSelectedIdx = state.previousIndex; } catch (_) {}
+        notify('فتح R2 لكن تعذّر ربط البث المباشر به.');
         active = null;
       };
 
-      setTimeout(attach, 0);
+      setTimeout(attach,0);
       return true;
     } catch (_) {
       try { window._watchSelectedIdx = state.previousIndex; } catch (_) {}
@@ -281,7 +479,10 @@
         previousIndex:0,
         r2Opened:false,
         r2Video:null,
-        originalVideoSrc:''
+        originalVideoSrc:'',
+        syncTimer:0,
+        transparentNodes:[],
+        sourceNodes:[]
       };
 
       bridge.openDirectStream(token, JSON.stringify({
@@ -297,14 +498,14 @@
     }
   }
 
-  window.__subhubDirectCaptured = function (session, url) {
+  window.__subhubDirectCaptured = function (session) {
     const state = active;
     if (!state || state.session !== session) return false;
     if (!movie() || movie().id !== state.movieId) {
       active = null;
       return false;
     }
-    const ok = openInExistingR2(String(url || ''));
+    const ok = openInExistingR2();
     if (!ok && active === state) active = null;
     return ok;
   };
