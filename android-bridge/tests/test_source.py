@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.20'" in site
+assert "BRIDGE_BUILD = '322.3.21'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 29" in gradle
-assert "versionName '322.3.20'" in gradle
+assert "versionCode 30" in gradle
+assert "versionName '322.3.21'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -82,7 +82,7 @@ assert 'MediaStore.Downloads.EXTERNAL_CONTENT_URI' in main
 assert 'MAX_SUBTITLE_DOWNLOAD_BYTES' in main
 
 
-# VidSrc owner-only Android test guard (322.3.20).
+# VidSrc owner-only Android test guard (322.3.21).
 assert 'vidSrcGuardActive' in main
 assert 'setVidSrcGuard' in main
 assert 'shouldBlockVidSrcNavigation' in main
@@ -169,8 +169,13 @@ assert 'setVidSrcImmersiveV3219' in site
 assert 'setVidSrcImmersiveV3219(true)' in site
 assert 'setVidSrcImmersiveV3219(false)' in site
 
-assert 'forceVidSrcCaptionsOffV3220' in js
-assert 'setCurrentCaptions(-1)' in js
 assert "tracks[i].mode = 'disabled'" in js
-assert "label !== 'off'" in js
-assert "data-subhub-caption-off-v3220" in js
+
+assert 'forceVidSrcCaptionsOffV3221' in js
+assert 'findVidSrcOffItemV3221' in js
+assert 'findVidSrcCaptionButtonV3221' in js
+assert 'vidSrcCaptionMenuOpenedV3221' in js
+assert "cc.click()" in js
+assert "setTimeout(clickVidSrcOffV3221, 80)" in js
+assert "off.click()" in js
+assert "player.setCurrentCaptions(-1)" in js
