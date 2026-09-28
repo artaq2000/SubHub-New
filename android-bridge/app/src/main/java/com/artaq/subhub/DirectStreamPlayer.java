@@ -73,6 +73,7 @@ public final class DirectStreamPlayer {
     private final FrameLayout root;
     private final TextView status;
     private final TextView subtitle;
+    private final TextView valueToast;
     private final TextView menuButton;
     private final LinearLayout toolbar;
     private final HorizontalScrollView quickStrip;
@@ -104,6 +105,7 @@ public final class DirectStreamPlayer {
     private boolean panelOpen;
     private boolean menuOpen;
     private String currentSubtitleText = "";
+    private Runnable valueToastHideTask;
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
                               JSONArray catalog, Listener listener) {
@@ -149,6 +151,18 @@ public final class DirectStreamPlayer {
         root.addView(subtitle, subLp);
         installSubtitleGesture();
 
+        valueToast = new TextView(activity);
+        valueToast.setTextColor(Color.WHITE);
+        valueToast.setTextSize(18);
+        valueToast.setGravity(Gravity.CENTER);
+        valueToast.setPadding(dp(16), dp(7), dp(16), dp(8));
+        valueToast.setBackground(round(0xcc081826, 0x664E718B, 1, 14));
+        valueToast.setVisibility(View.GONE);
+        valueToast.setElevation(dp(24));
+        FrameLayout.LayoutParams valueLp =
+                new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER);
+        root.addView(valueToast, valueLp);
+
         status = new TextView(activity);
         status.setTextColor(Color.WHITE);
         status.setTextSize(15);
@@ -190,8 +204,11 @@ public final class DirectStreamPlayer {
         quickRow = new LinearLayout(activity);
         quickRow.setOrientation(LinearLayout.HORIZONTAL);
         quickRow.setGravity(Gravity.CENTER_VERTICAL);
-        quickRow.setPadding(dp(4), dp(3), dp(4), dp(3));
-        quickRow.setBackground(round(0x99101823, 0x443D6B8E, 1, 18));
+        quickRow.setPadding(dp(3), dp(2), dp(3), dp(2));
+        quickRow.setBackground(round(0x99101823, 0x443D6B8E, 1, 16));
+        addCompactQuick("✕", this::close);
+        addCompactQuick("HD", this::quality);
+        addCompactQuick("CC", this::chooseSubtitle);
         addCompactQuick("A−", () -> adjustSubtitleSize(-2));
         addCompactQuick("A+", () -> adjustSubtitleSize(2));
         addCompactQuick("↑", () -> adjustSubtitlePosition(4));
@@ -210,12 +227,12 @@ public final class DirectStreamPlayer {
         quickStrip.setHorizontalScrollBarEnabled(false);
         quickStrip.setFillViewport(false);
         quickStrip.setBackgroundColor(Color.TRANSPARENT);
-        quickStrip.addView(quickRow, new HorizontalScrollView.LayoutParams(-2, dp(48)));
+        quickStrip.addView(quickRow, new HorizontalScrollView.LayoutParams(-2, dp(40)));
         quickStrip.setVisibility(View.GONE);
         FrameLayout.LayoutParams quickLp =
-                new FrameLayout.LayoutParams(-1, dp(50), Gravity.TOP);
-        quickLp.topMargin = dp(64);
-        quickLp.leftMargin = dp(10);
+                new FrameLayout.LayoutParams(-1, dp(42), Gravity.TOP);
+        quickLp.topMargin = dp(12);
+        quickLp.leftMargin = dp(66);
         quickLp.rightMargin = dp(10);
         root.addView(quickStrip, quickLp);
 
@@ -513,7 +530,7 @@ public final class DirectStreamPlayer {
 
     private void toggleMenu() {
         menuOpen = !menuOpen;
-        toolbar.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
+        toolbar.setVisibility(View.GONE);
         quickStrip.setVisibility(menuOpen ? View.VISIBLE : View.GONE);
         if (!menuOpen) hidePanel();
         enterImmersive();
@@ -532,7 +549,7 @@ public final class DirectStreamPlayer {
         v.setMinWidth(0);
         v.setMinimumWidth(0);
         v.setPadding(dp(5), 0, dp(5), 0);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(54), dp(42));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(50), dp(36));
         lp.setMargins(dp(2), 0, dp(2), 0);
         quickRow.addView(v, lp);
     }
@@ -711,10 +728,33 @@ public final class DirectStreamPlayer {
         subtitleSizeSp = Math.max(14, Math.min(54, subtitleSizeSp + delta));
         subtitle.setTextSize(subtitleSizeSp);
         prefs.edit().putInt("size_sp", subtitleSizeSp).apply();
+        showSubtitleSizePercent();
+    }
+
+    private void showSubtitleSizePercent() {
+        int percent = Math.round((subtitleSizeSp / 26f) * 20f) * 5;
+        valueToast.setText(toArabicDigits(percent) + "٪");
+        valueToast.setVisibility(View.VISIBLE);
+        if (valueToastHideTask != null) handler.removeCallbacks(valueToastHideTask);
+        valueToastHideTask = () -> {
+            if (!closed) valueToast.setVisibility(View.GONE);
+        };
+        handler.postDelayed(valueToastHideTask, 900);
+    }
+
+    private String toArabicDigits(int value) {
+        String western = String.valueOf(value);
+        StringBuilder out = new StringBuilder(western.length());
+        String arabic = "٠١٢٣٤٥٦٧٨٩";
+        for (int i = 0; i < western.length(); i++) {
+            char c = western.charAt(i);
+            out.append(c >= '0' && c <= '9' ? arabic.charAt(c - '0') : c);
+        }
+        return out.toString();
     }
 
     private void adjustSubtitlePosition(int delta) {
-        subtitlePosition = Math.max(2, Math.min(72, subtitlePosition + delta));
+        subtitlePosition = Math.max(0, Math.min(72, subtitlePosition + delta));
         prefs.edit().putInt("position", subtitlePosition).apply();
         positionSubtitle();
     }
@@ -765,7 +805,7 @@ public final class DirectStreamPlayer {
 
     private void positionSubtitle() {
         FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
-        int base = Math.max(dp(58), root.getHeight() * subtitlePosition / 100);
+        int base = Math.max(dp(6), root.getHeight() * subtitlePosition / 100);
         p.bottomMargin = base;
         subtitle.setLayoutParams(p);
     }
@@ -806,7 +846,7 @@ public final class DirectStreamPlayer {
                     float dy = startY[0] - ev.getRawY();
                     int h = Math.max(dp(180), root.getHeight());
                     subtitlePosition = Math.max(
-                            2,
+                            0,
                             Math.min(72, startPosition[0] + Math.round(dy / h * 100f))
                     );
                     positionSubtitle();
