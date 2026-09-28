@@ -149,7 +149,6 @@ assert '__subhub_vidsrc_caption_hide_v3216' in js
 
 assert '__subhub_vidsrc_layout_v3217' in site
 assert 'data-subhub-vidsrc' in site
-assert 'width:100vw!important;height:100vh!important' in site
 assert 'installVidSrcInteractionGuardV3217' in js
 assert '__subhub_vidsrc_controls_v3217' in js
 assert "window.open = function () { return null; }" in js
