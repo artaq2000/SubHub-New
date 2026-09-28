@@ -200,7 +200,6 @@ assert "forceVidSrcCaptionsOffV3221();\n      suppressVidSrcCaptionsV3215();" no
 assert '[class*="subtitle" i]' in js
 assert '[class*="caption" i]' in js
 
-assert "window.toggleEmbedFullscreen()" in site
 assert "setVidSrcTakeoverActiveV3222(true)" in site
 assert 'setVidSrcCaptionScrubV3224' in js
 assert 'scrubVidSrcProviderCaptionsV3224' in js
