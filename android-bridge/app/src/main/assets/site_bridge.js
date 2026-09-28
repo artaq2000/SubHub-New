@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.23';
+  const BRIDGE_BUILD = '322.3.24';
 
   let lastSig = '';
   let clockSource = '';
@@ -353,6 +353,12 @@
       }
 
       try {
+        if (typeof setVidSrcTakeoverActiveV3222 === 'function') {
+          setVidSrcTakeoverActiveV3222(true);
+        }
+      } catch (_) {}
+
+      try {
         if (typeof _applyScreenModeV342 === 'function') {
           _applyScreenModeV342(false, false);
         }
@@ -428,6 +434,7 @@
           '<button type="button" class="sh-v3222-play" data-sh3222="play">▶</button>' +
           '<button type="button" data-sh3222="forward">+١٠</button>' +
           '<input class="sh-v3222-seek" type="range" min="0" max="1000" step="1" value="0">' +
+          '<button type="button" data-sh3222="fullscreen" aria-label="ملء الشاشة">⛶</button>' +
           '<div class="sh-v3222-time">٠:٠٠ / --:--</div>' +
         '</div>';
 
@@ -473,6 +480,12 @@
         } else if (kind === 'forward') {
           const next = t + 10;
           sendVidSrcSafeCommandV3211('seek', {time: d > 0 ? Math.min(d, next) : next});
+        } else if (kind === 'fullscreen') {
+          try {
+            if (typeof window.toggleEmbedFullscreen === 'function') {
+              window.toggleEmbedFullscreen();
+            }
+          } catch (_) {}
         }
       }, true);
 
