@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.46'" in site
+assert "BRIDGE_BUILD = '322.3.47'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,11 +39,11 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 55" in gradle
-assert "versionName '322.3.46'" in gradle
+assert "versionCode 56" in gradle
+assert "versionName '322.3.47'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
-assert 'getNativeVersion' in main
+assert 'getNativeVersion' in main\nassert 'onShowFileChooser' in main\nassert 'FileChooserParams.parseResult' in main\nr2upload=(root/'app/src/main/assets/r2_upload.js').read_text(encoding='utf-8')\nassert 'subhubAndroidR2ResumeV347' in r2upload\nassert '/api/create-multipart' in r2upload\nassert '/api/complete-multipart' in r2upload\nassert 'localStorage' in r2upload
 assert 'isAppPaired' in main
 assert 'UPDATES_WORKER_URL' in main
 assert '<string name="app_name">SubHub</string>' in (root/'app/src/main/res/values/strings.xml').read_text(encoding='utf-8')
