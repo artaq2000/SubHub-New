@@ -4,7 +4,23 @@
   window.__subHubClockInstalledV223 = true;
 
   const HOST_RE = /(?:^|\.)(?:onlyflix\.to|cdnm\.ink|cdnmovies-stream\.online|cdnmvs\.online|vidsrc\.to)$/i;
-  if (!HOST_RE.test(location.hostname || '')) return;
+
+  function isVidSrcChainV3216() {
+    try {
+      if (/(?:^|\.)vidsrc\.to$/i.test(location.hostname || '')) return true;
+      const ancestors = location.ancestorOrigins;
+      if (!ancestors) return false;
+      for (let i = 0; i < ancestors.length; i++) {
+        try {
+          const h = new URL(String(ancestors[i] || '')).hostname || '';
+          if (/(?:^|\.)vidsrc\.to$/i.test(h)) return true;
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  if (!HOST_RE.test(location.hostname || '') && !isVidSrcChainV3216()) return;
 
   function isOnlyFlixHost() { return /(?:^|\.)onlyflix\.to$/i.test(location.hostname || ''); }
   function isShareHost() { return /(?:^|\.)share\.cdnm\.ink$/i.test(location.hostname || ''); }
@@ -689,7 +705,7 @@
   }
 
   function suppressVidSrcCaptionsV3215() {
-    if (!isVidSrcHostV3215()) return;
+    if (!isVidSrcChainV3216()) return;
 
     try {
       document.querySelectorAll('video').forEach(function (video) {
@@ -703,6 +719,27 @@
           }
         } catch (_) {}
       });
+    } catch (_) {}
+
+    /*
+     * A few VidSrc skins render captions as normal DOM instead of TextTrack.
+     * Hide only well-known caption layers inside the VidSrc frame chain.
+     */
+    try {
+      const id = '__subhub_vidsrc_caption_hide_v3216';
+      if (!document.getElementById(id)) {
+        const style = document.createElement('style');
+        style.id = id;
+        style.textContent = [
+          '.vjs-text-track-display{display:none!important;}',
+          '.jw-text-track-display{display:none!important;}',
+          '.jw-captions{display:none!important;}',
+          '.plyr__captions{display:none!important;}',
+          '[class*="subtitle" i][class*="display" i]{display:none!important;}',
+          '[class*="caption" i][class*="display" i]{display:none!important;}'
+        ].join('');
+        (document.head || document.documentElement).appendChild(style);
+      }
     } catch (_) {}
   }
 
