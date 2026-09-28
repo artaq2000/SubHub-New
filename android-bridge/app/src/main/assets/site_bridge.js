@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.13';
+  const BRIDGE_BUILD = '322.3.14';
 
   let lastSig = '';
   let clockSource = '';
@@ -335,20 +335,17 @@
           };
 
           syncVidSrcGuardV328(true);
+          /*
+           * v322.3.14 — Aloha-style strategy:
+           * keep VidSrc's own player controls fully interactive and let Android
+           * block popups/external navigation. Do not put the old SubHub/VidFast
+           * control shield above this provider; that shield caused stalled
+           * playback and broken seeking on VidSrc.
+           */
           openEmbedPlayer(url, {
-            vidfastNoSandbox: true,
-            vidfastTimeBridge: true
+            vidfastNoSandbox: true
           });
           syncVidSrcGuardV328(true);
-          installVidSrcSafeControlsV3211();
-          try {
-            if (typeof _vidfastSetStateV294 === 'function') {
-              _vidfastSetStateV294('🛡️ أدوات SubHub مفعّلة', true);
-            }
-          } catch (_) {}
-          setTimeout(function () {
-            sendVidSrcSafeCommandV3211('getStatus');
-          }, 300);
         } finally {
           window.isVidFastUrlV293 = originalDetector;
         }
@@ -1073,7 +1070,6 @@
   installUiPolishV324();
   installOpeningFeedback();
   installVidSrcGuardV328();
-  installVidSrcSafeControlsV3211();
   installVidSrcNoSandboxV329();
 
   wrap(
@@ -1091,7 +1087,6 @@
     installUiPolishV324();
     installOpeningFeedback();
     installVidSrcGuardV328();
-    installVidSrcSafeControlsV3211();
     installVidSrcNoSandboxV329();
 
     wrap(
