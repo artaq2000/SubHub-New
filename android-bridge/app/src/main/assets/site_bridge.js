@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.27';
+  const BRIDGE_BUILD = '322.3.29';
 
   let lastSig = '';
   let clockSource = '';
@@ -347,6 +347,7 @@
       } catch (_) {}
 
       try { bindVidSrcSubtitleDragV3225(); } catch (_) {}
+      try { ensureVidSrcSubtitleGestureV3229(); } catch (_) {}
 
       if (frame) {
         try { frame.removeAttribute('allowfullscreen'); } catch (_) {}
@@ -620,6 +621,243 @@
   }
 
   let vidSrcSubtitleDragTargetV3226 = null;
+  let vidSrcGestureHitV3229 = null;
+  let vidSrcGestureRafV3229 = 0;
+  let vidSrcGestureFontPxV3229 = 0;
+
+  function applyVidSrcGestureFontV3229() {
+    try {
+      if (
+        typeof isVidSrcFrameActiveV328 !== 'function' ||
+        !isVidSrcFrameActiveV328() ||
+        !vidSrcGestureFontPxV3229
+      ) return false;
+
+      const overlay = document.getElementById('embedSubtitleOverlay');
+      const tx = overlay && overlay.querySelector('.sub-text');
+      if (!tx) return false;
+
+      tx.style.setProperty(
+        'font-size',
+        Math.max(10, Math.min(120, vidSrcGestureFontPxV3229)) + 'px',
+        'important'
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function ensureVidSrcSubtitleGestureV3229() {
+    try {
+      if (
+        typeof isVidSrcFrameActiveV328 !== 'function' ||
+        !isVidSrcFrameActiveV328()
+      ) return false;
+
+      const overlay = document.getElementById('embedSubtitleOverlay');
+      const tx = overlay && overlay.querySelector('.sub-text');
+      const box = document.querySelector('#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]');
+      if (!overlay || !tx || !box) return false;
+
+      let hit = vidSrcGestureHitV3229;
+      if (!hit || !hit.isConnected) {
+        hit = document.createElement('div');
+        hit.id = 'subhub-vidsrc-subtitle-gesture-v3229';
+        hit.setAttribute('aria-label', 'تحريك وتكبير الترجمة');
+        hit.style.cssText = [
+          'position:fixed',
+          'display:none',
+          'background:transparent',
+          'z-index:2147483550',
+          'pointer-events:auto',
+          'touch-action:none',
+          'user-select:none',
+          '-webkit-user-select:none',
+          'cursor:grab'
+        ].join(';');
+        (document.body || document.documentElement).appendChild(hit);
+        vidSrcGestureHitV3229 = hit;
+
+        let mode = '';
+        let dragStartY = 0;
+        let dragStartPos = 7;
+        let pinchStartDist = 0;
+        let pinchStartFont = 0;
+
+        const readPos = function () {
+          try {
+            return Math.max(2, Math.min(88, Number(
+              (typeof _subSettings === 'object' && _subSettings)
+                ? (_subSettings.position || 7)
+                : 7
+            )));
+          } catch (_) {
+            return 7;
+          }
+        };
+
+        const writePos = function (v) {
+          v = Math.max(2, Math.min(88, Number(v || 7)));
+          try {
+            if (typeof _subSettings === 'object' && _subSettings) {
+              _subSettings.position = v;
+            }
+          } catch (_) {}
+          try { overlay.style.setProperty('bottom', v + '%', 'important'); } catch (_) {}
+          try { if (typeof applySubtitleStyle === 'function') applySubtitleStyle(); } catch (_) {}
+          try { applyVidSrcGestureFontV3229(); } catch (_) {}
+          try { push(true); } catch (_) {}
+        };
+
+        const dist = function (a, b) {
+          const dx = Number(a.clientX || 0) - Number(b.clientX || 0);
+          const dy = Number(a.clientY || 0) - Number(b.clientY || 0);
+          return Math.sqrt(dx * dx + dy * dy);
+        };
+
+        hit.addEventListener('touchstart', function (ev) {
+          try {
+            if (!ev.touches || !ev.touches.length) return;
+
+            if (ev.touches.length >= 2) {
+              mode = 'pinch';
+              pinchStartDist = Math.max(20, dist(ev.touches[0], ev.touches[1]));
+              const cs = getComputedStyle(tx);
+              pinchStartFont = Math.max(10, parseFloat(cs.fontSize || '0') || 28);
+              if (vidSrcGestureFontPxV3229 > 0) pinchStartFont = vidSrcGestureFontPxV3229;
+            } else {
+              mode = 'drag';
+              dragStartY = ev.touches[0].clientY;
+              dragStartPos = readPos();
+            }
+
+            ev.preventDefault();
+            ev.stopPropagation();
+          } catch (_) {}
+        }, {capture:true, passive:false});
+
+        hit.addEventListener('touchmove', function (ev) {
+          try {
+            if (!ev.touches || !ev.touches.length) return;
+
+            if (ev.touches.length >= 2) {
+              if (mode !== 'pinch') {
+                mode = 'pinch';
+                pinchStartDist = Math.max(20, dist(ev.touches[0], ev.touches[1]));
+                const cs = getComputedStyle(tx);
+                pinchStartFont = Math.max(10, parseFloat(cs.fontSize || '0') || 28);
+                if (vidSrcGestureFontPxV3229 > 0) pinchStartFont = vidSrcGestureFontPxV3229;
+              }
+
+              const ratio = dist(ev.touches[0], ev.touches[1]) / Math.max(20, pinchStartDist);
+              vidSrcGestureFontPxV3229 = Math.max(10, Math.min(120, pinchStartFont * ratio));
+              applyVidSrcGestureFontV3229();
+              try { push(true); } catch (_) {}
+            } else if (mode === 'drag') {
+              const h = Math.max(120, box.getBoundingClientRect().height || 0);
+              const deltaPct = (dragStartY - ev.touches[0].clientY) / h * 100;
+              writePos(dragStartPos + deltaPct);
+            }
+
+            ev.preventDefault();
+            ev.stopPropagation();
+          } catch (_) {}
+        }, {capture:true, passive:false});
+
+        const endTouch = function (ev) {
+          try {
+            if (!ev.touches || ev.touches.length === 0) mode = '';
+            ev.preventDefault();
+            ev.stopPropagation();
+          } catch (_) {}
+        };
+        hit.addEventListener('touchend', endTouch, {capture:true, passive:false});
+        hit.addEventListener('touchcancel', endTouch, {capture:true, passive:false});
+
+        // Mouse/stylus fallback. Android touch uses the touch handlers above.
+        let pointerDrag = false;
+        let pointerStartY = 0;
+        let pointerStartPos = 7;
+        hit.addEventListener('pointerdown', function (ev) {
+          try {
+            if (ev.pointerType === 'touch') return;
+            pointerDrag = true;
+            pointerStartY = ev.clientY;
+            pointerStartPos = readPos();
+            hit.setPointerCapture && hit.setPointerCapture(ev.pointerId);
+            ev.preventDefault();
+            ev.stopPropagation();
+          } catch (_) {}
+        }, true);
+        hit.addEventListener('pointermove', function (ev) {
+          if (!pointerDrag || ev.pointerType === 'touch') return;
+          try {
+            const h = Math.max(120, box.getBoundingClientRect().height || 0);
+            const deltaPct = (pointerStartY - ev.clientY) / h * 100;
+            writePos(pointerStartPos + deltaPct);
+            ev.preventDefault();
+            ev.stopPropagation();
+          } catch (_) {}
+        }, true);
+        const pointerEnd = function (ev) {
+          if (!pointerDrag || ev.pointerType === 'touch') return;
+          pointerDrag = false;
+          try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
+        };
+        hit.addEventListener('pointerup', pointerEnd, true);
+        hit.addEventListener('pointercancel', pointerEnd, true);
+
+        // If the user changes "حجم الخط" from the normal SubHub panel,
+        // release the gesture override so the normal setting remains authoritative.
+        document.addEventListener('click', function (ev) {
+          try {
+            if (!vidSrcGestureFontPxV3229) return;
+            const panel = document.getElementById('subPanel');
+            if (!panel || !panel.contains(ev.target)) return;
+            let row = ev.target && ev.target.closest
+              ? ev.target.closest('div,section,label')
+              : null;
+            let txt = String((row && row.textContent) || '');
+            if (!/حجم\s*الخط/.test(txt)) return;
+            vidSrcGestureFontPxV3229 = 0;
+            try { tx.style.removeProperty('font-size'); } catch (_) {}
+          } catch (_) {}
+        }, true);
+      }
+
+      cancelAnimationFrame(vidSrcGestureRafV3229);
+      const sync = function () {
+        try {
+          const modal = document.getElementById('embedPlayerModal');
+          const active =
+            modal &&
+            getComputedStyle(modal).display !== 'none' &&
+            typeof isVidSrcFrameActiveV328 === 'function' &&
+            isVidSrcFrameActiveV328();
+
+          const r = tx.getBoundingClientRect();
+          if (!active || r.width < 4 || r.height < 4) {
+            hit.style.display = 'none';
+          } else {
+            const padX = 18;
+            const padY = 14;
+            hit.style.display = 'block';
+            hit.style.left = Math.max(0, r.left - padX) + 'px';
+            hit.style.top = Math.max(0, r.top - padY) + 'px';
+            hit.style.width = Math.max(44, r.width + padX * 2) + 'px';
+            hit.style.height = Math.max(38, r.height + padY * 2) + 'px';
+          }
+        } catch (_) {}
+        vidSrcGestureRafV3229 = requestAnimationFrame(sync);
+      };
+      vidSrcGestureRafV3229 = requestAnimationFrame(sync);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   function bindVidSrcSubtitleDragV3225() {
 
@@ -1105,6 +1343,8 @@
           updateSubtitleOverlay();
         }
         try { bindVidSrcSubtitleDragV3225(); } catch (_) {}
+        try { ensureVidSrcSubtitleGestureV3229(); } catch (_) {}
+        try { applyVidSrcGestureFontV3229(); } catch (_) {}
         return true;
       }
 
@@ -1714,7 +1954,10 @@
 
   wrap(
     'applySubtitleStyle',
-    function () { push(true); }
+    function () {
+      try { applyVidSrcGestureFontV3229(); } catch (_) {}
+      push(true);
+    }
   );
 
   setTimeout(function () {
@@ -1732,7 +1975,10 @@
 
     wrap(
       'applySubtitleStyle',
-      function () { push(true); }
+      function () {
+        try { applyVidSrcGestureFontV3229(); } catch (_) {}
+        push(true);
+      }
     );
 
     push(true);
