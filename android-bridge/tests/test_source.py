@@ -287,13 +287,16 @@ assert "modal && box" in site
 
 # Direct stream 322.3.41 keeps 322.3.36 playback and polishes only its UI.
 direct_player = (root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
-assert 'subhub_direct_stream_ui_v2' in direct_player
-assert 'topButton("✕"' in direct_player
-assert 'topButton("⋮"' in direct_player
-assert 'topButton("HD"' in direct_player
-assert 'topButton("CC"' in direct_player
-assert 'toolButton("A−"' in direct_player
-assert 'toolButton("A+"' in direct_player
-assert 'StyledSubtitleView' in direct_player
+assert 'subhub_direct_stream_ui_v1' in direct_player
+assert 'tool("✕"' in direct_player
+assert 'tool("⋮"' in direct_player
+assert 'tool("HD"' in direct_player
+assert 'tool("CC"' in direct_player
+assert 'installSubtitleGesture' in direct_player
+assert 'A−' in direct_player and 'A+' in direct_player
 assert 'WindowInsets.Type.systemBars()' in direct_player
 assert 'SYSTEM_UI_FLAG_IMMERSIVE_STICKY' in direct_player
+assert 'HlsMediaSource.Factory(data)' in direct_player
+assert 'player.setMediaSource' in direct_player
+assert 'player.play()' in direct_player
+assert 'beginCapture()' in direct_player
