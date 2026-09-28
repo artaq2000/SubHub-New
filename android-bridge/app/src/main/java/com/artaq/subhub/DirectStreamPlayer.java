@@ -859,11 +859,7 @@ public final class DirectStreamPlayer {
     }
 
     public boolean handleBack() {
-        if (panelOpen) {
-            hidePanel();
-            return true;
-        }
-        if (menuOpen) {
+        if (panelOpen || menuOpen) {
             collapseMenu();
             return true;
         }
