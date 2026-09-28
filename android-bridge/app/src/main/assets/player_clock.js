@@ -431,7 +431,7 @@
   }
 
   function scrubVidSrcProviderCaptionsV3224() {
-    if (!vidSrcTakeoverActiveV3224) return;
+    if (!vidSrcTakeoverActiveV3224 || vidSrcProviderCaptionsAllowedV3231) return;
 
     try {
       vidSrcDeepQueryAllV3226('video').forEach(function (video) {
@@ -536,7 +536,13 @@
   function applyVidSrcTakeoverV3222(active) {
     try {
       const html = document.documentElement;
-      if (html) html.classList.toggle('subhub-vidsrc-takeover-v3222', !!active);
+      if (html) {
+        html.classList.toggle('subhub-vidsrc-takeover-v3222', !!active);
+        if (active && !vidSrcProviderCaptionsAllowedV3231) {
+          html.classList.add('subhub-provider-captions-off-v3231');
+        }
+        if (!active) html.classList.remove('subhub-provider-captions-off-v3231');
+      }
       setVidSrcCaptionScrubV3224(!!active);
 
       let style = document.getElementById('__subhub_vidsrc_takeover_v3222');
@@ -548,24 +554,24 @@
           'html.subhub-vidsrc-takeover-v3222 .vjs-big-play-button,',
           'html.subhub-vidsrc-takeover-v3222 .jw-controlbar,',
           'html.subhub-vidsrc-takeover-v3222 .jw-display-icon-container,',
-          'html.subhub-vidsrc-takeover-v3222 .jw-captions,',
-          'html.subhub-vidsrc-takeover-v3222 .jw-text-track-display,',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .jw-captions,',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .jw-text-track-display,',
           'html.subhub-vidsrc-takeover-v3222 .plyr__controls,',
           'html.subhub-vidsrc-takeover-v3222 .plyr__control--overlaid,',
-          'html.subhub-vidsrc-takeover-v3222 .plyr__captions,',
-          'html.subhub-vidsrc-takeover-v3222 .vjs-text-track-display,',
-          'html.subhub-vidsrc-takeover-v3222 [class*="subtitle" i],',
-          'html.subhub-vidsrc-takeover-v3222 [class*="caption" i],',
-          'html.subhub-vidsrc-takeover-v3222 [data-testid*="subtitle" i],',
-          'html.subhub-vidsrc-takeover-v3222 [data-testid*="caption" i],',
-          'html.subhub-vidsrc-takeover-v3222 .shaka-text-container,',
-          'html.subhub-vidsrc-takeover-v3222 [class*="text-track" i],',
-          'html.subhub-vidsrc-takeover-v3222 [class*="cue" i]{',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .plyr__captions,',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .vjs-text-track-display,',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="subtitle" i],',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="caption" i],',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [data-testid*="subtitle" i],',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [data-testid*="caption" i],',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .shaka-text-container,',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="text-track" i],',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="cue" i]{',
           'display:none!important;visibility:hidden!important;opacity:0!important;}',
-          'html.subhub-vidsrc-takeover-v3222 video::cue{',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 video::cue{',
           'color:transparent!important;background:transparent!important;text-shadow:none!important;}',
-          'html.subhub-vidsrc-takeover-v3222 video::-webkit-media-text-track-container,',
-          'html.subhub-vidsrc-takeover-v3222 video::-webkit-media-text-track-display{',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 video::-webkit-media-text-track-container,',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 video::-webkit-media-text-track-display{',
           'display:none!important;visibility:hidden!important;opacity:0!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(style);
@@ -595,6 +601,7 @@
   }
 
   let vidSrcCaptionProbeBusyV3227 = false;
+  let vidSrcProviderCaptionsAllowedV3231 = false;
 
   function activeVidSrcVideoV3227() {
     try {
@@ -785,6 +792,100 @@
     return true;
   }
 
+  function findVidSrcProviderButtonV3231(kind) {
+    const selectors = kind === 'quality'
+      ? [
+          'button[aria-label*="settings" i]',
+          '[role="button"][aria-label*="settings" i]',
+          'button[title*="settings" i]',
+          '.vjs-settings-control',
+          '.jw-icon-settings',
+          '[data-plyr="settings"]'
+        ]
+      : [
+          'button[aria-label*="caption" i]',
+          'button[aria-label*="subtitle" i]',
+          '[role="button"][aria-label*="caption" i]',
+          '[role="button"][aria-label*="subtitle" i]',
+          '.vjs-subs-caps-button',
+          '.vjs-captions-button',
+          '.jw-icon-cc',
+          '.jw-icon-subtitles',
+          '[data-plyr="captions"]'
+        ];
+
+    const roots = typeof vidSrcDeepRootsV3226 === 'function'
+      ? vidSrcDeepRootsV3226()
+      : [document];
+
+    for (const root of roots) {
+      for (const sel of selectors) {
+        try {
+          const el = root.querySelector(sel);
+          if (el) return el;
+        } catch (_) {}
+      }
+    }
+
+    const all = typeof vidSrcDeepQueryAllV3226 === 'function'
+      ? vidSrcDeepQueryAllV3226('button,[role="button"]')
+      : Array.from(document.querySelectorAll('button,[role="button"]'));
+
+    for (const el of all) {
+      const t = deepTextV3227(el);
+      if (kind === 'quality') {
+        if (t === 'settings' || t.indexOf('setting') >= 0 || t.indexOf('quality') >= 0) return el;
+      } else {
+        if (t === 'cc' || t.indexOf('subtitle') >= 0 || t.indexOf('caption') >= 0) return el;
+      }
+    }
+
+    return null;
+  }
+
+  function openVidSrcProviderQualityV3231() {
+    try {
+      const b = findVidSrcProviderButtonV3231('quality');
+      if (!b) return false;
+      b.click();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function openVidSrcProviderSubsV3231() {
+    try {
+      vidSrcProviderCaptionsAllowedV3231 = true;
+      const html = document.documentElement;
+      if (html) html.classList.remove('subhub-provider-captions-off-v3231');
+      clearInterval(vidSrcCaptionScrubTimerV3224);
+      vidSrcCaptionScrubTimerV3224 = 0;
+
+      const b = findVidSrcProviderButtonV3231('subs');
+      if (!b) return false;
+      b.click();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function forceVidSrcProviderCaptionsOffV3231() {
+    try {
+      vidSrcProviderCaptionsAllowedV3231 = false;
+      const html = document.documentElement;
+      if (html && vidSrcTakeoverActiveV3224) {
+        html.classList.add('subhub-provider-captions-off-v3231');
+      }
+      setVidSrcCaptionScrubV3224(vidSrcTakeoverActiveV3224);
+      forceVidSrcCaptionOffV3227();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function handleSafeCommandV3211(d) {
     const cmd = String(d.command || '').toLowerCase();
     const v = activeVideo && document.contains(activeVideo) ? activeVideo : null;
@@ -794,6 +895,12 @@
         applyVidSrcTakeoverV3222(!!d.active);
       } else if (cmd === 'captionoff') {
         forceVidSrcCaptionOffV3227();
+      } else if (cmd === 'providerquality') {
+        openVidSrcProviderQualityV3231();
+      } else if (cmd === 'providersubs') {
+        openVidSrcProviderSubsV3231();
+      } else if (cmd === 'providercaptionsoff') {
+        forceVidSrcProviderCaptionsOffV3231();
       } else if (cmd === 'play') {
         if (v) {
           const p = v.play();
