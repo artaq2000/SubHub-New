@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.26';
+  const BRIDGE_BUILD = '322.3.27';
 
   let lastSig = '';
   let clockSource = '';
@@ -335,8 +335,9 @@
       try {
         const overlay = document.getElementById('embedSubtitleOverlay');
         if (overlay) {
-          overlay.style.setProperty('z-index', '2147483400', 'important');
-          overlay.style.setProperty('pointer-events', 'none', 'important');
+          overlay.style.setProperty('z-index', '2147483500', 'important');
+          overlay.style.setProperty('pointer-events', 'auto', 'important');
+          overlay.style.setProperty('touch-action', 'none', 'important');
         }
         const tx = overlay && overlay.querySelector('.sub-text');
         if (tx) {
@@ -389,6 +390,15 @@
   let vidSrcTakeoverDraggingV3222 = false;
   let vidSrcTakeoverHideTimerV3222 = 0;
   let vidSrcTakeoverEnabledV3223 = false;
+  let vidSrcCaptionOffAtV3227 = 0;
+
+  function requestVidSrcCaptionOffV3227(force) {
+    const now = Date.now();
+    if (!force && now - vidSrcCaptionOffAtV3227 < 1400) return;
+    vidSrcCaptionOffAtV3227 = now;
+    try { sendVidSrcSafeCommandV3211('captionoff'); } catch (_) {}
+  }
+
 
   function fmtVidSrcTimeV3222(v) {
     v = Math.max(0, Number(v || 0));
@@ -410,12 +420,24 @@
       const style = document.createElement('style');
       style.id = 'subhub-vidsrc-takeover-style-v3222';
       style.textContent = [
-        '#subhub-vidsrc-takeover-v3222{position:absolute;inset:0;z-index:2147482000;',
-        'display:none;background:transparent;pointer-events:auto;touch-action:none;user-select:none;}',
+        '#subhub-vidsrc-takeover-v3222{position:absolute;inset:0;z-index:2147483000;',
+        'display:none;background:transparent;pointer-events:none;touch-action:none;user-select:none;}',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3225-more,',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3222-center,',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3222-bar,',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3222-bar *,',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3227-menu,',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3227-menu *{pointer-events:auto!important;}',
         '#subhub-vidsrc-takeover-v3222.on{display:block;}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3225-more{position:absolute;left:14px;top:14px;',
-        'width:54px;height:54px;border-radius:50%;z-index:4;font-size:30px;line-height:1;',
-        'background:rgba(8,12,18,.68);backdrop-filter:blur(8px);}',
+        'width:54px;height:54px;border-radius:50%;z-index:20;font-size:30px;line-height:1;',
+        'background:rgba(8,12,18,.78);backdrop-filter:blur(8px);}',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3227-menu{position:absolute;left:14px;top:76px;',
+        'display:none;gap:8px;align-items:center;padding:8px;border-radius:16px;',
+        'background:rgba(7,11,18,.92);backdrop-filter:blur(10px);z-index:21;}',
+        '#subhub-vidsrc-takeover-v3222.menu-open-v3227 .sh-v3227-menu{display:flex;}',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3227-menu button{width:auto;min-width:48px;height:42px;',
+        'padding:0 12px;border-radius:11px;font-size:15px;white-space:nowrap;}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-center{position:absolute;left:50%;top:50%;',
         'transform:translate(-50%,-50%);width:76px;height:76px;border-radius:50%;',
         'border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.52);color:#fff;',
@@ -439,10 +461,13 @@
         '#embedPlayerModal .video-modal-box.subhub-menu-open-v3225 #embedCcBtn{',
         'display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedSubtitleOverlay{',
-        'position:absolute!important;z-index:2147483400!important;pointer-events:none!important;}',
+        'position:absolute!important;z-index:2147483500!important;pointer-events:auto!important;',
+        'touch-action:none!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedSubtitleOverlay .sub-text{',
         'pointer-events:auto!important;touch-action:none!important;cursor:grab!important;position:relative!important;',
-        'z-index:2147483401!important;}',
+        'z-index:2147483501!important;}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #subPanel{',
+        'z-index:2147483646!important;pointer-events:auto!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .video-top-controls{',
         'z-index:2147483600!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].subhub-menu-open-v3225 .video-top-controls{',
@@ -465,6 +490,11 @@
       root.id = 'subhub-vidsrc-takeover-v3222';
       root.innerHTML =
         '<button class="sh-v3225-more" type="button" data-sh3222="more" aria-label="المزيد">⋮</button>' +
+        '<div class="sh-v3227-menu">' +
+          '<button type="button" data-sh3222="subtitles">CC</button>' +
+          '<button type="button" data-sh3222="screen">١٠٠٪</button>' +
+          '<button type="button" data-sh3222="fullscreen">⛶</button>' +
+        '</div>' +
         '<button class="sh-v3222-center" type="button" aria-label="تشغيل">▶</button>' +
         '<div class="sh-v3222-bar">' +
           '<button type="button" data-sh3222="back">−١٠</button>' +
@@ -505,35 +535,42 @@
         const kind = target.getAttribute('data-sh3222');
 
         if (kind === 'more') {
-          const open = !box.classList.contains('subhub-menu-open-v3225');
-          box.classList.toggle('subhub-menu-open-v3225', open);
+          const open = !root.classList.contains('menu-open-v3227');
+          root.classList.toggle('menu-open-v3227', open);
           root.classList.remove('controls-hidden');
+          return;
+        }
 
+        if (kind === 'subtitles') {
           try {
-            const tools =
-              box.querySelector('.video-top-controls') ||
-              document.querySelector('#embedPlayerModal .video-top-controls') ||
-              document.querySelector('.video-top-controls');
-
-            if (tools) {
-              if (tools.parentElement !== box) box.appendChild(tools);
-              tools.style.setProperty('position', 'absolute', 'important');
-              tools.style.setProperty('top', '8px', 'important');
-              tools.style.setProperty('left', '66px', 'important');
-              tools.style.setProperty('right', 'auto', 'important');
-              tools.style.setProperty('display', open ? 'flex' : 'none', 'important');
-              tools.style.setProperty('visibility', open ? 'visible' : 'hidden', 'important');
-              tools.style.setProperty('opacity', open ? '1' : '0', 'important');
-              tools.style.setProperty('pointer-events', open ? 'auto' : 'none', 'important');
-              tools.style.setProperty('z-index', '2147483600', 'important');
+            const panel = document.getElementById('subPanel');
+            if (panel && panel.parentElement !== box && typeof _moveSubPanelTo === 'function') {
+              _moveSubPanelTo(box);
             }
-
-            const cc = document.getElementById('embedCcBtn');
-            if (cc) {
-              cc.style.setProperty('pointer-events', open ? 'auto' : 'none', 'important');
-              cc.style.setProperty('z-index', '2147483601', 'important');
+            if (panel) {
+              panel.style.setProperty('z-index', '2147483646', 'important');
+              panel.style.setProperty('pointer-events', 'auto', 'important');
             }
+            if (typeof toggleSubtitleModal === 'function') toggleSubtitleModal();
           } catch (_) {}
+          root.classList.remove('menu-open-v3227');
+          return;
+        }
+
+        if (kind === 'screen') {
+          try {
+            if (typeof _cycleScreenModeV342 === 'function') _cycleScreenModeV342();
+            const meta = typeof _screenModeMetaV342 === 'function' ? _screenModeMetaV342() : null;
+            if (meta && meta.icon) target.textContent = meta.icon;
+          } catch (_) {}
+          return;
+        }
+
+        if (kind === 'fullscreen') {
+          try {
+            if (typeof toggleEmbedFullscreen === 'function') toggleEmbedFullscreen();
+          } catch (_) {}
+          root.classList.remove('menu-open-v3227');
           return;
         }
 
@@ -590,8 +627,8 @@
     const tx = overlay && overlay.querySelector('.sub-text');
     const box = document.querySelector('#embedPlayerModal .video-modal-box');
     if (!overlay || !tx || !box) return false;
-    if (vidSrcSubtitleDragTargetV3226 === tx) return true;
-    vidSrcSubtitleDragTargetV3226 = tx;
+    if (vidSrcSubtitleDragTargetV3226 === overlay) return true;
+    vidSrcSubtitleDragTargetV3226 = overlay;
 
     let dragging = false;
     let startY = 0;
@@ -629,19 +666,20 @@
       try { push(true); } catch (_) {}
     };
 
-    tx.addEventListener('pointerdown', function (ev) {
+    const dragTarget = overlay;
+    dragTarget.addEventListener('pointerdown', function (ev) {
       try {
         dragging = true;
         pointerId = ev.pointerId;
         startY = ev.clientY;
         startPos = readPos();
-        tx.setPointerCapture && tx.setPointerCapture(pointerId);
+        dragTarget.setPointerCapture && dragTarget.setPointerCapture(pointerId);
         ev.preventDefault();
         ev.stopPropagation();
       } catch (_) {}
     }, true);
 
-    tx.addEventListener('pointermove', function (ev) {
+    dragTarget.addEventListener('pointermove', function (ev) {
       if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
       try {
         const h = Math.max(120, box.getBoundingClientRect().height || 0);
@@ -656,18 +694,18 @@
       if (!dragging) return;
       dragging = false;
       try {
-        if (pointerId !== null && tx.releasePointerCapture) tx.releasePointerCapture(pointerId);
+        if (pointerId !== null && dragTarget.releasePointerCapture) dragTarget.releasePointerCapture(pointerId);
       } catch (_) {}
       pointerId = null;
       try { ev && ev.preventDefault(); ev && ev.stopPropagation(); } catch (_) {}
     };
 
-    tx.addEventListener('pointerup', finish, true);
-    tx.addEventListener('pointercancel', finish, true);
+    dragTarget.addEventListener('pointerup', finish, true);
+    dragTarget.addEventListener('pointercancel', finish, true);
 
     let touchStartY = 0;
     let touchStartPos = 7;
-    tx.addEventListener('touchstart', function (ev) {
+    dragTarget.addEventListener('touchstart', function (ev) {
       try {
         if (!ev.touches || !ev.touches.length) return;
         touchStartY = ev.touches[0].clientY;
@@ -677,7 +715,7 @@
       } catch (_) {}
     }, {capture:true, passive:false});
 
-    tx.addEventListener('touchmove', function (ev) {
+    dragTarget.addEventListener('touchmove', function (ev) {
       try {
         if (!ev.touches || !ev.touches.length) return;
         const h = Math.max(120, box.getBoundingClientRect().height || 0);
@@ -688,7 +726,7 @@
       } catch (_) {}
     }, {capture:true, passive:false});
 
-    tx.addEventListener('touchend', function (ev) {
+    dragTarget.addEventListener('touchend', function (ev) {
       try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
     }, {capture:true, passive:false});
     return true;
@@ -740,6 +778,7 @@
       root.classList.remove('controls-hidden');
 
       sendVidSrcSafeCommandV3211('takeover', {active: !!active});
+      if (active) requestVidSrcCaptionOffV3227(true);
 
       if (active) {
         clearTimeout(vidSrcTakeoverHideTimerV3222);
@@ -1053,6 +1092,7 @@
         if (typeof _bridgeTime !== 'undefined') _bridgeTime = t;
         if (typeof _bridgeActive !== 'undefined') _bridgeActive = true;
 
+        requestVidSrcCaptionOffV3227(false);
         updateVidSrcTakeoverV3222(
           t,
           Number.isFinite(Number(window.__subhubVidSrcDurationV3211))
