@@ -31,7 +31,7 @@ import java.util.Map;
  */
 public final class DirectStreamCapture {
     public interface Listener {
-        void captured(String url);
+        void captured(String url, Map<String,String> headers);
         void closed();
     }
 
@@ -42,6 +42,7 @@ public final class DirectStreamCapture {
     private final TextView status;
     private WebView probe;
     private String candidate;
+    private Map<String,String> candidateHeaders = new HashMap<>();
     private boolean closed;
     private boolean delivered;
 
@@ -115,7 +116,8 @@ public final class DirectStreamCapture {
                         && path != null
                         && path.toLowerCase(Locale.ROOT).endsWith(".m3u8")) {
                     String url = u.toString();
-                    handler.post(() -> onCandidate(url));
+                    Map<String,String> headers = new HashMap<>(r.getRequestHeaders());
+                    handler.post(() -> onCandidate(url, headers));
                 }
                 return null;
             }
@@ -139,12 +141,13 @@ public final class DirectStreamCapture {
         return Math.round(v * activity.getResources().getDisplayMetrics().density);
     }
 
-    private void onCandidate(String url) {
+    private void onCandidate(String url, Map<String,String> headers) {
         if (closed || delivered || url == null || url.isEmpty()) return;
         if (candidate == null
                 || url.toLowerCase(Locale.ROOT).contains("master")
                 || url.toLowerCase(Locale.ROOT).contains("playlist")) {
             candidate = url;
+            candidateHeaders = headers == null ? new HashMap<>() : new HashMap<>(headers);
         }
         handler.removeCallbacks(deliver);
         handler.postDelayed(deliver, 850);
@@ -155,8 +158,9 @@ public final class DirectStreamCapture {
             if (closed || delivered || candidate == null) return;
             delivered = true;
             String out = candidate;
+            Map<String,String> headers = new HashMap<>(candidateHeaders);
             close(false);
-            listener.captured(out);
+            listener.captured(out, headers);
         }
     };
 
