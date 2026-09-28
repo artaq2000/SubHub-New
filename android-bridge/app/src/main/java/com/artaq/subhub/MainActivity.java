@@ -63,8 +63,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.13";
-    private static final int NATIVE_VERSION_CODE = 22;
+    private static final String NATIVE_VERSION = "322.3.14";
+    private static final int NATIVE_VERSION_CODE = 23;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -294,7 +294,7 @@ public class MainActivity extends Activity {
                 }
 
                 /*
-                 * v322.3.13 VidSrc test guard:
+                 * v322.3.14 VidSrc test guard:
                  * - new windows are already rejected by WebChromeClient;
                  * - while the owner-only VidSrc player is open, never let an ad
                  *   replace SubHub's top page or launch an external app/site;
