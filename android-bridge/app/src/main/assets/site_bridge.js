@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.17';
+  const BRIDGE_BUILD = '322.3.18';
 
   let lastSig = '';
   let clockSource = '';
@@ -264,23 +264,28 @@
       style.id = '__subhub_vidsrc_layout_v3217';
       style.textContent = [
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen{',
-        'position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;',
+        'position:fixed!important;inset:0!important;width:100%!important;height:100%!important;',
         'max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;',
         'border-radius:0!important;background:#000!important;overflow:hidden!important;',
+        'box-sizing:border-box!important;',
         '}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer{',
-        'position:absolute!important;inset:0!important;width:100vw!important;height:100vh!important;',
+        'position:absolute!important;inset:0!important;width:100%!important;height:100%!important;',
         'max-width:none!important;max-height:none!important;aspect-ratio:auto!important;',
         'margin:0!important;padding:0!important;overflow:hidden!important;background:#000!important;',
+        'display:flex!important;align-items:center!important;justify-content:center!important;',
+        'box-sizing:border-box!important;',
         '}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer .screen-frame-stage-v342{',
-        'position:absolute!important;inset:0!important;width:100%!important;height:100%!important;',
-        'margin:0!important;padding:0!important;transform:none!important;',
+        'position:absolute!important;left:0!important;top:0!important;width:100%!important;height:100%!important;',
+        'margin:0!important;padding:0!important;transform-origin:center center!important;',
+        'box-sizing:border-box!important;',
         '}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer iframe{',
         'position:absolute!important;inset:0!important;left:0!important;top:0!important;',
         'width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;',
-        'margin:0!important;padding:0!important;transform:none!important;border:0!important;',
+        'margin:0!important;padding:0!important;border:0!important;',
+        'box-sizing:border-box!important;',
         '}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen .video-top-controls{',
         'position:fixed!important;z-index:2147483000!important;top:10px!important;left:10px!important;',
@@ -341,6 +346,12 @@
         Promise.resolve(_autoSelectFirstSub()).catch(function () {});
       }
 
+      try {
+        if (typeof _applyScreenModeV342 === 'function') {
+          _applyScreenModeV342(false, false);
+        }
+      } catch (_) {}
+
       return true;
     } catch (_) {
       return false;
@@ -391,6 +402,20 @@
             box.classList.add('pseudo-fullscreen');
             document.body.classList.add('pseudo-fs-lock');
           }
+
+          /*
+           * Reapply the current SubHub screen mode after the box has its final
+           * fullscreen dimensions. This is what makes ١٠٠٪ / ملاءمة / قص /
+           * تمديد work in VidSrc fullscreen instead of being overwritten by
+           * the fullscreen layout.
+           */
+          setTimeout(function () {
+            try {
+              if (typeof _applyScreenModeV342 === 'function') {
+                _applyScreenModeV342(false, false);
+              }
+            } catch (_) {}
+          }, 0);
         }
 
         try {
