@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.24';
+  const BRIDGE_BUILD = '322.3.25';
 
   let lastSig = '';
   let clockSource = '';
@@ -332,6 +332,8 @@
         try { applySubtitleStyle(); } catch (_) {}
       }
 
+      try { bindVidSrcSubtitleDragV3225(); } catch (_) {}
+
       if (frame) {
         try { frame.removeAttribute('allowfullscreen'); } catch (_) {}
         try { frame.removeAttribute('webkitallowfullscreen'); } catch (_) {}
@@ -398,6 +400,9 @@
         '#subhub-vidsrc-takeover-v3222{position:absolute;inset:0;z-index:2147482000;',
         'display:none;background:transparent;pointer-events:auto;touch-action:none;user-select:none;}',
         '#subhub-vidsrc-takeover-v3222.on{display:block;}',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3225-more{position:absolute;left:14px;top:14px;',
+        'width:54px;height:54px;border-radius:50%;z-index:4;font-size:30px;line-height:1;',
+        'background:rgba(8,12,18,.68);backdrop-filter:blur(8px);}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-center{position:absolute;left:50%;top:50%;',
         'transform:translate(-50%,-50%);width:76px;height:76px;border-radius:50%;',
         'border:1px solid rgba(255,255,255,.28);background:rgba(0,0,0,.52);color:#fff;',
@@ -413,6 +418,16 @@
         '#subhub-vidsrc-takeover-v3222 input[type=range]{flex:1;min-width:80px;accent-color:#f4b83f;}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-time{min-width:126px;text-align:center;color:#fff;',
         'font:700 15px/1.2 system-ui,sans-serif;direction:ltr;}',
+        '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3225-more{',
+        'left:8px;top:8px;width:44px;height:44px;font-size:26px;}',
+        '#embedPlayerModal .video-modal-box.subhub-menu-open-v3225 .video-top-controls{',
+        'display:flex!important;visibility:visible!important;opacity:1!important;',
+        'pointer-events:auto!important;z-index:2147483002!important;}',
+        '#embedPlayerModal .video-modal-box.subhub-menu-open-v3225 #embedCcBtn{',
+        'display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedSubtitleOverlay .sub-text{',
+        'pointer-events:auto!important;touch-action:none!important;cursor:grab!important;position:relative!important;',
+        'z-index:2147482501!important;}',
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-center{',
         'width:62px;height:62px;font-size:28px;}',
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
@@ -428,13 +443,13 @@
       root = document.createElement('div');
       root.id = 'subhub-vidsrc-takeover-v3222';
       root.innerHTML =
+        '<button class="sh-v3225-more" type="button" data-sh3222="more" aria-label="المزيد">⋮</button>' +
         '<button class="sh-v3222-center" type="button" aria-label="تشغيل">▶</button>' +
         '<div class="sh-v3222-bar">' +
           '<button type="button" data-sh3222="back">−١٠</button>' +
           '<button type="button" class="sh-v3222-play" data-sh3222="play">▶</button>' +
           '<button type="button" data-sh3222="forward">+١٠</button>' +
           '<input class="sh-v3222-seek" type="range" min="0" max="1000" step="1" value="0">' +
-          '<button type="button" data-sh3222="fullscreen" aria-label="ملء الشاشة">⛶</button>' +
           '<div class="sh-v3222-time">٠:٠٠ / --:--</div>' +
         '</div>';
 
@@ -447,7 +462,8 @@
           if (
             root.classList.contains('on') &&
             !vidSrcTakeoverDraggingV3222 &&
-            window.__subhubVidSrcPlayingV3222
+            window.__subhubVidSrcPlayingV3222 &&
+            !box.classList.contains('subhub-menu-open-v3225')
           ) root.classList.add('controls-hidden');
         }, 2600);
       };
@@ -466,6 +482,24 @@
         wake();
 
         const kind = target.getAttribute('data-sh3222');
+
+        if (kind === 'more') {
+          const open = !box.classList.contains('subhub-menu-open-v3225');
+          box.classList.toggle('subhub-menu-open-v3225', open);
+          root.classList.remove('controls-hidden');
+
+          try {
+            const tools = box.querySelector('.video-top-controls');
+            if (tools) {
+              tools.style.setProperty('display', 'flex', 'important');
+              tools.style.setProperty('visibility', 'visible', 'important');
+              tools.style.setProperty('opacity', '1', 'important');
+              tools.style.setProperty('pointer-events', 'auto', 'important');
+            }
+          } catch (_) {}
+          return;
+        }
+
         if (target.classList.contains('sh-v3222-center') || kind === 'play') {
           sendVidSrcSafeCommandV3211(
             window.__subhubVidSrcPlayingV3222 ? 'pause' : 'play'
@@ -480,12 +514,6 @@
         } else if (kind === 'forward') {
           const next = t + 10;
           sendVidSrcSafeCommandV3211('seek', {time: d > 0 ? Math.min(d, next) : next});
-        } else if (kind === 'fullscreen') {
-          try {
-            if (typeof window.toggleEmbedFullscreen === 'function') {
-              window.toggleEmbedFullscreen();
-            }
-          } catch (_) {}
         }
       }, true);
 
@@ -516,6 +544,93 @@
       return null;
     }
   }
+
+  let vidSrcSubtitleDragBoundV3225 = false;
+
+  function bindVidSrcSubtitleDragV3225() {
+    if (vidSrcSubtitleDragBoundV3225) return true;
+
+    const overlay = document.getElementById('embedSubtitleOverlay');
+    const tx = overlay && overlay.querySelector('.sub-text');
+    const box = document.querySelector('#embedPlayerModal .video-modal-box');
+    if (!overlay || !tx || !box) return false;
+
+    vidSrcSubtitleDragBoundV3225 = true;
+
+    let dragging = false;
+    let startY = 0;
+    let startPos = 7;
+    let pointerId = null;
+
+    const readPos = function () {
+      try {
+        return Math.max(2, Math.min(88, Number(
+          (typeof _subSettings === 'object' && _subSettings)
+            ? (_subSettings.position || 7)
+            : 7
+        )));
+      } catch (_) {
+        return 7;
+      }
+    };
+
+    const writePos = function (v) {
+      v = Math.max(2, Math.min(88, Number(v || 7)));
+      try {
+        if (typeof _subSettings === 'object' && _subSettings) {
+          _subSettings.position = v;
+        }
+      } catch (_) {}
+
+      try {
+        overlay.style.setProperty('bottom', v + '%', 'important');
+      } catch (_) {}
+
+      try {
+        if (typeof applySubtitleStyle === 'function') applySubtitleStyle();
+      } catch (_) {}
+
+      try { push(true); } catch (_) {}
+    };
+
+    tx.addEventListener('pointerdown', function (ev) {
+      try {
+        dragging = true;
+        pointerId = ev.pointerId;
+        startY = ev.clientY;
+        startPos = readPos();
+        tx.setPointerCapture && tx.setPointerCapture(pointerId);
+        ev.preventDefault();
+        ev.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    tx.addEventListener('pointermove', function (ev) {
+      if (!dragging || (pointerId !== null && ev.pointerId !== pointerId)) return;
+      try {
+        const h = Math.max(120, box.getBoundingClientRect().height || 0);
+        const deltaPct = (startY - ev.clientY) / h * 100;
+        writePos(startPos + deltaPct);
+        ev.preventDefault();
+        ev.stopPropagation();
+      } catch (_) {}
+    }, true);
+
+    const finish = function (ev) {
+      if (!dragging) return;
+      dragging = false;
+      try {
+        if (pointerId !== null && tx.releasePointerCapture) tx.releasePointerCapture(pointerId);
+      } catch (_) {}
+      pointerId = null;
+      try { ev && ev.preventDefault(); ev && ev.stopPropagation(); } catch (_) {}
+    };
+
+    tx.addEventListener('pointerup', finish, true);
+    tx.addEventListener('pointercancel', finish, true);
+    return true;
+  }
+
 
   function updateVidSrcTakeoverV3222(t, d, playing) {
     try {
@@ -625,7 +740,7 @@
             box.classList.remove('pseudo-fullscreen');
             document.body.classList.remove('pseudo-fs-lock');
           }
-          setVidSrcTakeoverActiveV3222(false);
+          setVidSrcTakeoverActiveV3222(true);
           setVidSrcImmersiveV3219(false);
         } else {
           if (typeof _activatePseudoFullscreen === 'function') {
