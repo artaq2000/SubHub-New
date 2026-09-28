@@ -779,6 +779,10 @@ public final class DirectStreamPlayer {
         }
     };
 
+    public void applyImmersive() {
+        if (!closed) enterImmersive();
+    }
+
     public void pause() {
         if (player != null) player.pause();
     }
