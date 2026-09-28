@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.16';
+  const BRIDGE_BUILD = '322.3.17';
 
   let lastSig = '';
   let clockSource = '';
@@ -257,6 +257,39 @@
     } catch (_) {}
   }
 
+  function installVidSrcCenteredLayoutV3217() {
+    try {
+      if (document.getElementById('__subhub_vidsrc_layout_v3217')) return;
+      const style = document.createElement('style');
+      style.id = '__subhub_vidsrc_layout_v3217';
+      style.textContent = [
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen{',
+        'position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;',
+        'max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;',
+        'border-radius:0!important;background:#000!important;overflow:hidden!important;',
+        '}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer{',
+        'position:absolute!important;inset:0!important;width:100vw!important;height:100vh!important;',
+        'max-width:none!important;max-height:none!important;aspect-ratio:auto!important;',
+        'margin:0!important;padding:0!important;overflow:hidden!important;background:#000!important;',
+        '}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer .screen-frame-stage-v342{',
+        'position:absolute!important;inset:0!important;width:100%!important;height:100%!important;',
+        'margin:0!important;padding:0!important;transform:none!important;',
+        '}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer iframe{',
+        'position:absolute!important;inset:0!important;left:0!important;top:0!important;',
+        'width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;',
+        'margin:0!important;padding:0!important;transform:none!important;border:0!important;',
+        '}',
+        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen .video-top-controls{',
+        'position:fixed!important;z-index:2147483000!important;top:10px!important;left:10px!important;',
+        '}'
+      ].join('');
+      (document.head || document.documentElement).appendChild(style);
+    } catch (_) {}
+  }
+
   function prepareVidSrcSubHubUiV3216() {
     try {
       if (
@@ -267,6 +300,12 @@
       const box = document.querySelector('#embedPlayerModal .video-modal-box');
       const frame = document.querySelector('#embedFrameContainer iframe');
       const cc = document.getElementById('embedCcBtn');
+
+      installVidSrcCenteredLayoutV3217();
+
+      if (box) {
+        try { box.setAttribute('data-subhub-vidsrc', '1'); } catch (_) {}
+      }
 
       if (cc) cc.style.display = 'flex';
 
@@ -333,6 +372,9 @@
          * fullscreen instead. This also keeps our CC button, subtitle panel and
          * Arabic overlay in the same DOM as the video.
          */
+        installVidSrcCenteredLayoutV3217();
+        try { box.setAttribute('data-subhub-vidsrc', '1'); } catch (_) {}
+
         const pseudo = box.classList.contains('pseudo-fullscreen');
 
         if (pseudo) {
