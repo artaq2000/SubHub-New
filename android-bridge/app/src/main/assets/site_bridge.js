@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.12';
+  const BRIDGE_BUILD = '322.3.13';
 
   let lastSig = '';
   let clockSource = '';
@@ -130,6 +130,44 @@
     }
   }
 
+  function nativeTapVidSrcV3213() {
+    try {
+      const b = window.SubHubAndroidBridge;
+      const frame = document.querySelector('#embedFrameContainer iframe');
+      if (
+        !b ||
+        typeof b.tapVidSrc !== 'function' ||
+        !frame ||
+        typeof isVidSrcFrameActiveV328 !== 'function' ||
+        !isVidSrcFrameActiveV328()
+      ) return false;
+
+      const rect = frame.getBoundingClientRect();
+      const vw = Math.max(1, Number(window.innerWidth || document.documentElement.clientWidth || 1));
+      const vh = Math.max(1, Number(window.innerHeight || document.documentElement.clientHeight || 1));
+      const cx = Math.max(rect.left + 12, Math.min(rect.right - 12, rect.left + rect.width * 0.5));
+      const cy = Math.max(rect.top + 12, Math.min(rect.bottom - 12, rect.top + rect.height * 0.5));
+      const nx = Math.max(0.02, Math.min(0.98, cx / vw));
+      const ny = Math.max(0.02, Math.min(0.98, cy / vh));
+
+      const shield = document.getElementById('vidfastSafeV294');
+      if (shield) shield.style.setProperty('pointer-events', 'none', 'important');
+
+      b.tapVidSrc(VIDSRC_GUARD_TOKEN, nx, ny);
+
+      setTimeout(function () {
+        try {
+          const s = document.getElementById('vidfastSafeV294');
+          if (s) s.style.removeProperty('pointer-events');
+        } catch (_) {}
+      }, 420);
+
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function installVidSrcSafeControlsV3211() {
     try {
       if (window.__subhubVidSrcSafeControlsV3211) return;
@@ -148,7 +186,19 @@
             (typeof _vidfastPlayingV294 !== 'undefined')
               ? !!_vidfastPlayingV294
               : false;
-          sendVidSrcSafeCommandV3211(playing ? 'pause' : 'play');
+          if (playing) {
+            sendVidSrcSafeCommandV3211('pause');
+          } else {
+            /*
+             * VidSrc requires a real user-like tap before it creates/starts
+             * the underlying player. Native Android dispatches that tap through
+             * the WebView while our shield is temporarily hit-test transparent.
+             */
+            nativeTapVidSrcV3213();
+            setTimeout(function () {
+              sendVidSrcSafeCommandV3211('play');
+            }, 180);
+          }
           try {
             if (typeof _vidfastSetStateV294 === 'function') {
               _vidfastSetStateV294(
