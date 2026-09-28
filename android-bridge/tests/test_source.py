@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.41'" in site
+assert "BRIDGE_BUILD = '322.3.42'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 50" in gradle
-assert "versionName '322.3.41'" in gradle
+assert "versionCode 51" in gradle
+assert "versionName '322.3.42'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -300,3 +300,13 @@ assert 'HlsMediaSource.Factory(data)' in direct_player
 assert 'player.setMediaSource' in direct_player
 assert 'player.play()' in direct_player
 assert 'beginCapture()' in direct_player
+
+# Direct stream 322.3.42 compact overlay UI.
+direct_player = (root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
+assert 'tool("⋮", 25' in direct_player
+assert 'addQuick(row, "HD"' in direct_player
+assert 'addQuick(row, "CC"' in direct_player
+assert 'cycleSubtitleColor' in direct_player
+assert 'setLineBackgroundEnabled' in direct_player
+assert 'SubtitleTextView' in direct_player
+assert 'handleBack()' in direct_player
