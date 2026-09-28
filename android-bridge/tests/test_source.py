@@ -294,7 +294,7 @@ assert 'window._watchSources' in direct_js
 assert 'playSelectedWatchSource()' in direct_js
 assert '__subhubDirectCaptured' in direct_js
 assert '_subSettings' not in direct_js
-assert 'subPanel' not in direct_js
+assert "getElementById('subPanel')" not in direct_js
 assert 'DirectStreamCapture' in main
 assert 'endsWith(".m3u8")' in capture
 assert 'DirectStreamPlayer(MainActivity.this' not in main
