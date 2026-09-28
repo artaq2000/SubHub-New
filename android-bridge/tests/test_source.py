@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.39'" in site
+assert "BRIDGE_BUILD = '322.3.40'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 48" in gradle
-assert "versionName '322.3.39'" in gradle
+assert "versionCode 49" in gradle
+assert "versionName '322.3.40'" in gradle
 assert 'startPairingFlow' in main
 assert 'syncNativeSubscription' in main
 assert 'getNativeVersion' in main
@@ -299,9 +299,18 @@ assert 'DirectStreamCapture' in main
 assert 'endsWith(".m3u8")' in capture
 assert 'DirectStreamPlayer(MainActivity.this' not in main
 
-# Direct stream 322.3.39 opens the real R2 UI first and only swaps live video src.
+# Direct stream 322.3.40 keeps the exact R2 web UI and delegates HLS decoding to Media3.
 direct_js = (root / 'app/src/main/assets/direct_stream.js').read_text(encoding='utf-8')
+backend = (root / 'app/src/main/java/com/artaq/subhub/DirectR2Playback.java').read_text(encoding='utf-8')
 assert 'findR2VideoElement' in direct_js
-assert 'swapExistingR2VideoToHls' in direct_js
-assert "video.src = String(url)" in direct_js
-assert 'clone.__subhubDirectSession' not in direct_js
+assert 'installR2Facade' in direct_js
+assert 'startDirectR2Playback' in direct_js
+assert 'getDirectR2State' in direct_js
+assert 'updateDirectR2Bounds' in direct_js
+assert 'directR2Command' in direct_js
+assert "video.src = String(url)" not in direct_js
+assert 'DirectR2Playback' in main
+assert 'HlsMediaSource' in backend
+assert 'TextureView' in backend
+assert 'root.addView(frame, 0' in backend
+assert 'DirectStreamPlayer(MainActivity.this' not in main
