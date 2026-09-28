@@ -633,8 +633,8 @@ public final class DirectStreamPlayer {
                 player.setTrackSelectionParameters(b.build());
                 hidePanel();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
-            lp.setMargins(0, dp(4), 0, dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
+            lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
         }
 
@@ -656,12 +656,13 @@ public final class DirectStreamPlayer {
             selectedSubtitle = -1;
             captions = false;
             cues = new JSONArray();
-            subtitle.setText("");
+            currentSubtitleText = "";
+            applySubtitleText("");
             subtitle.setVisibility(View.GONE);
             hidePanel();
         });
-        LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, dp(48));
-        offLp.setMargins(0, dp(4), 0, dp(4));
+        LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, dp(40));
+        offLp.setMargins(0, dp(2), 0, dp(2));
         list.addView(off, offLp);
 
         for (int i = 0; i < catalog.length(); i++) {
@@ -674,12 +675,13 @@ public final class DirectStreamPlayer {
                 selectedSubtitle = index;
                 captions = true;
                 cues = new JSONArray();
-                subtitle.setText("");
+                currentSubtitleText = "";
+                applySubtitleText("");
                 listener.subtitleRequested(index);
                 hidePanel();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
-            lp.setMargins(0, dp(4), 0, dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
+            lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
         }
 
@@ -722,12 +724,29 @@ public final class DirectStreamPlayer {
         prefs.edit().putLong("offset_ms", subtitleOffsetMs).apply();
     }
 
-    private void applySubtitleBackground() {
-        subtitle.setBackground(
-                subtitleBackground
-                        ? round(0x77000000, Color.TRANSPARENT, 0, 10)
-                        : round(Color.TRANSPARENT, Color.TRANSPARENT, 0, 10)
+    private void applySubtitleText(String text) {
+        currentSubtitleText = text == null ? "" : text;
+        subtitle.setTextColor(subtitleColor);
+        subtitle.setBackgroundColor(Color.TRANSPARENT);
+
+        if (currentSubtitleText.isEmpty()) {
+            subtitle.setText("");
+            return;
+        }
+
+        if (!subtitleBackground) {
+            subtitle.setText(currentSubtitleText);
+            return;
+        }
+
+        SpannableString styled = new SpannableString(currentSubtitleText);
+        styled.setSpan(
+                new BackgroundColorSpan(0x99000000),
+                0,
+                styled.length(),
+                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
         );
+        subtitle.setText(styled);
     }
 
     private void cycleResizeMode() {
@@ -747,10 +766,6 @@ public final class DirectStreamPlayer {
     private void positionSubtitle() {
         FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
         int base = Math.max(dp(58), root.getHeight() * subtitlePosition / 100);
-        if (panelOpen && panel.getVisibility() == View.VISIBLE) {
-            int ph = panel.getLayoutParams().height;
-            base = Math.max(base, ph + dp(18));
-        }
         p.bottomMargin = base;
         subtitle.setLayoutParams(p);
     }
@@ -829,7 +844,7 @@ public final class DirectStreamPlayer {
                 }
             }
 
-            subtitle.setText(text);
+            applySubtitleText(text);
             subtitle.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
             handler.postDelayed(this, 100);
         }
@@ -841,6 +856,18 @@ public final class DirectStreamPlayer {
 
     public void pause() {
         if (player != null) player.pause();
+    }
+
+    public boolean handleBack() {
+        if (panelOpen) {
+            hidePanel();
+            return true;
+        }
+        if (menuOpen) {
+            collapseMenu();
+            return true;
+        }
+        return false;
     }
 
     public void close() {
