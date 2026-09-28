@@ -1419,6 +1419,10 @@ public class MainActivity extends Activity {
             directR2Playback.release();
             directR2Playback = null;
         }
+    }
+
+    private void clearDirectR2Session() {
+        releaseDirectR2Playback();
         directR2Url = "";
         directR2Headers.clear();
     }
@@ -1426,7 +1430,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         if (directStreamCapture != null) directStreamCapture.close(false);
-        releaseDirectR2Playback();
+        clearDirectR2Session();
         ui.removeCallbacksAndMessages(null);
 
         if (webView != null) {
@@ -1564,7 +1568,7 @@ public class MainActivity extends Activity {
                         || "cover".equals(cmd) || "zoom".equals(cmd)) {
                     directR2Playback.setResizeMode(cmd);
                 } else if ("close".equals(cmd)) {
-                    releaseDirectR2Playback();
+                    clearDirectR2Session();
                     directStreamSession = "";
                 }
             });
