@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.32';
+  const BRIDGE_BUILD = '322.3.33';
 
   let lastSig = '';
   let clockSource = '';
@@ -301,50 +301,72 @@
     } catch (_) {}
   }
 
+  let vidSrcProviderUiSyncTimerV3233 = 0;
+  let vidSrcProviderUiInactiveTicksV3233 = 0;
+
   function ensureVidSrcProviderShortcutsV3231() {
     try {
       const box = document.querySelector('#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]');
       const controls = box && box.querySelector('.video-top-controls');
       if (!box || !controls) return false;
 
-      if (!document.getElementById('subhub-vidsrc-provider-style-v3231')) {
+      if (!document.getElementById('subhub-vidsrc-provider-style-v3233')) {
         const s = document.createElement('style');
-        s.id = 'subhub-vidsrc-provider-style-v3231';
+        s.id = 'subhub-vidsrc-provider-style-v3233';
         s.textContent = [
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231{',
-          'display:inline-flex;align-items:center;justify-content:center;min-width:48px;height:44px;',
+          'display:inline-flex!important;visibility:visible!important;opacity:1!important;',
+          'align-items:center;justify-content:center;min-width:48px;height:44px;',
           'padding:0 10px;border:0;border-radius:999px;background:rgba(8,12,18,.78);color:#fff;',
-          'font:800 13px/1 system-ui,sans-serif;backdrop-filter:blur(8px);pointer-events:auto!important;}',
+          'font:800 13px/1 system-ui,sans-serif;backdrop-filter:blur(8px);',
+          'pointer-events:auto!important;position:relative;z-index:2147483645!important;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="quality"]{min-width:52px;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="subs"]{display:none!important;}',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-close-hidden-v3232{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}'
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-close-hidden-v3233{',
+          'display:none!important;visibility:hidden!important;opacity:0!important;',
+          'pointer-events:none!important;width:0!important;min-width:0!important;',
+          'margin:0!important;padding:0!important;overflow:hidden!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(s);
       }
 
-      let closeBtn = null;
+      const cc = document.getElementById('embedCcBtn');
+      const children = Array.prototype.slice.call(controls.children || []);
+      let closeEl = null;
+
       try {
-        const buttons = Array.prototype.slice.call(controls.querySelectorAll('button'));
-        closeBtn = buttons.find(function (btn) {
-          if (!btn) return false;
-          if (btn.getAttribute('data-provider-action')) return false;
-          if (btn.id === 'embedCcBtn') return false;
-          const txt = String(btn.textContent || '').trim();
-          const aria = String(btn.getAttribute('aria-label') || '');
-          const title = String(btn.getAttribute('title') || '');
-          const ident = String((btn.id || '') + ' ' + (btn.className || ''));
+        closeEl = children.find(function (el) {
+          if (!el || el.getAttribute('data-provider-action')) return false;
+          if (el === cc || el.id === 'embedCcBtn') return false;
+          const txt = String(el.textContent || '').replace(/\s+/g, '').trim();
+          const aria = String(el.getAttribute('aria-label') || '');
+          const title = String(el.getAttribute('title') || '');
+          const ident = String((el.id || '') + ' ' + (el.className || ''));
           return /^[×✕✖xX]$/.test(txt) ||
-            /(close|dismiss|إغلاق|اغلاق)/i.test(aria + ' ' + title + ' ' + ident);
+            /(close|dismiss|إغلاق|اغلاق|video-close|modal-close|close-btn)/i.test(
+              aria + ' ' + title + ' ' + ident
+            );
         }) || null;
       } catch (_) {}
 
-      if (closeBtn) {
+      if (!closeEl && cc && cc.parentElement === controls) {
         try {
-          closeBtn.classList.add('subhub-provider-close-hidden-v3232');
-          closeBtn.setAttribute('data-subhub-hidden-close-v3232', '1');
-          closeBtn.style.setProperty('display', 'none', 'important');
-          closeBtn.style.setProperty('visibility', 'hidden', 'important');
-          closeBtn.style.setProperty('pointer-events', 'none', 'important');
+          let prev = cc.previousElementSibling;
+          while (prev && prev.getAttribute && prev.getAttribute('data-provider-action')) {
+            prev = prev.previousElementSibling;
+          }
+          if (prev) closeEl = prev;
+        } catch (_) {}
+      }
+
+      if (closeEl) {
+        try {
+          closeEl.classList.add('subhub-provider-close-hidden-v3233');
+          closeEl.setAttribute('data-subhub-hidden-close-v3233', '1');
+          closeEl.style.setProperty('display', 'none', 'important');
+          closeEl.style.setProperty('visibility', 'hidden', 'important');
+          closeEl.style.setProperty('opacity', '0', 'important');
+          closeEl.style.setProperty('pointer-events', 'none', 'important');
         } catch (_) {}
       }
 
@@ -363,10 +385,17 @@
       }
 
       try {
-        if (closeBtn && closeBtn.parentElement === controls) {
-          controls.insertBefore(q, closeBtn);
-        } else if (q.parentElement !== controls) {
-          controls.insertBefore(q, controls.firstChild || null);
+        q.style.setProperty('display', 'inline-flex', 'important');
+        q.style.setProperty('visibility', 'visible', 'important');
+        q.style.setProperty('opacity', '1', 'important');
+        q.style.setProperty('pointer-events', 'auto', 'important');
+
+        const anchor =
+          (closeEl && closeEl.parentElement === controls) ? closeEl :
+          (cc && cc.parentElement === controls ? cc : controls.firstElementChild);
+
+        if (q.parentElement !== controls || q.nextElementSibling !== anchor) {
+          controls.insertBefore(q, anchor || null);
         }
       } catch (_) {}
 
@@ -378,6 +407,40 @@
         }
       } catch (_) {}
 
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function startVidSrcProviderUiSyncV3233() {
+    try {
+      if (vidSrcProviderUiSyncTimerV3233) return true;
+      vidSrcProviderUiInactiveTicksV3233 = 0;
+
+      const tick = function () {
+        let active = false;
+        try {
+          active =
+            typeof isVidSrcFrameActiveV328 === 'function' &&
+            isVidSrcFrameActiveV328();
+        } catch (_) {}
+
+        if (active) {
+          vidSrcProviderUiInactiveTicksV3233 = 0;
+          try { ensureVidSrcProviderShortcutsV3231(); } catch (_) {}
+      try { startVidSrcProviderUiSyncV3233(); } catch (_) {}
+        } else {
+          vidSrcProviderUiInactiveTicksV3233 += 1;
+          if (vidSrcProviderUiInactiveTicksV3233 >= 6) {
+            clearInterval(vidSrcProviderUiSyncTimerV3233);
+            vidSrcProviderUiSyncTimerV3233 = 0;
+          }
+        }
+      };
+
+      tick();
+      vidSrcProviderUiSyncTimerV3233 = setInterval(tick, 500);
       return true;
     } catch (_) {
       return false;
@@ -536,7 +599,7 @@
         '#subhub-vidsrc-takeover-v3222.controls-hidden .sh-v3222-center{opacity:0;pointer-events:none;}',
         '#subhub-vidsrc-takeover-v3222 button{width:50px;height:44px;border:0;border-radius:12px;',
         'background:rgba(12,18,28,.84);color:#fff;font-weight:800;font-size:18px;}',
-        '#subhub-vidsrc-takeover-v3222 .sh-v3222-play{font-size:24px;}',
+        '#subhub-vidsrc-takeover-v3222 .sh-v3222-play{display:none!important;font-size:24px;}',
         '#subhub-vidsrc-takeover-v3222 input[type=range]{flex:1;min-width:80px;accent-color:#f4b83f;}',
         '#subhub-vidsrc-takeover-v3222 .sh-v3222-time{min-width:126px;text-align:center;color:#fff;',
         'font:700 15px/1.2 system-ui,sans-serif;direction:ltr;}',
