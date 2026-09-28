@@ -2,7 +2,10 @@ package com.artaq.subhub;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -69,7 +72,7 @@ public final class DirectStreamPlayer {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final FrameLayout root;
     private final TextView status;
-    private final TextView subtitle;
+    private final SubtitleTextView subtitle;
     private final LinearLayout toolbar;
     private final FrameLayout panel;
     private final LinearLayout panelBody;
@@ -92,7 +95,19 @@ public final class DirectStreamPlayer {
     private int subtitlePosition;
     private int subtitleSizeSp;
     private boolean subtitleBackground;
+    private int subtitleColorIndex;
     private int resizeMode;
+
+    private static final int[] SUBTITLE_COLORS = new int[] {
+            Color.WHITE,
+            0xFFFFD54F,
+            0xFF7FDBFF,
+            0xFFA5FFB5
+    };
+
+    private static final String[] SUBTITLE_COLOR_NAMES = new String[] {
+            "أبيض", "أصفر", "سماوي", "أخضر فاتح"
+    };
     private int previousSystemUi;
     private boolean panelOpen;
 
@@ -108,6 +123,10 @@ public final class DirectStreamPlayer {
         subtitlePosition = prefs.getInt("position", 12);
         subtitleSizeSp = prefs.getInt("size_sp", 26);
         subtitleBackground = prefs.getBoolean("background", true);
+        subtitleColorIndex = Math.max(
+                0,
+                Math.min(SUBTITLE_COLORS.length - 1, prefs.getInt("color_index", 0))
+        );
         resizeMode = prefs.getInt("resize_mode", 0);
 
         root = new FrameLayout(activity);
@@ -120,12 +139,12 @@ public final class DirectStreamPlayer {
         previousSystemUi = activity.getWindow().getDecorView().getSystemUiVisibility();
         enterImmersive();
 
-        subtitle = new TextView(activity);
-        subtitle.setTextColor(Color.WHITE);
+        subtitle = new SubtitleTextView(activity);
+        subtitle.setTextColor(SUBTITLE_COLORS[subtitleColorIndex]);
         subtitle.setTextSize(subtitleSizeSp);
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
-        subtitle.setShadowLayer(dp(2), 0, 0, Color.BLACK);
+        subtitle.setShadowLayer(dp(1), 0, 0, Color.BLACK);
         subtitle.setLineSpacing(0, 1.05f);
         subtitle.setPadding(dp(12), dp(5), dp(12), dp(5));
         subtitle.setVisibility(View.GONE);
@@ -151,14 +170,11 @@ public final class DirectStreamPlayer {
         toolbar.setOrientation(LinearLayout.HORIZONTAL);
         toolbar.setGravity(Gravity.CENTER);
         toolbar.setPadding(dp(4), dp(4), dp(4), dp(4));
-        tool("✕", 21, this::close);
-        tool("⋮", 24, this::toggleQuickSettings);
-        tool("HD", 12, this::quality);
-        tool("CC", 13, this::chooseSubtitle);
+        tool("⋮", 25, this::toggleQuickSettings);
         FrameLayout.LayoutParams toolsLp =
-                new FrameLayout.LayoutParams(-2, dp(54), Gravity.TOP | Gravity.END);
-        toolsLp.topMargin = dp(8);
-        toolsLp.rightMargin = dp(10);
+                new FrameLayout.LayoutParams(dp(54), dp(54), Gravity.TOP | Gravity.END);
+        toolsLp.topMargin = dp(10);
+        toolsLp.rightMargin = dp(12);
         root.addView(toolbar, toolsLp);
 
         panel = new FrameLayout(activity);
@@ -175,8 +191,6 @@ public final class DirectStreamPlayer {
 
         LinearLayout header = new LinearLayout(activity);
         header.setGravity(Gravity.CENTER_VERTICAL);
-        TextView closePanel = chip("✕", 18, this::hidePanel);
-        header.addView(closePanel, new LinearLayout.LayoutParams(dp(46), dp(42)));
         panelTitle = new TextView(activity);
         panelTitle.setTextColor(Color.WHITE);
         panelTitle.setTextSize(17);
@@ -192,10 +206,8 @@ public final class DirectStreamPlayer {
         panelOuter.addView(panelBody, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         FrameLayout.LayoutParams panelLp =
-                new FrameLayout.LayoutParams(-1, dp(150), Gravity.BOTTOM);
-        panelLp.leftMargin = dp(10);
-        panelLp.rightMargin = dp(10);
-        panelLp.bottomMargin = dp(8);
+                new FrameLayout.LayoutParams(dp(760), dp(112), Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        panelLp.topMargin = dp(72);
         root.addView(panel, panelLp);
 
         root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
@@ -264,12 +276,12 @@ public final class DirectStreamPlayer {
         v.setTextColor(Color.WHITE);
         v.setTextSize(sizeSp);
         v.setGravity(Gravity.CENTER);
-        v.setBackground(round(0xcc101923, Color.TRANSPARENT, 0, 24));
+        v.setBackground(round(0x660A1725, 0x77406480, 1, 26));
         v.setOnClickListener(x -> {
             enterImmersive();
             action.run();
         });
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(50), dp(50));
         lp.setMargins(dp(3), 0, dp(3), 0);
         toolbar.addView(v, lp);
     }
@@ -281,8 +293,8 @@ public final class DirectStreamPlayer {
         v.setTextSize(sizeSp);
         v.setGravity(Gravity.CENTER);
         v.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
-        v.setPadding(dp(12), 0, dp(12), 0);
-        v.setBackground(round(PANEL_2, BORDER, 1, 14));
+        v.setPadding(dp(10), 0, dp(10), 0);
+        v.setBackground(round(0xD90B1D2C, 0x88406480, 1, 12));
         v.setOnClickListener(x -> {
             enterImmersive();
             action.run();
@@ -455,73 +467,85 @@ public final class DirectStreamPlayer {
     }
 
     private void toggleQuickSettings() {
-        if (panelOpen && "إعدادات سريعة".contentEquals(panelTitle.getText())) {
+        if (panelOpen) {
             hidePanel();
         } else {
             showQuickSettings();
         }
     }
 
+    public boolean handleBack() {
+        if (panelOpen) {
+            hidePanel();
+            return true;
+        }
+        return false;
+    }
+
     private void showQuickSettings() {
-        panelTitle.setText("إعدادات سريعة");
+        panelTitle.setText("أدوات");
         panelBody.removeAllViews();
 
-        LinearLayout rows = new LinearLayout(activity);
-        rows.setOrientation(LinearLayout.VERTICAL);
-        rows.setGravity(Gravity.CENTER);
+        HorizontalScrollView scroll = new HorizontalScrollView(activity);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setFillViewport(false);
 
-        HorizontalScrollView scroll1 = new HorizontalScrollView(activity);
-        scroll1.setHorizontalScrollBarEnabled(false);
-        LinearLayout row1 = new LinearLayout(activity);
-        row1.setGravity(Gravity.CENTER);
-        addQuick(row1, "A−", () -> adjustSubtitleSize(-2));
-        addQuick(row1, "A+", () -> adjustSubtitleSize(2));
-        addQuick(row1, "↑", () -> adjustSubtitlePosition(4));
-        addQuick(row1, "↓", () -> adjustSubtitlePosition(-4));
-        addQuick(row1, "👁", () -> {
-            captions = !captions;
-            if (!captions) subtitle.setVisibility(View.GONE);
-        });
-        addQuick(row1, "▣", () -> {
+        LinearLayout row = new LinearLayout(activity);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        addQuick(row, "✕", this::close);
+        addQuick(row, "HD", this::quality);
+        addQuick(row, "CC", this::chooseSubtitle);
+        addQuick(row, "A−", () -> adjustSubtitleSize(-2));
+        addQuick(row, "A+", () -> adjustSubtitleSize(2));
+        addQuick(row, "↑", () -> adjustSubtitlePosition(4));
+        addQuick(row, "↓", () -> adjustSubtitlePosition(-4));
+        addQuick(row, "−.5", () -> adjustSync(500));
+        addQuick(row, "+.5", () -> adjustSync(-500));
+        addQuick(row, "▣", () -> {
             subtitleBackground = !subtitleBackground;
             prefs.edit().putBoolean("background", subtitleBackground).apply();
             applySubtitleBackground();
         });
-        scroll1.addView(row1, new HorizontalScrollView.LayoutParams(-2, dp(48)));
-        rows.addView(scroll1, new LinearLayout.LayoutParams(-1, dp(50)));
+        addQuick(row, "🎨", this::cycleSubtitleColor);
+        addQuick(row, "▭", this::cycleResizeMode);
 
-        HorizontalScrollView scroll2 = new HorizontalScrollView(activity);
-        scroll2.setHorizontalScrollBarEnabled(false);
-        LinearLayout row2 = new LinearLayout(activity);
-        row2.setGravity(Gravity.CENTER);
-        addQuick(row2, "−0.5", () -> adjustSync(500));
-        addQuick(row2, "0", () -> {
-            subtitleOffsetMs = 0;
-            prefs.edit().putLong("offset_ms", 0).apply();
-        });
-        addQuick(row2, "+0.5", () -> adjustSync(-500));
-        addQuick(row2, "ملاءمة", this::cycleResizeMode);
-        scroll2.addView(row2, new HorizontalScrollView.LayoutParams(-2, dp(48)));
-        rows.addView(scroll2, new LinearLayout.LayoutParams(-1, dp(50)));
-
-        panelBody.addView(rows, new LinearLayout.LayoutParams(-1, -1));
+        scroll.addView(row, new HorizontalScrollView.LayoutParams(-2, dp(46)));
+        panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, dp(42)));
         showPanel(false);
     }
 
     private void addQuick(LinearLayout row, String text, Runnable action) {
         TextView v = chip(text, 14, action);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(74), dp(42));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(58), dp(42));
         lp.setMargins(dp(3), dp(2), dp(3), dp(2));
         row.addView(v, lp);
     }
 
     private void showPanel(boolean listPanel) {
         panelOpen = true;
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) panel.getLayoutParams();
+
         boolean landscape = root.getWidth() > root.getHeight();
-        lp.height = listPanel
-                ? (landscape ? dp(220) : dp(310))
-                : (landscape ? dp(150) : dp(160));
+        int maxW = Math.max(dp(260), root.getWidth() - dp(24));
+
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) panel.getLayoutParams();
+        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = dp(72);
+        lp.bottomMargin = 0;
+        lp.leftMargin = 0;
+        lp.rightMargin = 0;
+
+        if (listPanel) {
+            lp.width = Math.min(maxW, landscape ? dp(500) : maxW);
+            lp.height = Math.min(
+                    Math.max(dp(190), root.getHeight() - dp(120)),
+                    landscape ? dp(280) : dp(360)
+            );
+        } else {
+            lp.width = Math.min(maxW, landscape ? dp(820) : maxW);
+            lp.height = dp(108);
+        }
+
         panel.setLayoutParams(lp);
         panel.setVisibility(View.VISIBLE);
         positionSubtitle();
@@ -577,8 +601,8 @@ public final class DirectStreamPlayer {
                 player.setTrackSelectionParameters(b.build());
                 hidePanel();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
-            lp.setMargins(0, dp(4), 0, dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(42));
+            lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
         }
 
@@ -604,8 +628,8 @@ public final class DirectStreamPlayer {
             subtitle.setVisibility(View.GONE);
             hidePanel();
         });
-        LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, dp(48));
-        offLp.setMargins(0, dp(4), 0, dp(4));
+        LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, dp(42));
+        offLp.setMargins(0, dp(2), 0, dp(2));
         list.addView(off, offLp);
 
         for (int i = 0; i < catalog.length(); i++) {
@@ -622,8 +646,8 @@ public final class DirectStreamPlayer {
                 listener.subtitleRequested(index);
                 hidePanel();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
-            lp.setMargins(0, dp(4), 0, dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(42));
+            lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
         }
 
@@ -667,11 +691,19 @@ public final class DirectStreamPlayer {
     }
 
     private void applySubtitleBackground() {
-        subtitle.setBackground(
-                subtitleBackground
-                        ? round(0x77000000, Color.TRANSPARENT, 0, 10)
-                        : round(Color.TRANSPARENT, Color.TRANSPARENT, 0, 10)
-        );
+        subtitle.setLineBackgroundEnabled(subtitleBackground);
+    }
+
+    private void cycleSubtitleColor() {
+        subtitleColorIndex = (subtitleColorIndex + 1) % SUBTITLE_COLORS.length;
+        int color = SUBTITLE_COLORS[subtitleColorIndex];
+        subtitle.setTextColor(color);
+        prefs.edit().putInt("color_index", subtitleColorIndex).apply();
+
+        message("لون الترجمة: " + SUBTITLE_COLOR_NAMES[subtitleColorIndex]);
+        handler.postDelayed(() -> {
+            if (!closed) status.setVisibility(View.GONE);
+        }, 900);
     }
 
     private void cycleResizeMode() {
@@ -691,10 +723,6 @@ public final class DirectStreamPlayer {
     private void positionSubtitle() {
         FrameLayout.LayoutParams p = (FrameLayout.LayoutParams) subtitle.getLayoutParams();
         int base = Math.max(dp(58), root.getHeight() * subtitlePosition / 100);
-        if (panelOpen && panel.getVisibility() == View.VISIBLE) {
-            int ph = panel.getLayoutParams().height;
-            base = Math.max(base, ph + dp(18));
-        }
         p.bottomMargin = base;
         subtitle.setLayoutParams(p);
     }
@@ -785,6 +813,54 @@ public final class DirectStreamPlayer {
 
     public void pause() {
         if (player != null) player.pause();
+    }
+
+    private static final class SubtitleTextView extends TextView {
+        private boolean lineBackgroundEnabled;
+        private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        SubtitleTextView(android.content.Context context) {
+            super(context);
+            setIncludeFontPadding(false);
+            backgroundPaint.setColor(0x77000000);
+        }
+
+        void setLineBackgroundEnabled(boolean enabled) {
+            lineBackgroundEnabled = enabled;
+            invalidate();
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            if (lineBackgroundEnabled && getLayout() != null && getText() != null
+                    && getText().length() > 0) {
+                android.text.Layout layout = getLayout();
+                float density = getResources().getDisplayMetrics().density;
+                float padX = 8f * density;
+                float padY = 2f * density;
+                float radius = 8f * density;
+
+                for (int i = 0; i < layout.getLineCount(); i++) {
+                    float left = layout.getLineLeft(i) + getPaddingLeft();
+                    float right = layout.getLineRight(i) + getPaddingLeft();
+                    if (right < left) {
+                        float t = left;
+                        left = right;
+                        right = t;
+                    }
+                    float top = layout.getLineTop(i) + getPaddingTop() - padY;
+                    float bottom = layout.getLineBottom(i) + getPaddingTop() + padY;
+
+                    RectF rect = new RectF(
+                            Math.max(0, left - padX),
+                            Math.max(0, top),
+                            Math.min(getWidth(), right + padX),
+                            Math.min(getHeight(), bottom)
+                    );
+                    canvas.drawRoundRect(rect, radius, radius, backgroundPaint);
+                }
+            }
+            super.onDraw(canvas);
+        }
     }
 
     public void close() {
