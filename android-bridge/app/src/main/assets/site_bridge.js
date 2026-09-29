@@ -612,12 +612,13 @@
       #embedPlayerModal #subhub-vidsrc-takeover-v3222.controls-hidden .sh-v3222-center{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       #embedPlayerModal .video-modal-box.sh-v3251-quality #subhub-vidsrc-takeover-v3222,
       #embedPlayerModal .video-modal-box.sh-v3251-quality #vidsrcWakeV374{display:none!important}
-      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:12px;min-width:48px;padding:0 6px;flex-shrink:0}
+      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:12px;min-width:48px;width:auto!important;padding:0 6px;flex:0 0 auto}
       #embedPlayerModal #embedTopBar .subhub-provider-close-hidden-v3233{display:none!important}
       #subhub-vidsrc-subtitle-gesture-v3229{z-index:2147483502!important}
       #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,
       #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar{z-index:2147483600!important;pointer-events:auto;touch-action:manipulation}
-      #embedPlayerModal #embedTopBar{max-width:calc(100% - 62px);flex-wrap:nowrap}
+      #embedPlayerModal #embedTopBar{left:56px!important;right:auto!important;width:max-content!important;max-width:calc(100% - 64px);flex-wrap:nowrap}
+      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger{z-index:2147483601!important}
       #embedPlayerModal .sh-v3252-status{position:absolute;left:8px;right:8px;top:62px;color:#fff;background:rgba(0,0,0,.7);text-align:center;border-radius:8px;padding:4px;font:12px system-ui;pointer-events:none;z-index:4}
       #embedPlayerModal .sh-v3252-status:empty{display:none}
       #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-center[aria-busy="true"]{opacity:.75!important}
