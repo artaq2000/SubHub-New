@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.48';
+  const BRIDGE_BUILD = '322.3.49';
 
   let lastSig = '';
   let clockSource = '';
@@ -2044,6 +2044,80 @@
     } catch (_) {}
   }
 
+  function normalizeImdbTargetV3249(raw) {
+    try {
+      let s = String(raw || '').trim();
+      if (!s) return '';
+
+      if (/^tt\d{5,12}$/i.test(s)) {
+        return 'https://www.imdb.com/title/' + s.toLowerCase() + '/';
+      }
+
+      if (/^(?:www\.)?imdb\.com\//i.test(s)) {
+        s = 'https://' + s;
+      }
+
+      const u = new URL(s, location.href);
+      const h = String(u.hostname || '').toLowerCase();
+      if (
+        (u.protocol === 'https:' || u.protocol === 'http:') &&
+        (h === 'imdb.com' || h.endsWith('.imdb.com'))
+      ) {
+        if (u.protocol === 'http:') u.protocol = 'https:';
+        return u.href;
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  function openImdbExternalV3249(raw) {
+    const url = normalizeImdbTargetV3249(raw);
+    if (!url) return false;
+    try {
+      const b = window.SubHubAndroidBridge;
+      if (!b || typeof b.openImdb !== 'function') return false;
+      b.openImdb(VIDSRC_GUARD_TOKEN, url);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function installImdbExternalOpenV3249() {
+    try {
+      if (window.__subhubImdbExternalV3249) return;
+      window.__subhubImdbExternalV3249 = true;
+
+      document.addEventListener('click', function (ev) {
+        try {
+          const t = ev && ev.target;
+          const a = t && t.closest ? t.closest('a[href]') : null;
+          if (!a) return;
+          const raw = String(a.getAttribute('href') || a.href || '');
+          if (!normalizeImdbTargetV3249(raw)) return;
+
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (typeof ev.stopImmediatePropagation === 'function') {
+            ev.stopImmediatePropagation();
+          }
+          openImdbExternalV3249(raw);
+        } catch (_) {}
+      }, true);
+
+      const oldOpen = window.open;
+      if (typeof oldOpen === 'function' && !oldOpen.__subhubImdbExternalV3249) {
+        const wrappedOpen = function (url) {
+          if (openImdbExternalV3249(url)) return null;
+          return oldOpen.apply(this, arguments);
+        };
+        wrappedOpen.__subhubImdbExternalV3249 = true;
+        window.open = wrappedOpen;
+      }
+    } catch (_) {}
+  }
+
+
   function wrap(name, after) {
     try {
       const fn = window[name];
@@ -2161,6 +2235,7 @@
 
   stampBuild();
   installUiPolishV324();
+  installImdbExternalOpenV3249();
   installOpeningFeedback();
   installVidSrcGuardV328();
   installVidSrcPseudoFullscreenV3216();
@@ -2182,6 +2257,7 @@
   setTimeout(function () {
     stampBuild();
     installUiPolishV324();
+    installImdbExternalOpenV3249();
     installOpeningFeedback();
     installVidSrcGuardV328();
     installVidSrcPseudoFullscreenV3216();
