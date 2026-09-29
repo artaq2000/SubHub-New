@@ -5,7 +5,7 @@ const fixture=n=>fs.readFileSync(path.join(__dirname,'fixtures',n),'utf8');
 (async()=>{
  const browser=await chromium.launch({headless:true});
  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true});
- const page=await context.newPage();
+ const page=await context.newPage();page.setDefaultTimeout(7000);
  const leaf=`<html><body style="margin:0;background:#234"><script>
  const sourceId='leaf52';let seq=1;const vidSrcPlaybackCommandsV3252=new Map();let actions=[];
  const activeVideo={isConnected:true,paused:false,ended:false,pause(){actions.push('pause');this.paused=true},play(){actions.push('play');return new Promise(r=>setTimeout(()=>{this.paused=false;r()},120))}};
@@ -20,7 +20,7 @@ const fixture=n=>fs.readFileSync(path.join(__dirname,'fixtures',n),'utf8');
  await page.addStyleTag({content:fixture('web374_all.css')});
  await page.evaluate(markup=>{
  document.body.innerHTML=markup;
- const modal=document.querySelector('#embedPlayerModal');modal.classList.add('open','inline-player-v265');modal.style.cssText='width:370px;left:10px;top:100px';
+ const modal=document.querySelector('#embedPlayerModal');modal.classList.add('open','inline-player-v265');modal.style.cssText='width:370px!important;left:10px!important;top:100px!important;height:208px!important;--inline-host-h-v335:208px';
  document.querySelector('.video-modal-box').setAttribute('data-subhub-vidsrc','1');
  const fr=document.createElement('iframe');fr.src='https://vidsrc.to/embed/test';fr.style.cssText='width:100%;height:100%;position:absolute;border:0';document.querySelector('#embedFrameContainer').appendChild(fr);
  },fixture('web374_embed.html'));
@@ -34,6 +34,7 @@ const fixture=n=>fs.readFileSync(path.join(__dirname,'fixtures',n),'utf8');
  window.addEventListener('message',receiveVidSrcPlaybackV3252);
  ensureVidSrcProviderShortcutsV3231();const root=ensureVidSrcTakeoverV3222();root.classList.add('on');updateVidSrcTakeoverV3222(120,3600,true);`});
  await page.waitForFunction(()=>document.querySelector('#embedFrameContainer iframe').contentWindow!==null);
+ console.log('Initial hit target',await page.locator('#embedUiTrigger').evaluate(el=>{const r=el.getBoundingClientRect();const top=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return {rect:r.toJSON(),hit:top&&top.outerHTML.slice(0,150),z:getComputedStyle(el).zIndex}}));
  // Use actual touch hit testing, not element.click(), for the dots and CC.
  await page.locator('#embedUiTrigger').tap();assert(await page.locator('#embedTopBar').isVisible());
  await page.evaluate(()=>document.getElementById('embedCcBtn').style.display='flex');
