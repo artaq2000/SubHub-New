@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.49 IMDb External
+name: Build TEST SubHub 322.3.50 VidSrc Subscriber Video
 
 on:
   push:
     branches:
-      - 'test/imdb-external-322.3.49'
+      - 'test/vidsrc-subscriber-322.3.50'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -55,6 +55,9 @@ jobs:
       - name: Verify SubHub source
         run: python3 tests/test_source.py
 
+      - name: Test VidSrc media visibility and subscriber setup
+        run: node tests/vidsrc_visibility.test.cjs
+
       - name: Test independent stream sessions
         run: node tests/direct_stream.test.cjs
 
@@ -77,23 +80,24 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='58'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.49'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='59'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.50'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
           echo "Actual signing SHA-256:   $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Prepare IMDb fix test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.49-imdb-fix.apk
+      - name: Prepare VidSrc subscriber fix test APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.50-vidsrc-subscriber-fix.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.49-imdb-fix
-          path: SubHub-322.3.49-imdb-fix.apk
+          name: SubHub-322.3.50-vidsrc-subscriber-fix
+          path: SubHub-322.3.50-vidsrc-subscriber-fix.apk
           retention-days: 7
 
       - name: Remove signing key from runner
         if: always()
         run: rm -f "$SUBHUB_KEYSTORE_PATH"
+

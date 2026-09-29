@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.49';
+  const BRIDGE_BUILD = '322.3.50';
 
   let lastSig = '';
   let clockSource = '';
@@ -1441,6 +1441,32 @@
     } catch (_) {}
   }
 
+  // Hydrate the subscriber entry with the same native UI setup as the
+  // owner entry. The page's existing access checks and opener still run.
+  function installVidSrcSubscriberV3250() {
+    const original = window.openVidSrcForSubscriberV369;
+    if (typeof original !== 'function' || original.__subhubSubscriberV3250) return;
+    const wrapped = function () {
+      const result = original.apply(this, arguments);
+      const frame = document.querySelector('#embedFrameContainer iframe');
+      const prepare = function () {
+        if (!frame || !frame.isConnected ||
+            document.querySelector('#embedFrameContainer iframe') !== frame ||
+            !isVidSrcFrameActiveV328()) return;
+        syncVidSrcGuardV328(true);
+        installVidSrcPseudoFullscreenV3216();
+        prepareVidSrcSubHubUiV3216();
+        ensureVidSrcTakeoverV3222();
+      };
+      prepare();
+      setTimeout(prepare, 120);
+      setTimeout(prepare, 500);
+      return result;
+    };
+    wrapped.__subhubSubscriberV3250 = true;
+    window.openVidSrcForSubscriberV369 = wrapped;
+  }
+
   function nowPerf() {
     try { return performance.now(); } catch (_) { return Date.now(); }
   }
@@ -2240,6 +2266,7 @@
   installVidSrcGuardV328();
   installVidSrcPseudoFullscreenV3216();
   installVidSrcNoSandboxV329();
+  installVidSrcSubscriberV3250();
 
   wrap(
     'updateSubtitleOverlay',
@@ -2262,6 +2289,7 @@
     installVidSrcGuardV328();
     installVidSrcPseudoFullscreenV3216();
     installVidSrcNoSandboxV329();
+    installVidSrcSubscriberV3250();
 
     wrap(
       'updateSubtitleOverlay',
@@ -2296,3 +2324,4 @@
 
   return true;
 })();
+

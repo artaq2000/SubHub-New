@@ -64,8 +64,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.49";
-    private static final int NATIVE_VERSION_CODE = 58;
+    private static final String NATIVE_VERSION = "322.3.50";
+    private static final int NATIVE_VERSION_CODE = 59;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1803,4 +1803,5 @@ public class MainActivity extends Activity {
         }
     }
 }
+
 

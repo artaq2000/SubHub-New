@@ -432,8 +432,54 @@
     disable();
   }
 
+  // 322.3.50: player state classes (e.g. jw-flag-captions-enabled) are
+  // not caption overlays. Protect media and every composed-tree ancestor.
+  const vidSrcCaptionStylesV3250 = new Map();
+  function vidSrcMediaAncestorsV3250() {
+    const protectedNodes = new Set([document.documentElement, document.body]);
+    vidSrcDeepQueryAllV3226('video,iframe,object,embed,media-player').forEach(function (media) {
+      let node = media;
+      while (node && !protectedNodes.has(node)) {
+        protectedNodes.add(node);
+        node = node.parentNode || node.host || null;
+      }
+    });
+    return protectedNodes;
+  }
+  function restoreVidSrcCaptionNodeV3250(el) {
+    const old = vidSrcCaptionStylesV3250.get(el);
+    if (!old) return;
+    old.forEach(function (entry) {
+      if (entry[1]) el.style.setProperty(entry[0], entry[1], entry[2]);
+      else el.style.removeProperty(entry[0]);
+    });
+    el.removeAttribute('data-subhub-hidden-caption-v3250');
+    el.removeAttribute('data-subhub-hidden-overlay-v3224');
+    vidSrcCaptionStylesV3250.delete(el);
+  }
+  function protectVidSrcCaptionMediaV3250(protectedNodes) {
+    vidSrcCaptionStylesV3250.forEach(function (_, el) {
+      if (!el.isConnected) vidSrcCaptionStylesV3250.delete(el);
+      else if (protectedNodes.has(el)) restoreVidSrcCaptionNodeV3250(el);
+    });
+  }
+  function hideVidSrcCaptionNodeV3250(el, protectedNodes) {
+    if (!el || protectedNodes.has(el)) return;
+    if (!vidSrcCaptionStylesV3250.has(el)) {
+      vidSrcCaptionStylesV3250.set(el, ['display', 'visibility', 'opacity'].map(function (name) {
+        return [name, el.style.getPropertyValue(name), el.style.getPropertyPriority(name)];
+      }));
+    }
+    el.setAttribute('data-subhub-hidden-caption-v3250', '1');
+    el.style.setProperty('display', 'none', 'important');
+    el.style.setProperty('visibility', 'hidden', 'important');
+    el.style.setProperty('opacity', '0', 'important');
+  }
+
   function scrubVidSrcProviderCaptionsV3224() {
     if (!vidSrcTakeoverActiveV3224 || vidSrcProviderCaptionsAllowedV3231) return;
+    const protectedNodes = vidSrcMediaAncestorsV3250();
+    protectVidSrcCaptionMediaV3250(protectedNodes);
 
     try {
       vidSrcDeepQueryAllV3226('video').forEach(function (video) {
@@ -468,9 +514,7 @@
         '[class*="cue" i],[data-testid*="subtitle" i],[data-testid*="caption" i]'
       ).forEach(function (el) {
         try {
-          el.style.setProperty('display', 'none', 'important');
-          el.style.setProperty('visibility', 'hidden', 'important');
-          el.style.setProperty('opacity', '0', 'important');
+          hideVidSrcCaptionNodeV3250(el, protectedNodes);
         } catch (_) {}
       });
     } catch (_) {}
@@ -493,7 +537,7 @@
 
         vidSrcDeepQueryAllV3226('div,span,p').forEach(function (el) {
           try {
-            if (!el || el === video || el.contains(video)) return;
+            if (!el || protectedNodes.has(el)) return;
             const txt = String(el.textContent || '').replace(/\s+/g, ' ').trim();
             if (!txt || txt.length > 220) return;
 
@@ -513,7 +557,7 @@
             const tag = String(el.tagName || '').toLowerCase();
             if (tag === 'button' || tag === 'a') return;
 
-            el.style.setProperty('display', 'none', 'important');
+            hideVidSrcCaptionNodeV3250(el, protectedNodes);
             el.setAttribute('data-subhub-hidden-overlay-v3224', '1');
           } catch (_) {}
         });
@@ -523,6 +567,7 @@
 
   function scrubVidSrcProviderUiV3234() {
     if (!vidSrcTakeoverActiveV3224) return;
+    const protectedNodes = vidSrcMediaAncestorsV3250();
 
     /*
      * 322.3.35:
@@ -560,7 +605,7 @@
       try {
         root.querySelectorAll(selector).forEach(function (el) {
           try {
-            if (!el || el.tagName === 'VIDEO') return;
+            if (!el || protectedNodes.has(el)) return;
             if (!vidSrcProviderUiHiddenV3234.has(el)) {
               vidSrcProviderUiHiddenV3234.set(el, {
                 display: el.style.getPropertyValue('display') || '',
@@ -635,7 +680,10 @@
     clearInterval(vidSrcCaptionScrubTimerV3224);
     vidSrcCaptionScrubTimerV3224 = 0;
 
-    if (!vidSrcTakeoverActiveV3224) return;
+    if (!vidSrcTakeoverActiveV3224) {
+      vidSrcCaptionStylesV3250.forEach(function (_, el) { restoreVidSrcCaptionNodeV3250(el); });
+      return;
+    }
 
     scrubVidSrcProviderCaptionsV3224();
     vidSrcCaptionScrubTimerV3224 = setInterval(
@@ -672,13 +720,8 @@
           'html.subhub-vidsrc-takeover-v3222 .plyr__control--overlaid,',
           'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .plyr__captions,',
           'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .vjs-text-track-display,',
-          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="subtitle" i],',
-          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="caption" i],',
-          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [data-testid*="subtitle" i],',
-          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [data-testid*="caption" i],',
           'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 .shaka-text-container,',
-          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="text-track" i],',
-          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [class*="cue" i]{',
+          'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 [data-subhub-hidden-caption-v3250="1"]{',
           'display:none!important;visibility:hidden!important;opacity:0!important;}',
           'html.subhub-vidsrc-takeover-v3222.subhub-provider-captions-off-v3231 video::cue{',
           'color:transparent!important;background:transparent!important;text-shadow:none!important;}',
@@ -1674,8 +1717,6 @@
           '.plyr__captions{display:none!important;}',
           'video::cue{color:transparent!important;background:transparent!important;text-shadow:none!important;}',
           'video::-webkit-media-text-track-container,video::-webkit-media-text-track-display{display:none!important;visibility:hidden!important;opacity:0!important;}',
-          '[class*="subtitle" i][class*="display" i]{display:none!important;}',
-          '[class*="caption" i][class*="display" i]{display:none!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(style);
       }
