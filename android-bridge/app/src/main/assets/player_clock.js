@@ -1097,10 +1097,45 @@
     }
   }
 
+  const vidSrcPlaybackCommandsV3252 = new Map();
+  function applyVidSrcPlaybackV3252(d, video) {
+    if (d.targetSource !== sourceId) return false;
+    if (!d.requestId || typeof d.playing !== 'boolean') return true;
+    const previous = vidSrcPlaybackCommandsV3252.get(d.requestId);
+    if (previous) {
+      if (previous.reply) window.top.postMessage(previous.reply, '*');
+      return true;
+    }
+    const entry = {reply:null};
+    vidSrcPlaybackCommandsV3252.set(d.requestId,entry);
+    if (vidSrcPlaybackCommandsV3252.size > 32) vidSrcPlaybackCommandsV3252.delete(vidSrcPlaybackCommandsV3252.keys().next().value);
+    const finish = function (success) {
+      try { if (video) send(video,true,d.playing ? 'playing' : 'pause'); } catch (_) {}
+      entry.reply = {type:'SUBHUB_PLAYBACK_ACK_V3252',requestId:d.requestId,source:sourceId,
+        playing:!!(video && !video.paused && !video.ended),ok:!!success,seq:seq};
+      try { window.top.postMessage(entry.reply,'*'); } catch (_) {}
+    };
+    if (!video || !video.isConnected || !Number.isFinite(d.expiresAt) || Date.now() > d.expiresAt) { finish(false); return true; }
+    try {
+      if (d.playing) {
+        if (!video.paused && !video.ended) { finish(true); return true; }
+        Promise.resolve(video.play()).then(function () { finish(!video.paused); },function () { finish(false); });
+      } else {
+        video.pause();
+        finish(video.paused);
+      }
+    } catch (_) { finish(false); }
+    return true;
+  }
+
   function handleSafeCommandV3211(d) {
     const cmd = String(d.command || '').toLowerCase();
     const v = activeVideo && activeVideo.isConnected ? activeVideo : activeVidSrcVideoV3227();
 
+    if (cmd === 'setplayback') {
+      if (!applyVidSrcPlaybackV3252(d, v)) relaySafeCommandDownV3211(d);
+      return;
+    }
     try {
       if (cmd === 'takeover') {
         applyVidSrcTakeoverV3222(!!d.active);

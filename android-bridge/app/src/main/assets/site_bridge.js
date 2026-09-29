@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.51';
+  const BRIDGE_BUILD = '322.3.52';
 
   let lastSig = '';
   let clockSource = '';
@@ -63,7 +63,7 @@
     const active = isVidSrcFrameActiveV328();
     if (!force && active === lastVidSrcGuardState) return;
     lastVidSrcGuardState = active;
-    if (!active) endVidSrcQualityV3251();
+    if (!active) { endVidSrcQualityV3251(); cancelVidSrcPlaybackV3252(); }
 
     try {
       if (!active && typeof setVidSrcTakeoverActiveV3222 === 'function') {
@@ -170,7 +170,7 @@
           isVidSrcFrameActiveV328()
         ) {
           const playing = !!window.__subhubVidSrcPlayingV3222;
-          sendVidSrcSafeCommandV3211('toggle');
+          requestVidSrcPlaybackV3252();
           try {
             if (typeof _vidfastSetStateV294 === 'function') {
               _vidfastSetStateV294(
@@ -512,6 +512,62 @@
   }
 
 
+  let vidSrcPlaybackPendingV3252 = null;
+  let vidSrcPlaybackStatusTimerV3252 = 0;
+  function vidSrcPlaybackStatusV3252(text) {
+    clearTimeout(vidSrcPlaybackStatusTimerV3252);
+    const status = document.querySelector('#subhub-vidsrc-takeover-v3222 .sh-v3252-status');
+    if (status) status.textContent = text || '';
+  }
+
+  function cancelVidSrcPlaybackV3252() {
+    const p = vidSrcPlaybackPendingV3252;
+    if (p) clearTimeout(p.timer);
+    vidSrcPlaybackPendingV3252 = null;
+    vidSrcPlaybackStatusV3252('');
+  }
+
+  function requestVidSrcPlaybackV3252() {
+    if (vidSrcPlaybackPendingV3252) return false;
+    const frame = document.querySelector('#embedFrameContainer iframe');
+    if (!frame || !isVidSrcFrameActiveV328() || !clockSource) return false;
+    const playing = !(window.__subhubVidSrcPlayingV3222 === true);
+    const p = {frame, source:clockSource, playing, timer:0,
+      id:Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')};
+    vidSrcPlaybackPendingV3252 = p;
+    vidSrcPlaybackStatusV3252(playing ? 'جارٍ التشغيل…' : 'جارٍ الإيقاف…');
+    const box = document.querySelector('#embedPlayerModal .video-modal-box');
+    if (box) wakeVidSrcControlsV3251(box);
+    updateVidSrcTakeoverV3222(window.__subhubVidSrcTimeV3222 || 0, window.__subhubVidSrcDurationV3211 || 0, !playing);
+    sendVidSrcSafeCommandV3211('setplayback', {targetSource:p.source,requestId:p.id,playing:p.playing,expiresAt:Date.now()+4000});
+    p.timer = setTimeout(function () {
+      if (vidSrcPlaybackPendingV3252 !== p) return;
+      cancelVidSrcPlaybackV3252();
+      if (document.querySelector('#embedFrameContainer iframe') !== p.frame || !p.frame.isConnected) return;
+      vidSrcPlaybackStatusV3252('لم يؤكد الفيديو الأمر. حاول مجدداً.');
+      updateVidSrcTakeoverV3222(window.__subhubVidSrcTimeV3222 || 0, window.__subhubVidSrcDurationV3211 || 0, !clockPaused && !clockEnded);
+      vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},3000);
+    }, 4200);
+    return true;
+  }
+
+  function receiveVidSrcPlaybackV3252(ev) {
+    const d = ev.data, p = vidSrcPlaybackPendingV3252;
+    if (!p || !d || d.type !== 'SUBHUB_PLAYBACK_ACK_V3252' || d.requestId !== p.id || d.source !== p.source) return;
+    if (!p.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== p.frame || !isVidSrcFrameActiveV328()) { cancelVidSrcPlaybackV3252(); return; }
+    cancelVidSrcPlaybackV3252();
+    if (clockSource === p.source) {
+      clockPaused = !d.playing;
+      lastSeq = Math.max(lastSeq, Number(d.seq) || 0);
+    }
+    updateVidSrcTakeoverV3222(window.__subhubVidSrcTimeV3222 || 0, window.__subhubVidSrcDurationV3211 || 0, !!d.playing);
+    if (!d.ok) {
+      vidSrcPlaybackStatusV3252('تعذّر تنفيذ الأمر. حاول مجدداً.');
+      vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},3000);
+    }
+  }
+  window.addEventListener('message', receiveVidSrcPlaybackV3252);
+
   function wakeVidSrcControlsV3251(box) {
     box.classList.remove('sh-v374-idle');
     box.classList.add('sh-v374-awake');
@@ -559,7 +615,12 @@
       #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:12px;min-width:48px;padding:0 6px;flex-shrink:0}
       #embedPlayerModal #embedTopBar .subhub-provider-close-hidden-v3233{display:none!important}
       #subhub-vidsrc-subtitle-gesture-v3229{z-index:2147483502!important}
+      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,
+      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar{z-index:2147483600!important;pointer-events:auto;touch-action:manipulation}
       #embedPlayerModal #embedTopBar{max-width:calc(100% - 62px);flex-wrap:nowrap}
+      #embedPlayerModal .sh-v3252-status{position:absolute;left:8px;right:8px;top:62px;color:#fff;background:rgba(0,0,0,.7);text-align:center;border-radius:8px;padding:4px;font:12px system-ui;pointer-events:none;z-index:4}
+      #embedPlayerModal .sh-v3252-status:empty{display:none}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-center[aria-busy="true"]{opacity:.75!important}
       #embedPlayerModal .sh-v3251-quality-note{position:absolute;left:12px;right:12px;top:62px;padding:8px;border-radius:10px;background:rgba(8,12,18,.9);color:white;z-index:2147483645;text-align:center;font-size:13px;pointer-events:none}
     `;
     if (!document.getElementById(style.id)) (document.head || document.documentElement).appendChild(style);
@@ -567,6 +628,10 @@
     surface.className = 'sh-v3251-surface';
     surface.setAttribute('aria-hidden', 'true');
     root.insertBefore(surface, root.firstChild);
+    const status = document.createElement('div');
+    status.className = 'sh-v3252-status';
+    status.setAttribute('role','status');
+    root.appendChild(status);
     syncVidSrcViewportControlsV3251(root);
     if (typeof ResizeObserver === 'function') {
       const observer = new ResizeObserver(function () { syncVidSrcViewportControlsV3251(root); });
@@ -829,7 +894,7 @@
         }
 
         if (target.classList.contains('sh-v3222-center') || kind === 'play') {
-          sendVidSrcSafeCommandV3211('toggle');
+          requestVidSrcPlaybackV3252();
           return;
         }
 
@@ -1274,7 +1339,12 @@
       }
 
       const icon = playing ? '❚❚' : '▶';
-      if (center) { center.textContent = icon; center.setAttribute('aria-label', playing ? 'إيقاف مؤقت' : 'تشغيل'); }
+      if (center) {
+        center.textContent = vidSrcPlaybackPendingV3252 ? '…' : icon;
+        center.disabled = !!vidSrcPlaybackPendingV3252;
+        center.setAttribute('aria-busy', String(!!vidSrcPlaybackPendingV3252));
+        center.setAttribute('aria-label', vidSrcPlaybackPendingV3252 ? 'بانتظار استجابة الفيديو' : (playing ? 'إيقاف مؤقت' : 'تشغيل'));
+      }
       if (play) play.textContent = icon;
       root.classList.toggle('sh-v3251-ready', clockReadyState >= 1);
     } catch (_) {}
@@ -2371,6 +2441,7 @@
 
   setInterval(function () {
     syncVidSrcGuardV328(false);
+    if (vidSrcPlaybackPendingV3252 && (!vidSrcPlaybackPendingV3252.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== vidSrcPlaybackPendingV3252.frame)) cancelVidSrcPlaybackV3252();
     if (vidSrcQualitySessionV3251) wakeVidSrcControlsV3251(vidSrcQualitySessionV3251.box);
     if (vidSrcQualitySessionV3251 && (!vidSrcQualitySessionV3251.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== vidSrcQualitySessionV3251.frame)) endVidSrcQualityV3251();
     try { syncVidSrcSubPanelLayoutV3230(); } catch (_) {}
