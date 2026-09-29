@@ -28,7 +28,7 @@ const fixture=n=>fs.readFileSync(path.join(__dirname,'fixtures',n),'utf8');
  const methods=['isVidSrcFrameActiveV328','sendVidSrcSafeCommandV3211','wakeVidSrcControlsV3251','syncVidSrcViewportControlsV3251','installVidSrcViewportControlsV3251','fmtVidSrcTimeV3222','ensureVidSrcTakeoverV3222','updateVidSrcTakeoverV3222','ensureVidSrcProviderShortcutsV3231','syncVidSrcSubPanelLayoutV3230','vidSrcPlaybackStatusV3252','cancelVidSrcPlaybackV3252','requestVidSrcPlaybackV3252','receiveVidSrcPlaybackV3252'];
  await page.addScriptTag({content:`let vidSrcTakeoverDraggingV3222=false,vidSrcTakeoverHideTimerV3222=0,clockReadyState=2,vidSrcPlaybackPendingV3252=null,vidSrcPlaybackStatusTimerV3252=0,clockSource='leaf52',clockPaused=false,clockEnded=false,lastSeq=1;
  function togglePlayerBar(){const bar=document.getElementById('embedTopBar');bar.classList.toggle('open');document.getElementById('embedUiTrigger').classList.toggle('active',bar.classList.contains('open'))}
- function toggleSubtitleModal(){document.getElementById('subPanel').classList.toggle('open')}
+ function toggleSubtitleModal(){document.getElementById('subPanel').classList.toggle('open');syncVidSrcSubPanelLayoutV3230()}
  function toggleEmbedFullscreen(){document.querySelector('.video-modal-box').classList.toggle('pseudo-fullscreen')}
  ${methods.map(n=>fn(site,n)).join('\n')}
  window.addEventListener('message',receiveVidSrcPlaybackV3252);

@@ -38,4 +38,232 @@
 
     <div id="embedFrameContainer" class="video-frame-wrap" style="position:relative; width:100%; aspect-ratio:16/9; background:#000; overflow:hidden;"></div>
 
-<div id="subPanel" class="sub-panel"></div></div></div>
+<div class="sub-panel" id="subPanel">
+
+        <div class="sub-panel-head">
+
+          <h4>✨ إعدادات الترجمة</h4>
+
+          <button type="button" class="sub-panel-close" onclick="closeSubtitleModal()">✕</button>
+
+        </div>
+
+        <!-- v100: التبويبات بدل قائمة واحدة طويلة — كل تبويب يظهر كاملاً
+
+             بلا تمرير، وأي إعداد جديد يدخل تبويبه بلا ما تكبر اللوحة. -->
+
+        <div class="sub-tabs">
+
+          <button type="button" class="sub-tab active" data-tab="track" onclick="switchSubTab('track')">💬 الترجمة</button>
+
+          <button type="button" class="sub-tab" data-tab="look" onclick="switchSubTab('look')">🎨 المظهر</button>
+
+          <button type="button" class="sub-tab" data-tab="font" onclick="switchSubTab('font')">✍️ الخط</button>
+
+          <button type="button" class="sub-tab" data-tab="sync" onclick="switchSubTab('sync')">⏱️ المزامنة</button>
+
+        </div>
+
+
+
+        <div class="sub-tab-pane active" data-pane="track">
+
+          <div class="sub-section-title">اختر الترجمة</div>
+
+          <div id="subTrackList"></div>
+
+          <div class="sub-src-row">
+
+          <button class="link-btn" onclick="document.getElementById('subFileInput').click()">📁 من الجهاز</button>
+
+          <button class="link-btn" onclick="openAddSubUrlModal()">🔗 رابط يدوي</button>
+
+          </div>
+
+          <input type="file" id="subFileInput" accept=".srt,.vtt,.ass,.ssa,.sub,text/plain" style="display:none;" onchange="handleLocalSubtitleFile(event)">
+
+        </div>
+
+
+
+        <div class="sub-tab-pane" data-pane="look">
+
+          <div class="sub-settings-row">
+
+          <label>حجم الخط</label>
+
+          <div class="sub-pos-controls">
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitleSize(-10)">−</button>
+
+          <span class="sub-val" id="subSizeValue">100%</span>
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitleSize(10)">+</button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row">
+
+          <label>لون الخط</label>
+
+          <div class="color-swatch-row" id="fontColorRow">
+
+          <button type="button" class="color-swatch" style="background:#ffffff" onclick="setSubtitleColor('#ffffff', this)" title="أبيض"></button>
+
+          <button type="button" class="color-swatch" style="background:#ffee00" onclick="setSubtitleColor('#ffee00', this)" title="أصفر"></button>
+
+          <button type="button" class="color-swatch" style="background:#00e5ff" onclick="setSubtitleColor('#00e5ff', this)" title="سماوي"></button>
+
+          <button type="button" class="color-swatch" style="background:#a8ffb4" onclick="setSubtitleColor('#a8ffb4', this)" title="أخضر فاتح"></button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row">
+
+          <label>لون الخلفية</label>
+
+          <div class="color-swatch-row" id="bgColorRow">
+
+          <button type="button" class="color-swatch" style="background:#000000" onclick="setSubtitleBgColor('#000000', this)" title="أسود"></button>
+
+          <button type="button" class="color-swatch" style="background:#16202e" onclick="setSubtitleBgColor('#16202e', this)" title="كحلي غامق"></button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row">
+
+          <label>سواد الخلفية</label>
+
+          <div class="sub-pos-controls">
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitleOpacity(-10)">−</button>
+
+          <span class="sub-val" id="subOpacityValue">60%</span>
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitleOpacity(10)">+</button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row">
+
+          <label>ظل الخط</label>
+
+          <div class="sub-pos-controls">
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitleShadow(-0.5)">−</button>
+
+          <span class="sub-val" id="subShadowValue">1.5</span>
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitleShadow(0.5)">+</button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row">
+
+          <label>موضع الترجمة</label>
+
+          <div class="sub-pos-controls">
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitlePosition(-2)">▼</button>
+
+          <span class="sub-val" id="subPosValue">7%</span>
+
+          <button type="button" class="pos-btn" onclick="adjustSubtitlePosition(2)">▲</button>
+
+          </div>
+
+          </div>
+
+        </div>
+
+
+
+        <div class="sub-tab-pane" data-pane="font">
+
+          <div class="sub-settings-row">
+
+          <label>الخط</label>
+
+          <div class="font-choice-row" id="fontChoiceRow">
+
+          <button type="button" class="font-choice-btn" data-font="default" onclick="setSubtitleFont('default', this)">افتراضي</button>
+
+          <button type="button" class="font-choice-btn" data-font="typesetting" onclick="setSubtitleFont('typesetting', this)">فني</button>
+
+          <button type="button" class="font-choice-btn" data-font="naskh" onclick="setSubtitleFont('naskh', this)">نسخي</button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row">
+
+          <label>سماكة الخط</label>
+
+          <div class="font-choice-row" id="weightChoiceRow">
+
+          <button type="button" class="font-choice-btn" data-weight="300" onclick="setSubtitleWeight(300, this)">نحيف</button>
+
+          <button type="button" class="font-choice-btn" data-weight="500" onclick="setSubtitleWeight(500, this)">وسط</button>
+
+          <button type="button" class="font-choice-btn" data-weight="800" onclick="setSubtitleWeight(800, this)">عريض</button>
+
+          </div>
+
+          </div>
+
+          <div class="sub-settings-row vip" id="subVipFontRow">
+
+          <label>خطوط إضافية</label>
+
+          <div class="font-choice-row" id="vipFontChoiceRow">
+
+          <button type="button" class="font-choice-btn" data-font="cairo" onclick="setSubtitleFont('cairo', this)">القاهرة</button>
+
+          <button type="button" class="font-choice-btn" data-font="almarai" onclick="setSubtitleFont('almarai', this)">المراعي</button>
+
+          <button type="button" class="font-choice-btn" data-font="amiri" onclick="setSubtitleFont('amiri', this)">أميري</button>
+
+          </div>
+
+          </div>
+
+        </div>
+
+
+
+        <div class="sub-tab-pane" data-pane="sync">
+
+          <div class="sub-pane-hint">لو الترجمة سابقة الكلام أو متأخّرة عنه، اضبطها من هنا. تُصفّر مع كل ترجمة جديدة.</div>
+
+          <div class="sub-settings-row vip" id="subSyncRow">
+
+            <label>مزامنة الترجمة</label>
+
+            <div class="sub-pos-controls">
+
+              <button type="button" class="pos-btn" onclick="adjustSubOffset(-0.25)">−</button>
+
+              <span class="sub-val" id="subOffsetValue">0 ث</span>
+
+              <button type="button" class="pos-btn" onclick="adjustSubOffset(0.25)">+</button>
+
+            </div>
+
+            <button type="button" class="sync-reset" onclick="adjustSubOffset(0, true)" title="تصفير">↺</button>
+
+          </div>
+
+        </div>
+
+      </div></div></div>
