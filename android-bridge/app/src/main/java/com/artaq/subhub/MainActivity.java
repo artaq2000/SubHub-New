@@ -64,8 +64,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.48";
-    private static final int NATIVE_VERSION_CODE = 57;
+    private static final String NATIVE_VERSION = "322.3.49";
+    private static final int NATIVE_VERSION_CODE = 58;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1132,6 +1132,39 @@ public class MainActivity extends Activity {
         }, "SubHub-update-download").start();
     }
 
+    private String normalizeImdbExternalUrl(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim();
+        if (s.isEmpty() || s.length() > 2048) return "";
+
+        if (s.matches("(?i)^tt\\d{5,12}$")) {
+            return "https://www.imdb.com/title/" + s.toLowerCase(Locale.US) + "/";
+        }
+
+        if (s.matches("(?i)^(www\\.)?imdb\\.com/.*")) {
+            s = "https://" + s;
+        }
+
+        try {
+            Uri u = Uri.parse(s);
+            String host = u.getHost();
+            String scheme = u.getScheme();
+            if (host == null || scheme == null) return "";
+
+            String h = host.toLowerCase(Locale.US);
+            boolean imdbHost = h.equals("imdb.com") || h.endsWith(".imdb.com");
+            boolean webScheme = "https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme);
+            if (!imdbHost || !webScheme) return "";
+
+            if ("http".equalsIgnoreCase(scheme)) {
+                return u.buildUpon().scheme("https").build().toString();
+            }
+            return u.toString();
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
     private void openExternal(String url) {
         try {
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
@@ -1554,6 +1587,20 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getUpdateState() { return nativeUpdateState(); }
+
+        @JavascriptInterface
+        public void openImdb(String token, String raw) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            final String url = normalizeImdbExternalUrl(raw);
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                if (url.isEmpty()) {
+                    Toast.makeText(MainActivity.this, "تعذر فتح صفحة IMDb", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                openExternal(url);
+            });
+        }
 
         @JavascriptInterface
         public String getNativeVersion() {
