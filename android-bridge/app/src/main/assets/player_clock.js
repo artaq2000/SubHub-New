@@ -566,7 +566,9 @@
   }
 
   function scrubVidSrcProviderUiV3234() {
-    if (!vidSrcTakeoverActiveV3224) return;
+    if (!vidSrcTakeoverActiveV3224 || vidSrcQualityMenuV3251) return;
+    const media = activeVidSrcVideoV3227();
+    if (!media || Number(media.readyState || 0) < 1) return;
     const protectedNodes = vidSrcMediaAncestorsV3250();
 
     /*
@@ -576,8 +578,18 @@
      * made a reopened VidSrc player look normal but ignore taps.
      */
     const selector = [
+      '.controls',
+      '.control-bar',
+      '.player-controls',
+      '.bottom-controls',
+      '.center-controls',
+      '.play-pause',
+      '.seek-bar',
       '.vjs-control-bar',
       '.jw-controlbar',
+      '.jw-display-icon-container',
+      '.vjs-big-play-button',
+      '.plyr__control--overlaid',
       '.plyr__controls',
       '.shaka-controls-container',
       '.vds-controls',
@@ -955,7 +967,11 @@
           'button[title*="settings" i]',
           '.vjs-settings-control',
           '.jw-icon-settings',
-          '[data-plyr="settings"]'
+          '[data-plyr="settings"]',
+          'button[aria-label*="quality" i]',
+          'button[title*="quality" i]',
+          '[data-testid*="settings" i]',
+          'button[class*="settings" i]'
         ]
       : [
           'button[aria-label*="caption" i]',
@@ -998,15 +1014,55 @@
     return null;
   }
 
-  function openVidSrcProviderQualityV3231() {
+  let vidSrcQualityMenuV3251 = null;
+  function reportVidSrcQualityV3251(id, open) {
+    try { window.top.postMessage({type:'SUBHUB_VIDSRC_QUALITY_V3251',requestId:id,open:open}, '*'); } catch (_) {}
+  }
+
+  function closeVidSrcQualityV3251() {
+    const s = vidSrcQualityMenuV3251;
+    if (!s) return;
+    vidSrcQualityMenuV3251 = null;
+    clearTimeout(s.timer);
+    document.removeEventListener('click', s.choose, true);
+    document.documentElement.classList.remove('subhub-provider-menu-v3251');
+    // Close only a button that explicitly reports that its menu remains open.
+    try { if (s.button.getAttribute('aria-expanded') === 'true') s.button.click(); } catch (_) {}
+    setVidSrcProviderUiScrubV3234(vidSrcTakeoverActiveV3224);
+    reportVidSrcQualityV3251(s.id, false);
+  }
+
+  function openVidSrcProviderQualityV3231(d) {
     try {
+      // Only the frame containing the selected media should open a menu.
+      if (!activeVidSrcVideoV3227() || !d.requestId) return false;
       const b = findVidSrcProviderButtonV3231('quality');
       if (!b) return false;
-      b.click();
+      closeVidSrcQualityV3251();
+      const s = {id:d.requestId, button:b, timer:0, choose:null};
+      vidSrcQualityMenuV3251 = s;
+      restoreVidSrcProviderUiV3234();
+      let style = document.getElementById('subhub-provider-menu-style-v3251');
+      if (!style) {
+        style = document.createElement('style');
+        style.id = 'subhub-provider-menu-style-v3251';
+        style.textContent = 'html.subhub-vidsrc-takeover-v3222.subhub-provider-menu-v3251 .vjs-control-bar,html.subhub-vidsrc-takeover-v3222.subhub-provider-menu-v3251 .jw-controlbar,html.subhub-vidsrc-takeover-v3222.subhub-provider-menu-v3251 .plyr__controls{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}';
+        (document.head || document.documentElement).appendChild(style);
+      }
+      document.documentElement.classList.add('subhub-provider-menu-v3251');
+      s.choose = function (ev) {
+        const el = ev.target && ev.target.closest ? ev.target.closest('button,[role="menuitem"],[role="menuitemradio"],[role="radio"],label') : null;
+        const text = String(el && (el.textContent || el.getAttribute('aria-label')) || '').trim();
+        if (/^(auto(?:matic)?|تلقائي|(?:٢١٦٠|١٤٤٠|١٠٨٠|٧٢٠|٤٨٠|٣٦٠|٢٤٠|١٤٤|2160|1440|1080|720|480|360|240|144)\s*[pP]?(?:\s*.*)?)$/i.test(text)) {
+          setTimeout(function () { if (vidSrcQualityMenuV3251 === s) closeVidSrcQualityV3251(); }, 300);
+        }
+      };
+      document.addEventListener('click', s.choose, true);
+      if (b.getAttribute('aria-expanded') !== 'true') b.click();
+      s.timer = setTimeout(closeVidSrcQualityV3251, 15000);
+      reportVidSrcQualityV3251(s.id, true);
       return true;
-    } catch (_) {
-      return false;
-    }
+    } catch (_) { closeVidSrcQualityV3251(); return false; }
   }
 
   function openVidSrcProviderSubsV3231() {
@@ -1043,19 +1099,29 @@
 
   function handleSafeCommandV3211(d) {
     const cmd = String(d.command || '').toLowerCase();
-    const v = activeVideo && document.contains(activeVideo) ? activeVideo : null;
+    const v = activeVideo && activeVideo.isConnected ? activeVideo : activeVidSrcVideoV3227();
 
     try {
       if (cmd === 'takeover') {
         applyVidSrcTakeoverV3222(!!d.active);
       } else if (cmd === 'captionoff') {
-        forceVidSrcCaptionOffV3227();
+        if (!vidSrcQualityMenuV3251) forceVidSrcCaptionOffV3227();
       } else if (cmd === 'providerquality') {
-        openVidSrcProviderQualityV3231();
+        openVidSrcProviderQualityV3231(d);
+      } else if (cmd === 'providerqualityclose') {
+        if (vidSrcQualityMenuV3251 && vidSrcQualityMenuV3251.id === d.requestId) closeVidSrcQualityV3251();
       } else if (cmd === 'providersubs') {
         openVidSrcProviderSubsV3231();
       } else if (cmd === 'providercaptionsoff') {
         forceVidSrcProviderCaptionsOffV3231();
+      } else if (cmd === 'toggle') {
+        if (v) {
+          if (v.paused || v.ended) {
+            const p = v.play();
+            if (p && typeof p.catch === 'function') p.catch(function () {});
+          } else v.pause();
+          send(v, true, 'safe-toggle');
+        } else bootstrapSafePlayV3212();
       } else if (cmd === 'play') {
         if (v) {
           const p = v.play();
@@ -1065,6 +1131,7 @@
         }
       } else if (v && cmd === 'pause') {
         v.pause();
+        send(v, true, 'safe-pause');
       } else if (v && cmd === 'seek') {
         const t = Number(d.time);
         if (Number.isFinite(t)) {

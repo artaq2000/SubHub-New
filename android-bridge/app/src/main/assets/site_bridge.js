@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.50';
+  const BRIDGE_BUILD = '322.3.51';
 
   let lastSig = '';
   let clockSource = '';
@@ -63,6 +63,7 @@
     const active = isVidSrcFrameActiveV328();
     if (!force && active === lastVidSrcGuardState) return;
     lastVidSrcGuardState = active;
+    if (!active) endVidSrcQualityV3251();
 
     try {
       if (!active && typeof setVidSrcTakeoverActiveV3222 === 'function') {
@@ -103,37 +104,17 @@
    * The public website is untouched.
    */
 
+  // Commands are sent once to this exact player. A delayed play must never
+  // undo a later pause or leak into the next movie.
   function sendVidSrcSafeCommandV3211(command, extra) {
     try {
       const frame = document.querySelector('#embedFrameContainer iframe');
-      if (!frame || !frame.contentWindow) return false;
-      const msg = Object.assign({
-        type: 'SUBHUB_SAFE_PLAYER_V1',
-        command: String(command || '')
-      }, (extra && typeof extra === 'object') ? extra : {});
-
-      const post = function () {
-        try {
-          const f = document.querySelector('#embedFrameContainer iframe');
-          if (!f || !f.contentWindow) return;
-          if (
-            typeof isVidSrcFrameActiveV328 === 'function' &&
-            !isVidSrcFrameActiveV328()
-          ) return;
-          f.contentWindow.postMessage(msg, '*');
-        } catch (_) {}
-      };
-
-      post();
-      if (String(command || '').toLowerCase() === 'play') {
-        setTimeout(post, 260);
-        setTimeout(post, 700);
-        setTimeout(post, 1350);
-      }
+      if (!frame || !frame.contentWindow || !isVidSrcFrameActiveV328()) return false;
+      frame.contentWindow.postMessage(Object.assign({
+        type: 'SUBHUB_SAFE_PLAYER_V1', command: String(command || '')
+      }, extra && typeof extra === 'object' ? extra : {}), '*');
       return true;
-    } catch (_) {
-      return false;
-    }
+    } catch (_) { return false; }
   }
 
   function nativeTapVidSrcV3213() {
@@ -188,23 +169,8 @@
           typeof isVidSrcFrameActiveV328 === 'function' &&
           isVidSrcFrameActiveV328()
         ) {
-          const playing =
-            (typeof _vidfastPlayingV294 !== 'undefined')
-              ? !!_vidfastPlayingV294
-              : false;
-          if (playing) {
-            sendVidSrcSafeCommandV3211('pause');
-          } else {
-            /*
-             * VidSrc requires a real user-like tap before it creates/starts
-             * the underlying player. Native Android dispatches that tap through
-             * the WebView while our shield is temporarily hit-test transparent.
-             */
-            nativeTapVidSrcV3213();
-            setTimeout(function () {
-              sendVidSrcSafeCommandV3211('play');
-            }, 180);
-          }
+          const playing = !!window.__subhubVidSrcPlayingV3222;
+          sendVidSrcSafeCommandV3211('toggle');
           try {
             if (typeof _vidfastSetStateV294 === 'function') {
               _vidfastSetStateV294(
@@ -307,7 +273,7 @@
   function ensureVidSrcProviderShortcutsV3231() {
     try {
       const box = document.querySelector('#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]');
-      const controls = box && box.querySelector('.video-top-controls');
+      const controls = box && box.querySelector('#embedTopBar, .video-top-controls');
       if (!box || !controls) return false;
 
       if (!document.getElementById('subhub-vidsrc-provider-style-v3233')) {
@@ -341,23 +307,11 @@
           const txt = String(el.textContent || '').replace(/\s+/g, '').trim();
           const aria = String(el.getAttribute('aria-label') || '');
           const title = String(el.getAttribute('title') || '');
-          const ident = String((el.id || '') + ' ' + (el.className || ''));
+          const action = String(el.getAttribute('onclick') || '');
           return /^[×✕✖xX]$/.test(txt) ||
-            /(close|dismiss|إغلاق|اغلاق|video-close|modal-close|close-btn)/i.test(
-              aria + ' ' + title + ' ' + ident
-            );
+            /(close|dismiss|إغلاق|اغلاق)/i.test(aria + ' ' + title) || /closeEmbedPlayer/.test(action);
         }) || null;
       } catch (_) {}
-
-      if (!closeEl && cc && cc.parentElement === controls) {
-        try {
-          let prev = cc.previousElementSibling;
-          while (prev && prev.getAttribute && prev.getAttribute('data-provider-action')) {
-            prev = prev.previousElementSibling;
-          }
-          if (prev) closeEl = prev;
-        } catch (_) {}
-      }
 
       if (closeEl) {
         try {
@@ -374,20 +328,14 @@
       if (!q) {
         q = document.createElement('button');
         q.type = 'button';
-        const closeClasses =
-          closeEl && typeof closeEl.className === 'string'
-            ? String(closeEl.className || '').trim()
-            : '';
-        q.className =
-          (closeClasses ? closeClasses + ' ' : '') +
-          'subhub-provider-shortcut-v3231';
+        q.className = 'video-top-btn subhub-provider-shortcut-v3231';
         q.setAttribute('data-provider-action', 'quality');
         q.setAttribute('aria-label', 'جودة المصدر');
         q.setAttribute('title', 'جودة المصدر');
-        q.textContent = 'HD';
+        q.textContent = 'الجودة';
         q.addEventListener('click', function (ev) {
           try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
-          try { sendVidSrcSafeCommandV3211('providerquality'); } catch (_) {}
+          try { toggleVidSrcQualityV3251(); } catch (_) {}
         }, true);
       }
 
@@ -564,6 +512,119 @@
   }
 
 
+  function wakeVidSrcControlsV3251(box) {
+    box.classList.remove('sh-v374-idle');
+    box.classList.add('sh-v374-awake');
+    try {
+      if (typeof _vidsrcSessionV374 !== 'undefined' && _vidsrcSessionV374 && _vidsrcSessionV374.box === box) {
+        _vidsrcSessionV374.deadline = performance.now() + 3000;
+      }
+    } catch (_) {}
+  }
+
+  function syncVidSrcViewportControlsV3251(root) {
+    const box = root && root.parentElement;
+    const frame = document.getElementById('embedFrameContainer');
+    if (!box || !frame) return;
+    const r = frame.getBoundingClientRect(), b = box.getBoundingClientRect();
+    const scaleX = b.width / (box.offsetWidth || b.width || 1);
+    const scaleY = b.height / (box.offsetHeight || b.height || 1);
+    const values = {
+      left: (r.left-b.left)/scaleX + box.scrollLeft - box.clientLeft,
+      top: (r.top-b.top)/scaleY + box.scrollTop - box.clientTop,
+      width: r.width/scaleX, height: r.height/scaleY
+    };
+    root.style.setProperty('inset', 'auto', 'important');
+    Object.keys(values).forEach(function (key) {
+      const value = Math.max(0, values[key]) + 'px';
+      if (root.style.getPropertyValue(key) !== value) root.style.setProperty(key, value, 'important');
+    });
+  }
+
+  function installVidSrcViewportControlsV3251(root, box) {
+    const style = document.createElement('style');
+    style.id = 'subhub-vidsrc-controls-v3251';
+    style.textContent = `
+      #subhub-vidsrc-takeover-v3222 .sh-v3251-surface{position:absolute;inset:0;pointer-events:none;touch-action:manipulation}
+      #subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3251-surface{pointer-events:auto}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3222-center{display:flex!important;align-items:center;justify-content:center;visibility:visible!important;opacity:1!important;pointer-events:auto!important;z-index:2;touch-action:manipulation}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{bottom:8px!important;z-index:3;direction:rtl}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-time{white-space:nowrap;min-width:0;font-size:12px}
+      #embedPlayerModal .video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;flex-wrap:wrap}
+      #embedPlayerModal .video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-seek{min-width:60px;width:60px}
+      #embedPlayerModal .video-modal-box.sh-v374-idle #subhub-vidsrc-takeover-v3222 .sh-v3222-center,
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222.controls-hidden .sh-v3222-center{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+      #embedPlayerModal .video-modal-box.sh-v3251-quality #subhub-vidsrc-takeover-v3222,
+      #embedPlayerModal .video-modal-box.sh-v3251-quality #vidsrcWakeV374{display:none!important}
+      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:12px;min-width:48px;padding:0 6px;flex-shrink:0}
+      #embedPlayerModal #embedTopBar .subhub-provider-close-hidden-v3233{display:none!important}
+      #subhub-vidsrc-subtitle-gesture-v3229{z-index:2147483502!important}
+      #embedPlayerModal #embedTopBar{max-width:calc(100% - 62px);flex-wrap:nowrap}
+      #embedPlayerModal .sh-v3251-quality-note{position:absolute;left:12px;right:12px;top:62px;padding:8px;border-radius:10px;background:rgba(8,12,18,.9);color:white;z-index:2147483645;text-align:center;font-size:13px;pointer-events:none}
+    `;
+    if (!document.getElementById(style.id)) (document.head || document.documentElement).appendChild(style);
+    const surface = document.createElement('div');
+    surface.className = 'sh-v3251-surface';
+    surface.setAttribute('aria-hidden', 'true');
+    root.insertBefore(surface, root.firstChild);
+    syncVidSrcViewportControlsV3251(root);
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(function () { syncVidSrcViewportControlsV3251(root); });
+      observer.observe(box);
+      const frame = document.getElementById('embedFrameContainer');
+      if (frame) observer.observe(frame);
+    }
+  }
+
+  let vidSrcQualitySessionV3251 = null;
+  function endVidSrcQualityV3251() {
+    const s = vidSrcQualitySessionV3251;
+    if (!s) return;
+    vidSrcQualitySessionV3251 = null;
+    clearTimeout(s.timer);
+    s.box.classList.remove('sh-v3251-quality');
+    if (s.button) { s.button.textContent = 'الجودة'; s.button.setAttribute('aria-expanded','false'); }
+    wakeVidSrcControlsV3251(s.box);
+    if (document.querySelector('#embedFrameContainer iframe') === s.frame) {
+      sendVidSrcSafeCommandV3211('providerqualityclose', {requestId:s.id});
+    }
+  }
+
+  function toggleVidSrcQualityV3251() {
+    if (vidSrcQualitySessionV3251) { endVidSrcQualityV3251(); return; }
+    const frame = document.querySelector('#embedFrameContainer iframe');
+    const box = document.querySelector('#embedPlayerModal .video-modal-box');
+    if (!frame || !box || !isVidSrcFrameActiveV328()) return;
+    const id = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
+    const button = box.querySelector('[data-provider-action="quality"]');
+    const s = {id, frame, box, button, timer:0};
+    vidSrcQualitySessionV3251 = s;
+    wakeVidSrcControlsV3251(box);
+    if (button) button.textContent = '…';
+    sendVidSrcSafeCommandV3211('providerquality', {requestId:id});
+    s.timer = setTimeout(function () {
+      if (vidSrcQualitySessionV3251 !== s) return;
+      endVidSrcQualityV3251();
+      const note = document.createElement('div');
+      note.className = 'sh-v3251-quality-note';
+      note.textContent = 'لم تظهر إعدادات الجودة لهذا المصدر. حاول بعد بدء الفيديو.';
+      box.appendChild(note);
+      setTimeout(function () { note.remove(); }, 3500);
+    }, 1800);
+  }
+
+  window.addEventListener('message', function (ev) {
+    const d = ev.data, s = vidSrcQualitySessionV3251;
+    if (!s || !d || d.type !== 'SUBHUB_VIDSRC_QUALITY_V3251' || d.requestId !== s.id) return;
+    if (!s.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== s.frame) { endVidSrcQualityV3251(); return; }
+    if (d.open) {
+      clearTimeout(s.timer);
+      s.box.classList.add('sh-v3251-quality');
+      if (s.button) { s.button.textContent = 'عودة'; s.button.setAttribute('aria-expanded','true'); }
+      s.timer = setTimeout(endVidSrcQualityV3251, 15000);
+    } else endVidSrcQualityV3251();
+  });
+
   function fmtVidSrcTimeV3222(v) {
     v = Math.max(0, Number(v || 0));
     const s = Math.floor(v % 60);
@@ -576,7 +637,7 @@
   function ensureVidSrcTakeoverV3222() {
     try {
       let root = document.getElementById('subhub-vidsrc-takeover-v3222');
-      if (root) return root;
+      if (root) { syncVidSrcViewportControlsV3251(root); return root; }
 
       const box = document.querySelector('#embedPlayerModal .video-modal-box');
       if (!box) return null;
@@ -642,8 +703,6 @@
         'overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain!important;',
         '-webkit-overflow-scrolling:touch!important;',
         'transform:none!important;z-index:2147483646!important;pointer-events:auto!important;}',
-        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen.subhub-subpanel-open-v3230 #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
-        'bottom:38vh!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .video-top-controls{',
         'z-index:2147483600!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].subhub-menu-open-v3225 .video-top-controls{',
@@ -659,9 +718,6 @@
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-play{font-size:20px;}',
         '.video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-time{',
         'min-width:92px;font-size:12px;}',
-        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]:not(.pseudo-fullscreen).subhub-subpanel-open-v3230 #subhub-vidsrc-takeover-v3222 .sh-v3222-center,',
-        '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"]:not(.pseudo-fullscreen).subhub-subpanel-open-v3230 #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
-        'display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{',
         'min-height:54px;padding-top:8px!important;}',
         '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #subhub-vidsrc-takeover-v3222 button[data-sh3222="back"]{',
@@ -693,6 +749,7 @@
         '</div>';
 
       box.appendChild(root);
+      installVidSrcViewportControlsV3251(root, box);
 
       const wake = function () {
         root.classList.remove('controls-hidden');
@@ -711,6 +768,7 @@
         const target = ev.target && ev.target.closest ? ev.target.closest('button') : null;
         if (!target) {
           wake();
+          wakeVidSrcControlsV3251(box);
           ev.preventDefault();
           ev.stopPropagation();
           return;
@@ -719,6 +777,7 @@
         ev.preventDefault();
         ev.stopPropagation();
         wake();
+        wakeVidSrcControlsV3251(box);
 
         const kind = target.getAttribute('data-sh3222');
 
@@ -770,9 +829,7 @@
         }
 
         if (target.classList.contains('sh-v3222-center') || kind === 'play') {
-          sendVidSrcSafeCommandV3211(
-            window.__subhubVidSrcPlayingV3222 ? 'pause' : 'play'
-          );
+          sendVidSrcSafeCommandV3211('toggle');
           return;
         }
 
@@ -1060,7 +1117,7 @@
       if (!box) return false;
 
       let open = false;
-      if (panel && box.classList.contains('pseudo-fullscreen')) {
+      if (panel) {
         const cs = getComputedStyle(panel);
         const r = panel.getBoundingClientRect();
         open =
@@ -1217,8 +1274,9 @@
       }
 
       const icon = playing ? '❚❚' : '▶';
-      if (center) center.textContent = icon;
+      if (center) { center.textContent = icon; center.setAttribute('aria-label', playing ? 'إيقاف مؤقت' : 'تشغيل'); }
       if (play) play.textContent = icon;
+      root.classList.toggle('sh-v3251-ready', clockReadyState >= 1);
     } catch (_) {}
   }
 
@@ -1689,6 +1747,10 @@
       const d = Number(payload.duration || 0);
       if (Number.isFinite(d) && d > 0) {
         window.__subhubVidSrcDurationV3211 = d;
+      }
+      if (clockReadyState >= 1 && source !== window.__subhubTakeoverSourceV3251) {
+        window.__subhubTakeoverSourceV3251 = source;
+        sendVidSrcSafeCommandV3211('takeover', {active:true});
       }
       try {
         if (clockReadyState >= 1 && typeof setVidSrcTakeoverActiveV3222 === 'function') {
@@ -2309,6 +2371,8 @@
 
   setInterval(function () {
     syncVidSrcGuardV328(false);
+    if (vidSrcQualitySessionV3251) wakeVidSrcControlsV3251(vidSrcQualitySessionV3251.box);
+    if (vidSrcQualitySessionV3251 && (!vidSrcQualitySessionV3251.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== vidSrcQualitySessionV3251.frame)) endVidSrcQualityV3251();
     try { syncVidSrcSubPanelLayoutV3230(); } catch (_) {}
     if (!clockLinked) return;
 

@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.50 VidSrc Subscriber Video
+name: Build TEST SubHub 322.3.51 VidSrc Playback Controls
 
 on:
   push:
     branches:
-      - 'test/vidsrc-subscriber-322.3.50'
+      - 'test/vidsrc-controls-322.3.51'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -58,6 +58,15 @@ jobs:
       - name: Test VidSrc media visibility and subscriber setup
         run: node tests/vidsrc_visibility.test.cjs
 
+      - name: Test VidSrc playback commands and toolbar bounds
+        run: node tests/vidsrc_controls.test.cjs
+
+      - name: Test VidSrc controls in Chromium
+        run: |
+          npm install --prefix /tmp/subhub-ui-tests playwright@1.62.1
+          /tmp/subhub-ui-tests/node_modules/.bin/playwright install --with-deps chromium
+          NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/vidsrc_controls.browser.cjs
+
       - name: Test independent stream sessions
         run: node tests/direct_stream.test.cjs
 
@@ -80,8 +89,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='59'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.50'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='60'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.51'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -89,12 +98,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare VidSrc subscriber fix test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.50-vidsrc-subscriber-fix.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.51-vidsrc-controls-fix.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.50-vidsrc-subscriber-fix
-          path: SubHub-322.3.50-vidsrc-subscriber-fix.apk
+          name: SubHub-322.3.51-vidsrc-controls-fix
+          path: SubHub-322.3.51-vidsrc-controls-fix.apk
           retention-days: 7
 
       - name: Remove signing key from runner
