@@ -430,9 +430,27 @@ public final class DirectStreamPlayer {
 
     private String normalizeServerLabel(String raw) {
         if (raw == null) return "";
-        String v = raw.replaceAll("\\s+", " ").trim();
+        String v = raw.replace("⭐", "").replace("★", "").replace("☆", "")
+                .replaceAll("\\s+", " ").trim();
         if (v.length() > 48) v = v.substring(0, 48).trim();
         return v;
+    }
+
+    private boolean isProviderServerLabel(String raw) {
+        String v = normalizeServerLabel(raw).toLowerCase(Locale.ROOT);
+        return v.equals("vidsrc.mov")
+                || v.equals("vidsrc.fyi")
+                || v.equals("vidrock")
+                || v.equals("vidnest")
+                || v.equals("vidking")
+                || v.equals("vidlink")
+                || v.equals("vidfast")
+                || v.equals("vidup")
+                || v.equals("videasy")
+                || v.equals("111movies")
+                || v.equals("2embed")
+                || v.equals("multiembed")
+                || v.equals("superflix");
     }
 
     private String serverKey(String label) {
@@ -444,7 +462,7 @@ public final class DirectStreamPlayer {
 
     private void recordProviderChoice(String rawLabel) {
         final String label = normalizeServerLabel(rawLabel);
-        if (label.isEmpty()) return;
+        if (label.isEmpty() || !isProviderServerLabel(label)) return;
         final String key = serverKey(label);
         if (key.isEmpty()) return;
         if (closed || playing) return;
@@ -455,7 +473,7 @@ public final class DirectStreamPlayer {
     }
 
     private void dispatchProviderTap(double normalizedX, double normalizedY) {
-        if (probe == null || closed || playing) return;
+        if (probe == null || closed || playing || candidate != null) return;
         double nx = Math.max(0.02d, Math.min(0.98d, normalizedX));
         double ny = Math.max(0.02d, Math.min(0.98d, normalizedY));
         float x = (float) (probe.getWidth() * nx);
@@ -495,35 +513,48 @@ public final class DirectStreamPlayer {
                 );
             });
         }
+
+        @JavascriptInterface
+        public void playTarget(String token, double normalizedX, double normalizedY) {
+            if (!sourceChoiceToken.equals(token)) return;
+            handler.post(() -> dispatchProviderTap(normalizedX, normalizedY));
+        }
     }
 
     private String providerPickerScript() {
-        String wanted = JSONObject.quote(preferredServerLabel);
+        String wanted = JSONObject.quote(normalizeServerLabel(preferredServerLabel));
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
         return "(function(){try{"
-                + "if(window.__subhubMoviesmodPickV3262)return;"
-                + "window.__subhubMoviesmodPickV3262=true;"
+                + "if(window.__subhubMoviesmodPickV3264)return;"
+                + "window.__subhubMoviesmodPickV3264=true;"
                 + "var wanted=" + wanted + ",bridgeToken=" + bridgeToken + ";"
-                + "function norm(v){return String(v||'').replace(/\\s+/g,' ').trim().toLowerCase();}"
-                + "function good(t){t=norm(t);if(!t||t.length>48)return false;"
-                + "return !/^(play|watch|home|movies|search|menu|close|download|trailer|next|previous|fullscreen|settings)$/i.test(t);}"
+                + "function clean(v){return String(v||'').replace(/[⭐★☆]/g,'').replace(/\\s+/g,' ').trim();}"
+                + "function norm(v){return clean(v).toLowerCase();}"
+                + "function server(t){t=norm(t);return /^(vidsrc\\.mov|vidsrc\\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix)$/.test(t);}"
+                + "function vis(e){if(!e)return false;var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>20&&r.height>18&&r.bottom>0&&r.right>0&&r.top<(innerHeight||99999)&&s.display!=='none'&&s.visibility!=='hidden';}"
+                + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
                 + "document.addEventListener('click',function(ev){try{"
                 + "var e=ev.target&&ev.target.closest?ev.target.closest('button,a,[role=button],[data-server]'):null;"
-                + "if(!e)return;var t=String(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim();"
-                + "if(good(t)&&window.SubHubSourceChoice)SubHubSourceChoice.picked(bridgeToken,t);"
+                + "if(!e)return;var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');"
+                + "if(server(t)&&window.SubHubSourceChoice)SubHubSourceChoice.picked(bridgeToken,t);"
                 + "}catch(_){}} ,true);"
+                + "function kick(){try{"
+                + "if(!window.SubHubSourceChoice||typeof window.SubHubSourceChoice.playTarget!=='function')return;"
+                + "var clicks=[].slice.call(document.querySelectorAll('button,a,[role=button]')).filter(vis);"
+                + "var b=clicks.find(function(e){var t=norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.title||'');return /^(watch now|play|play now|start|continue|resume)$/.test(t)||/(^|\\s)play(\\s|$)/.test(t);});"
+                + "var e=b;"
+                + "if(!e){var frames=[].slice.call(document.querySelectorAll('iframe,video,[class*=player],[id*=player]')).filter(function(x){if(!vis(x))return false;var r=x.getBoundingClientRect();return r.width>180&&r.height>90;});e=frames[0];}"
+                + "if(e){var p=point(e);window.SubHubSourceChoice.playTarget(bridgeToken,p[0],p[1]);}"
+                + "}catch(_){}}"
                 + "if(!wanted)return;"
-                + "var tries=0, timer=setInterval(function(){try{"
+                + "var tries=0,timer=setInterval(function(){try{"
                 + "tries++;var want=norm(wanted);var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server]'));"
-                + "var hit=els.find(function(e){var t=norm(e.innerText||e.textContent||'');return t===want||t.indexOf(want)>=0;});"
-                + "if(hit){clearInterval(timer);"
-                + "var r=hit.getBoundingClientRect(),vw=Math.max(1,window.innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,window.innerHeight||document.documentElement.clientHeight||1);"
-                + "var nx=Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),ny=Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh));"
-                + "if(window.SubHubSourceChoice&&typeof window.SubHubSourceChoice.autoPick==='function')"
-                + "SubHubSourceChoice.autoPick(bridgeToken,String(hit.innerText||hit.textContent||wanted),nx,ny);"
-                + "else setTimeout(function(){try{hit.click();}catch(_){try{hit.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}catch(__){}}},120);"
-                + "}else if(tries>=80){clearInterval(timer);}"
-                + "}catch(_){if(tries>=80)clearInterval(timer);}},250);"
+                + "var hit=els.find(function(e){var t=norm(e.innerText||e.textContent||e.getAttribute('data-server')||'');return server(t)&&t===want;});"
+                + "if(hit){clearInterval(timer);try{hit.scrollIntoView({block:'center',inline:'center'});}catch(_){}"
+                + "setTimeout(function(){var p=point(hit);if(window.SubHubSourceChoice&&typeof window.SubHubSourceChoice.autoPick==='function')window.SubHubSourceChoice.autoPick(bridgeToken,clean(hit.innerText||hit.textContent||wanted),p[0],p[1]);},180);"
+                + "var n=0,k=setInterval(function(){n++;kick();if(n>=10)clearInterval(k);},1100);"
+                + "}else if(tries>=100){clearInterval(timer);}"
+                + "}catch(_){if(tries>=100)clearInterval(timer);}},250);"
                 + "}catch(_){}})();";
     }
 
