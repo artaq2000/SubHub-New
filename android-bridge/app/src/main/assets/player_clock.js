@@ -1073,8 +1073,56 @@
   }
 
   let vidSrcQualityMenuV3251 = null;
-  function reportVidSrcQualityV3251(id, open) {
-    try { window.top.postMessage({type:'SUBHUB_VIDSRC_QUALITY_V3251',requestId:id,open:open}, '*'); } catch (_) {}
+
+  function vidSrcQualityKeyV3258(value) {
+    let text = String(value || '').trim();
+    text = text.replace(/[٠-٩]/g, function (d) { return String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)); });
+    text = text.replace(/[۰-۹]/g, function (d) { return String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)); });
+    if (/\bauto(?:matic)?\b|تلقائي/i.test(text)) return 'auto';
+    const m = text.match(/(?:^|\D)(2160|1440|1080|720|480|360|240|144)\s*[pP]?(?:\D|$)/);
+    return m ? m[1] + 'p' : '';
+  }
+
+  function collectVidSrcQualityOptionsV3258() {
+    const all = typeof vidSrcDeepQueryAllV3226 === 'function'
+      ? vidSrcDeepQueryAllV3226('button,[role="menuitem"],[role="menuitemradio"],[role="radio"],label,li')
+      : Array.from(document.querySelectorAll('button,[role="menuitem"],[role="menuitemradio"],[role="radio"],label,li'));
+    const seen = new Set(), out = [];
+    for (const el of all) {
+      const raw = String((el && (el.textContent || el.getAttribute && el.getAttribute('aria-label'))) || '').replace(/\s+/g,' ').trim();
+      const key = vidSrcQualityKeyV3258(raw);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const selected =
+        String(el.getAttribute && el.getAttribute('aria-checked') || '') === 'true' ||
+        String(el.getAttribute && el.getAttribute('aria-selected') || '') === 'true' ||
+        /(^|\s)(selected|active|checked)(\s|$)/i.test(String(el.className || ''));
+      out.push({key:key,label:key === 'auto' ? 'تلقائي' : key,element:el,selected:selected});
+    }
+    return out;
+  }
+
+  function findVidSrcQualitySubmenuV3258() {
+    const all = typeof vidSrcDeepQueryAllV3226 === 'function'
+      ? vidSrcDeepQueryAllV3226('button,[role="menuitem"],[role="menuitemradio"],li')
+      : Array.from(document.querySelectorAll('button,[role="menuitem"],[role="menuitemradio"],li'));
+    for (const el of all) {
+      const text = String((el && (el.textContent || el.getAttribute && el.getAttribute('aria-label'))) || '').replace(/\s+/g,' ').trim();
+      if (/^(quality|video quality|resolution|الجودة|جودة|الدقة)$/i.test(text)) return el;
+    }
+    return null;
+  }
+
+  function reportVidSrcQualityV3251(id, open, options, selected) {
+    try {
+      window.top.postMessage({
+        type:'SUBHUB_VIDSRC_QUALITY_V3251',
+        requestId:id,
+        open:open,
+        options:Array.isArray(options) ? options : [],
+        selected:selected || ''
+      }, '*');
+    } catch (_) {}
   }
 
   function closeVidSrcQualityV3251() {
@@ -1082,24 +1130,47 @@
     if (!s) return;
     vidSrcQualityMenuV3251 = null;
     clearTimeout(s.timer);
-    document.removeEventListener('click', s.choose, true);
+    clearTimeout(s.probeTimer);
     document.documentElement.classList.remove('subhub-provider-menu-v3251');
-    // Close only a button that explicitly reports that its menu remains open.
     try { if (s.button.getAttribute('aria-expanded') === 'true') s.button.click(); } catch (_) {}
     setVidSrcProviderUiScrubV3234(vidSrcTakeoverActiveV3224);
-    reportVidSrcQualityV3251(s.id, false);
+    reportVidSrcQualityV3251(s.id, false, [], '');
+  }
+
+  function selectVidSrcProviderQualityV3258(d) {
+    const s = vidSrcQualityMenuV3251;
+    if (!s || !d || s.id !== d.requestId) return false;
+    const key = vidSrcQualityKeyV3258(d.quality);
+    if (!key) return false;
+    let options = Array.isArray(s.options) ? s.options : [];
+    let item = options.find(function (x) { return x.key === key; });
+    if (!item || !item.element || !item.element.isConnected) {
+      options = collectVidSrcQualityOptionsV3258();
+      item = options.find(function (x) { return x.key === key; });
+    }
+    if (!item || !item.element) return false;
+    try {
+      item.element.click();
+      s.options = options;
+      setTimeout(function () {
+        if (vidSrcQualityMenuV3251 === s) closeVidSrcQualityV3251();
+      }, 220);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   function openVidSrcProviderQualityV3231(d) {
     try {
-      // Only the frame containing the selected media should open a menu.
       if (!activeVidSrcVideoV3227() || !d.requestId) return false;
       const b = findVidSrcProviderButtonV3231('quality');
       if (!b) return false;
       closeVidSrcQualityV3251();
-      const s = {id:d.requestId, button:b, timer:0, choose:null};
+      const s = {id:d.requestId, button:b, timer:0, probeTimer:0, options:[], submenuOpened:false};
       vidSrcQualityMenuV3251 = s;
       restoreVidSrcProviderUiV3234();
+
       let style = document.getElementById('subhub-provider-menu-style-v3251');
       if (!style) {
         style = document.createElement('style');
@@ -1108,19 +1179,40 @@
         (document.head || document.documentElement).appendChild(style);
       }
       document.documentElement.classList.add('subhub-provider-menu-v3251');
-      s.choose = function (ev) {
-        const el = ev.target && ev.target.closest ? ev.target.closest('button,[role="menuitem"],[role="menuitemradio"],[role="radio"],label') : null;
-        const text = String(el && (el.textContent || el.getAttribute('aria-label')) || '').trim();
-        if (/^(auto(?:matic)?|تلقائي|(?:٢١٦٠|١٤٤٠|١٠٨٠|٧٢٠|٤٨٠|٣٦٠|٢٤٠|١٤٤|2160|1440|1080|720|480|360|240|144)\s*[pP]?(?:\s*.*)?)$/i.test(text)) {
-          setTimeout(function () { if (vidSrcQualityMenuV3251 === s) closeVidSrcQualityV3251(); }, 300);
+      if (b.getAttribute('aria-expanded') !== 'true') b.click();
+
+      const probe = function (attempt) {
+        if (vidSrcQualityMenuV3251 !== s) return;
+        let options = collectVidSrcQualityOptionsV3258();
+        if (!options.length && !s.submenuOpened) {
+          const sub = findVidSrcQualitySubmenuV3258();
+          if (sub && sub !== b) {
+            s.submenuOpened = true;
+            try { sub.click(); } catch (_) {}
+            s.probeTimer = setTimeout(function () { probe(attempt + 1); }, 140);
+            return;
+          }
+        }
+        if (options.length) {
+          s.options = options;
+          const selected = (options.find(function (x) { return x.selected; }) || {}).label || '';
+          setVidSrcProviderUiScrubV3234(vidSrcTakeoverActiveV3224);
+          reportVidSrcQualityV3251(s.id, true, options.map(function (x) { return x.label; }), selected);
+          s.timer = setTimeout(closeVidSrcQualityV3251, 15000);
+          return;
+        }
+        if (attempt < 4) {
+          s.probeTimer = setTimeout(function () { probe(attempt + 1); }, 170);
         }
       };
-      document.addEventListener('click', s.choose, true);
-      if (b.getAttribute('aria-expanded') !== 'true') b.click();
+
+      s.probeTimer = setTimeout(function () { probe(0); }, 100);
       s.timer = setTimeout(closeVidSrcQualityV3251, 15000);
-      reportVidSrcQualityV3251(s.id, true);
       return true;
-    } catch (_) { closeVidSrcQualityV3251(); return false; }
+    } catch (_) {
+      closeVidSrcQualityV3251();
+      return false;
+    }
   }
 
   function openVidSrcProviderSubsV3231() {
@@ -1342,6 +1434,8 @@
         openVidSrcProviderQualityV3231(d);
       } else if (cmd === 'providerqualityclose') {
         if (vidSrcQualityMenuV3251 && vidSrcQualityMenuV3251.id === d.requestId) closeVidSrcQualityV3251();
+      } else if (cmd === 'providerqualityselect') {
+        selectVidSrcProviderQualityV3258(d);
       } else if (cmd === 'providersubs') {
         openVidSrcProviderSubsV3231();
       } else if (cmd === 'providercaptionsoff') {
