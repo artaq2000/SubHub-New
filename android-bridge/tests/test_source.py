@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.57'" in site
+assert "BRIDGE_BUILD = '322.3.58'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 66" in gradle
-assert "versionName '322.3.57'" in gradle
+assert "versionCode 67" in gradle
+assert "versionName '322.3.58'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -288,9 +288,16 @@ assert "subhub-provider-captions-off-v3231" in js
 assert 'button[data-sh3222="back"]' in site
 assert 'button[data-sh3222="forward"]' in site
 
-# VidSrc 322.3.32 compact top controls.
-assert 'subhub-provider-close-hidden-v3233' in site
-assert 'data-subhub-hidden-close-v3233' in site
+# VidSrc 322.3.58 compact top controls: restore close, equal circles and
+# expose the provider's real available quality values in a SubHub vertical menu.
+assert 'data-subhub-close-v3258' in site
+assert 'sh-v3258-quality-list' in site
+assert 'renderVidSrcQualityListV3258' in site
+assert "sendVidSrcSafeCommandV3211('providerqualityselect'" in site
+assert 'collectVidSrcQualityOptionsV3258' in js
+assert 'selectVidSrcProviderQualityV3258' in js
+assert "cmd === 'providerqualityselect'" in js
+assert "width:48px!important;height:48px!important" in site
 assert 'data-sh3222="provider-subs"' in site
 assert "sendVidSrcSafeCommandV3211('providersubs')" in site
 
