@@ -265,18 +265,24 @@
     }
     if (old) return;
 
-    const reference =
+    const ownerReference =
       document.getElementById('subhub-direct-stream-button') ||
       document.getElementById('vidsrcOwnerTrialV355');
-    if (!reference || !reference.parentElement) return;
+    const subscriberGrid = document.querySelector('.watch-pills:not(.owner-watch-pills)');
+    if (owner && (!ownerReference || !ownerReference.parentElement)) return;
+    if (!owner && !subscriberGrid) return;
 
     const button = document.createElement('button');
     button.id = 'subhub-moviesmod-stream-button';
     button.type = 'button';
-    button.className = reference.className;
-    button.style.cssText =
-      'min-height:68px;border:1px solid #7b68ee;border-radius:16px;' +
-      'background:#171d36;color:#fff;padding:12px;font:inherit;cursor:pointer;position:relative';
+    button.className = owner
+      ? ownerReference.className
+      : 'watch-pill';
+    button.style.cssText = owner
+      ? ('min-height:68px;border:1px solid #7b68ee;border-radius:16px;' +
+         'background:#171d36;color:#fff;padding:12px;font:inherit;cursor:pointer;position:relative')
+      : ('min-height:56px;border:1px solid #7b68ee;border-radius:12px;' +
+         'background:#171d36;color:#fff;padding:10px;font:inherit;cursor:pointer');
 
     if (owner) {
       const detail = saved.label ? ('السيرفر: ' + saved.label) : 'اختر السيرفر واعتمده';
@@ -308,7 +314,8 @@
       ? 'ضغطة عادية تستخدم السيرفر المعتمد، والقلم يتيح اختيار سيرفر آخر'
       : 'يستخدم السيرفر الذي اعتمده المالك ويجلب بثاً جديداً لهذا الجهاز';
     button.addEventListener('click', function () { openMoviesmod(false); });
-    reference.insertAdjacentElement('afterend', button);
+    if (owner) ownerReference.insertAdjacentElement('afterend', button);
+    else subscriberGrid.appendChild(button);
   }
 
   install();
