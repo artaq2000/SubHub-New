@@ -654,11 +654,12 @@ public final class DirectStreamPlayer {
                 + "function sendList(){try{var names=[],seen={};serverEls().forEach(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');var k=norm(t);if(k&&!seen[k]){seen[k]=1;names.push(t);}});"
                 + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.servers(bridgeToken,JSON.stringify(names));}catch(_){}}"
                 + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
+                + "function uncovered(e){try{var r=e.getBoundingClientRect(),x=Math.max(1,Math.min((innerWidth||9999)-1,r.left+r.width/2)),y=Math.max(1,Math.min((innerHeight||9999)-1,r.top+r.height/2)),top=document.elementFromPoint(x,y);return !!top&&(top===e||e.contains(top)||top.contains(e));}catch(_){return false;}}"
                 + "function direct(e){var vals=[e.getAttribute('data-src'),e.getAttribute('data-url'),e.getAttribute('data-embed'),e.getAttribute('href')];"
                 + "for(var i=0;i<vals.length;i++){var v=String(vals[i]||'').trim();if(/^https:\\/\\//i.test(v)&&v.indexOf(location.host)<0)return v;}return '';}"
                 + "function reportFrame(label){try{var frames=[].slice.call(document.querySelectorAll('iframe[src]'));for(var i=0;i<frames.length;i++){var u=String(frames[i].src||'');if(/^https:\\/\\//i.test(u)&&u.indexOf(location.host)<0){window.SubHubSourceChoice.resolved(bridgeToken,label,u);return true;}}}catch(_){}return false;}"
                 + "function activate(label){try{var want=norm(label),els=serverEls(),hit=els.find(function(e){return norm(e.innerText||e.textContent||e.getAttribute('data-server')||'')===want;});"
-                + "if(!hit)return false;var lab=clean(hit.innerText||hit.textContent||hit.getAttribute('data-server')||label);"
+                + "if(!hit||!uncovered(hit))return false;var lab=clean(hit.innerText||hit.textContent||hit.getAttribute('data-server')||label);"
                 + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.picked(bridgeToken,lab);"
                 + "var d=direct(hit);if(d){window.SubHubSourceChoice.resolved(bridgeToken,lab,d);return true;}"
                 + "var obs=new MutationObserver(function(){if(reportFrame(lab)){try{obs.disconnect();}catch(_){}}});"
@@ -668,7 +669,7 @@ public final class DirectStreamPlayer {
                 + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);return true;}catch(_){return false;}}"
                 + "window.__subhubSelectProvider=activate;"
                 + "window.__subhubRequestServerList=function(){sendList();var n=0,t=setInterval(function(){n++;sendList();if(n>=8)clearInterval(t);},350);};"
-                + "if(wanted){var tries=0,t=setInterval(function(){tries++;if(activate(wanted)||tries>=80)clearInterval(t);},250);}"
+                + "if(wanted){var tries=0,t=setInterval(function(){tries++;if(activate(wanted)||tries>=240)clearInterval(t);},500);}"
                 + "}catch(_){}})();";
     }
 
@@ -729,8 +730,11 @@ public final class DirectStreamPlayer {
     }
 
     private void beginCapture() {
-        if (autoServer) showStage("جارٍ الاتصال بالموقع…");
-        else showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+        if (autoServer) {
+            showStage("أغلق أي إعلان أو تحقق ظاهر؛ عند ظهور السيرفرات سأشغّل السيرفر المحفوظ تلقائياً.");
+        } else {
+            showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+        }
         probe = new WebView(activity);
         WebSettings s = probe.getSettings();
         s.setJavaScriptEnabled(true);
@@ -761,8 +765,11 @@ public final class DirectStreamPlayer {
                     showStage("جارٍ تشغيل السيرفر…");
                     try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
                 } else {
-                    if (autoServer) showStage("جارٍ البحث عن السيرفر المحفوظ…");
-                    else showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+                    if (autoServer) {
+                        showStage("أكمل التحقق وأغلق الإعلانات؛ عند ظهور السيرفرات سأشغّل المحفوظ تلقائياً.");
+                    } else {
+                        showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+                    }
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
                 }
             }
@@ -773,13 +780,9 @@ public final class DirectStreamPlayer {
                 if (!"https".equals(u.getScheme())) return true;
                 if (!r.isForMainFrame()) return false;
                 if (isAllowedMainHost(host)) return false;
-                if (!selectedProviderLabel.isEmpty() && host != null && !host.trim().isEmpty()) {
-                    resolvedMainHost = host.toLowerCase(Locale.ROOT);
-                    showStage("جارٍ فتح السيرفر " + selectedProviderLabel + "…");
-                    return false;
-                }
-                // Before a server is selected, keep external ad navigations from
-                // replacing the Moviesmod setup page.
+                // External top-frame navigations are ads often enough that we do
+                // not trust them as provider URLs. A real provider URL is accepted
+                // only after we resolve it from the selected server element/iframe.
                 return true;
             }
 
@@ -799,7 +802,10 @@ public final class DirectStreamPlayer {
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
         p.topMargin = dp(60);
         root.addView(probe, 0, p);
-        probe.setAlpha(autoServer ? 0.02f : 1.0f);
+        // Keep Moviesmod fully visible even when a server is already saved.
+        // The site may require a manual ad/verification step before its real
+        // server buttons become clickable.
+        probe.setAlpha(1.0f);
         probe.loadUrl(source);
         if (!autoServer) showManualServerButton();
 
