@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.61";
-    private static final int NATIVE_VERSION_CODE = 70;
+    private static final String NATIVE_VERSION = "322.3.62";
+    private static final int NATIVE_VERSION_CODE = 71;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1685,6 +1685,8 @@ public class MainActivity extends Activity {
                     final String sourceUrl;
                     final String allowedHost;
                     final String resumeKey;
+                    final String preferredServerKey;
+                    final String preferredServerLabel;
                     if ("moviesmod".equals(mode)) {
                         String tmdbId = config.optString("tmdbId");
                         String kind = config.optString("kind", "movie");
@@ -1695,11 +1697,16 @@ public class MainActivity extends Activity {
                         sourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId);
                         allowedHost = "moviesmod.gd";
                         resumeKey = "moviesmod_" + stableKey;
+                        preferredServerKey = config.optString("serverKey", "").trim();
+                        preferredServerLabel = config.optString("serverLabel", "").trim();
+                        if (preferredServerKey.length() > 80 || preferredServerLabel.length() > 80) return;
                     } else {
                         if (!id.matches("[A-Za-z0-9_-]{1,80}")) return;
                         sourceUrl = "https://vidsrc.to/embed/movie/" + Uri.encode(id);
                         allowedHost = "vidsrc.to";
                         resumeKey = "";
+                        preferredServerKey = "";
+                        preferredServerLabel = "";
                     }
 
                     if (directStreamPlayer != null) directStreamPlayer.close();
@@ -1708,6 +1715,7 @@ public class MainActivity extends Activity {
                     if (catalog == null) catalog = new org.json.JSONArray();
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
                             sourceUrl, catalog, resumeKey, allowedHost,
+                            preferredServerKey, preferredServerLabel,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
@@ -1716,6 +1724,14 @@ public class MainActivity extends Activity {
                         }
                         public void subtitleRequested(int index) {
                             webView.evaluateJavascript("window.__subhubDirectSubtitle && window.__subhubDirectSubtitle(" + JSONObject.quote(session) + "," + index + ")", null);
+                        }
+                        public void serverSelected(String key, String label) {
+                            if (!"moviesmod".equals(mode) || webView == null) return;
+                            String js = "window.__subhubMoviesmodServerSelected && window.__subhubMoviesmodServerSelected("
+                                    + JSONObject.quote(session) + ","
+                                    + JSONObject.quote(key) + ","
+                                    + JSONObject.quote(label) + ")";
+                            webView.evaluateJavascript(js, null);
                         }
                     });
                     directStreamPlayer.selectDefault(config.optInt("defaultIndex", -1));
