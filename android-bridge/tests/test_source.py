@@ -357,7 +357,7 @@ assert 'public boolean handleBack()' in direct_player
 # 322.3.62: Moviesmod subscriber reuse keeps fresh per-device stream capture.
 assert 'readAsset("moviesmod_stream.js")' in main
 assert '"moviesmod".equals(mode)' in main
-assert 'sourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId)' in main
+assert 'fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId)' in main
 assert 'allowedHost = "moviesmod.gd"' in main
 assert 'resumeKey = "moviesmod_" + stableKey' in main
 assert 'resumePrefKey' in direct
