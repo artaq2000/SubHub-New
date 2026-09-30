@@ -114,6 +114,15 @@ jobs:
           working-directory: android-bridge
           script: gradle connectedDebugAndroidTest --no-daemon --stacktrace
 
+      - name: Report native playback assertion details
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for report in Path('app/build/outputs/androidTest-results').rglob('*.xml'):
+              print(report.read_text())
+          PY
+
       - name: Verify package, version and permanent signing certificate
         run: |
           APK="app/build/outputs/apk/release/app-release.apk"
@@ -141,4 +150,3 @@ jobs:
       - name: Remove signing key from runner
         if: always()
         run: rm -f "$SUBHUB_KEYSTORE_PATH"
-

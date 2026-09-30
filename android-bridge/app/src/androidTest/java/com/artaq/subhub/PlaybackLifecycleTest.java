@@ -45,7 +45,7 @@ public class PlaybackLifecycleTest {
         fail("Playback did not reach paused="+paused+": "+p);return p;
     }
     @Test public void nativePushSurvivesReturnStoppedTimersAndLostSession() throws Exception {
-        try(ActivityScenario<MainActivity> scenario=ActivityScenario.launch(MainActivity.class)) {
+        try(ActivityScenario<BackgroundMainActivity> scenario=ActivityScenario.launch(BackgroundMainActivity.class)) {
             final String home=asset("home54.html"),redirect=asset("redirect54.html"),provider=asset("provider54.html"),top=asset("top54.js");
             scenario.onActivity(a->{
                 activity=a;
