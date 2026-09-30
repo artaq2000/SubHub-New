@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  if (window.__subhubMoviesmodInstalledV3263) return;
-  window.__subhubMoviesmodInstalledV3263 = true;
+  if (window.__subhubMoviesmodInstalledV3265) return;
+  window.__subhubMoviesmodInstalledV3265 = true;
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   let active = null;
@@ -49,7 +49,8 @@
 
   function validServerLabel(raw) {
     const v = cleanServerLabel(raw).toLowerCase();
-    return /^(vidsrc\.mov|vidsrc\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix)$/.test(v);
+    if (!v || v.length > 48) return false;
+    return !/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(v);
   }
 
   function normalizeSaved(raw) {
