@@ -5,17 +5,28 @@ const fs=require('fs'),path=require('path'),assert=require('assert');
  const browser=await chromium.launch({headless:true});
  const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true});
  await page.setContent(`<style>
- *{box-sizing:border-box}body{margin:0;background:#111}#embedPlayerModal{margin:20px 10px}.video-modal-box{position:relative;width:370px;background:#000;border:1px solid #333}#embedFrameContainer{position:relative;width:100%;aspect-ratio:16/9;background:#345}#embedTopBar{position:absolute;top:4px;left:62px;z-index:2147483600;display:flex}#subPanel{height:400px;display:none;background:#789}#subPanel.open{display:block}.pseudo-fullscreen{position:fixed!important;inset:0!important;width:100%!important;height:100%!important}#embedTopBar button{width:44px;height:44px}
- </style><div id="embedPlayerModal" class="open"><div class="video-modal-box" data-subhub-vidsrc="1"><div id="embedTopBar"><button class="video-top-btn yt-close-btn" id="embedFsBtn" title="ملء الشاشة">⛶</button><button class="video-top-btn yt-close-btn" id="embedStretchBtn">١٠٠</button><button id="embedCcBtn">CC</button><button title="إغلاق">×</button></div><div id="embedFrameContainer"></div><div id="subPanel"></div></div></div>`);
+ *{box-sizing:border-box}body{margin:0;background:#111}#embedPlayerModal{margin:20px 10px}.video-modal-box{position:relative;width:370px;background:#000;border:1px solid #333}#embedFrameContainer{position:relative;width:100%;aspect-ratio:16/9;background:#345}#embedUiTrigger{position:absolute;top:4px;left:4px;width:44px;height:44px;border-radius:50%}#embedTopBar{position:absolute;top:4px;left:62px;z-index:2147483600;display:flex}#subPanel{height:400px;display:none;background:#789}#subPanel.open{display:block}.pseudo-fullscreen{position:fixed!important;inset:0!important;width:100%!important;height:100%!important}#embedTopBar button{width:44px;height:44px}
+ </style><div id="embedPlayerModal" class="open"><div class="video-modal-box" data-subhub-vidsrc="1"><button id="embedUiTrigger">⋮</button><div id="embedTopBar"><button class="video-top-btn yt-close-btn" id="embedFsBtn" title="ملء الشاشة">⛶</button><button class="video-top-btn yt-close-btn" id="embedStretchBtn">١٠٠</button><button id="embedCcBtn">CC</button><button class="video-top-btn yt-close-btn" title="إغلاق">×</button></div><div id="embedFrameContainer"></div><div id="subPanel"></div></div></div>`);
  await page.addStyleTag({content:fs.readFileSync(path.join(__dirname,'fixtures/vidsrc_web374.css'),'utf8')});
+ const beforeDots=await page.locator('#embedUiTrigger').boundingBox();
+ const beforeFrame=await page.locator('#embedFrameContainer').boundingBox();
  await page.addScriptTag({content:`let vidSrcTakeoverDraggingV3222=false,vidSrcTakeoverHideTimerV3222=0,clockReadyState=2,vidSrcPlaybackPendingV3252=null;function requestVidSrcPlaybackV3252(){sendVidSrcSafeCommandV3211('setplayback')};window.sent=[];function sendVidSrcSafeCommandV3211(cmd){sent.push(cmd)};${['wakeVidSrcControlsV3251','syncVidSrcViewportControlsV3251','installVidSrcViewportControlsV3251','fmtVidSrcTimeV3222','ensureVidSrcTakeoverV3222','updateVidSrcTakeoverV3222','ensureVidSrcProviderShortcutsV3231','syncVidSrcSubPanelLayoutV3230'].map(n=>fn(site,n)).join('\n')}
  ensureVidSrcProviderShortcutsV3231();const root=ensureVidSrcTakeoverV3222();root.classList.add('on');updateVidSrcTakeoverV3222(120,3600,true);window.testRoot=root;`});
+ const afterDots=await page.locator('#embedUiTrigger').boundingBox();
+ const afterFrameSetup=await page.locator('#embedFrameContainer').boundingBox();
+ assert.deepEqual(afterDots,beforeDots,'three-dot trigger must stay on the original side and position');
+ assert.equal(afterFrameSetup.y,beforeFrame.y,'toolbar setup must not move the video down');
+ assert.equal(afterFrameSetup.height,beforeFrame.height,'toolbar setup must not resize the video');
  const center=page.locator('.sh-v3222-center');
  await center.click();assert.deepEqual(await page.evaluate(()=>sent),['setplayback']);
  assert(await page.locator('[data-provider-action="quality"]').isVisible());
  assert(await page.locator('#embedStretchBtn').isVisible());
  assert(await page.locator('#embedFsBtn').isVisible());
- assert(!(await page.locator('#embedTopBar button[title="إغلاق"]').isVisible()));
+ assert(await page.locator('#embedTopBar button[title="إغلاق"]').isVisible());
+ const qualitySize=await page.locator('[data-provider-action="quality"]').boundingBox();
+ const closeSize=await page.locator('#embedTopBar button[title="إغلاق"]').boundingBox();
+ assert.equal(Math.round(qualitySize.width),Math.round(closeSize.width),'quality circle width matches close');
+ assert.equal(Math.round(qualitySize.height),Math.round(closeSize.height),'quality circle height matches close');
  const rect=await page.locator('#subhub-vidsrc-takeover-v3222').boundingBox();
  await page.evaluate(()=>{document.querySelector('#subPanel').classList.add('open');syncVidSrcSubPanelLayoutV3230();});
  await page.waitForTimeout(100);
