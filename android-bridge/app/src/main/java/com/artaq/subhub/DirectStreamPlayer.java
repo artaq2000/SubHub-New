@@ -698,7 +698,7 @@ public final class DirectStreamPlayer {
                     status.setVisibility(View.GONE);
                     showTransientValue("تم تشغيل الفيديو", 700);
                 } else if (state == Player.STATE_BUFFERING) {
-                    message("جارٍ تحميل البث…");
+                    showStage("جارٍ تحميل الفيديو…");
                 } else if (state == Player.STATE_ENDED) {
                     clearResumePosition();
                 }
@@ -718,7 +718,7 @@ public final class DirectStreamPlayer {
         player.prepare();
         if (pendingResumeMs >= 5000L) player.seekTo(pendingResumeMs);
         player.play();
-        message("جارٍ تشغيل البث المباشر…");
+        showStage("جارٍ تشغيل الفيديو…");
         enterImmersive();
     }
 
