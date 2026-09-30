@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.57';
+  const BRIDGE_BUILD = '322.3.58';
 
   let lastSig = '';
   let clockSource = '';
@@ -294,18 +294,20 @@
         const s = document.createElement('style');
         s.id = 'subhub-vidsrc-provider-style-v3233';
         s.textContent = [
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,',
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar .video-top-btn,',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231{',
+          'width:48px!important;height:48px!important;min-width:48px!important;max-width:48px!important;',
+          'padding:0!important;border:0!important;border-radius:50%!important;',
           'display:inline-flex!important;visibility:visible!important;opacity:1!important;',
-          'align-items:center;justify-content:center;min-width:48px;height:44px;',
-          'padding:0 10px;border:0;border-radius:999px;background:rgba(8,12,18,.78);color:#fff;',
-          'font:800 13px/1 system-ui,sans-serif;backdrop-filter:blur(8px);',
-          'pointer-events:auto!important;position:relative;z-index:2147483645!important;}',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="quality"]{min-width:52px;}',
+          'align-items:center!important;justify-content:center!important;gap:0!important;',
+          'background:rgba(8,12,18,.78);color:#fff;backdrop-filter:blur(8px);',
+          'pointer-events:auto!important;position:relative;z-index:2147483645!important;flex:0 0 48px!important;}',
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="quality"]{',
+          'font:800 10.5px/1 system-ui,sans-serif!important;letter-spacing:-.2px;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="subs"]{display:none!important;}',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-close-hidden-v3233{',
-          'display:none!important;visibility:hidden!important;opacity:0!important;',
-          'pointer-events:none!important;width:0!important;min-width:0!important;',
-          'margin:0!important;padding:0!important;overflow:hidden!important;}'
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar [data-subhub-close-v3258="1"]{',
+          'display:inline-flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;}'
         ].join('');
         (document.head || document.documentElement).appendChild(s);
       }
@@ -329,12 +331,20 @@
 
       if (closeEl) {
         try {
-          closeEl.classList.add('subhub-provider-close-hidden-v3233');
-          closeEl.setAttribute('data-subhub-hidden-close-v3233', '1');
-          closeEl.style.setProperty('display', 'none', 'important');
-          closeEl.style.setProperty('visibility', 'hidden', 'important');
-          closeEl.style.setProperty('opacity', '0', 'important');
-          closeEl.style.setProperty('pointer-events', 'none', 'important');
+          closeEl.classList.remove('subhub-provider-close-hidden-v3233');
+          closeEl.removeAttribute('data-subhub-hidden-close-v3233');
+          closeEl.setAttribute('data-subhub-close-v3258', '1');
+          closeEl.style.setProperty('display', 'inline-flex', 'important');
+          closeEl.style.setProperty('visibility', 'visible', 'important');
+          closeEl.style.setProperty('opacity', '1', 'important');
+          closeEl.style.setProperty('pointer-events', 'auto', 'important');
+          closeEl.style.setProperty('width', '48px', 'important');
+          closeEl.style.setProperty('height', '48px', 'important');
+          closeEl.style.setProperty('min-width', '48px', 'important');
+          closeEl.style.setProperty('padding', '0', 'important');
+          closeEl.style.setProperty('border-radius', '50%', 'important');
+          closeEl.style.setProperty('align-items', 'center', 'important');
+          closeEl.style.setProperty('justify-content', 'center', 'important');
         } catch (_) {}
       }
 
@@ -367,8 +377,14 @@
           controls.insertBefore(q, anchor || null);
         }
 
-        // The old close button remains in the DOM but hidden. HD takes its slot.
+        // Keep quality beside the other round controls; the close button is restored.
         q.style.setProperty('order', '', '');
+        q.style.setProperty('width', '48px', 'important');
+        q.style.setProperty('height', '48px', 'important');
+        q.style.setProperty('min-width', '48px', 'important');
+        q.style.setProperty('max-width', '48px', 'important');
+        q.style.setProperty('padding', '0', 'important');
+        q.style.setProperty('border-radius', '50%', 'important');
         q.removeAttribute('hidden');
       } catch (_) {}
 
@@ -855,10 +871,13 @@
       #embedPlayerModal .video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-seek{min-width:60px;width:60px}
       #embedPlayerModal .video-modal-box.sh-v374-idle #subhub-vidsrc-takeover-v3222 .sh-v3222-center,
       #embedPlayerModal #subhub-vidsrc-takeover-v3222.controls-hidden .sh-v3222-center{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
-      #embedPlayerModal .video-modal-box.sh-v3251-quality #subhub-vidsrc-takeover-v3222,
-      #embedPlayerModal .video-modal-box.sh-v3251-quality #vidsrcWakeV374{display:none!important}
-      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:12px;min-width:48px;width:auto!important;padding:0 6px;flex:0 0 auto}
-      #embedPlayerModal #embedTopBar .subhub-provider-close-hidden-v3233{display:none!important}
+      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:10.5px;width:48px!important;min-width:48px!important;max-width:48px!important;height:48px!important;padding:0!important;flex:0 0 48px!important}
+      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,
+      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar .video-top-btn{width:48px!important;height:48px!important;min-width:48px!important;max-width:48px!important;padding:0!important;border-radius:50%!important;align-items:center!important;justify-content:center!important}
+      #embedPlayerModal .sh-v3258-quality-list{position:absolute;display:flex;flex-direction:column;gap:5px;padding:6px;min-width:76px;max-width:96px;background:rgba(7,11,18,.95);border:1px solid rgba(255,255,255,.15);border-radius:13px;box-shadow:0 8px 24px rgba(0,0,0,.42);backdrop-filter:blur(10px);z-index:2147483647;pointer-events:auto!important}
+      #embedPlayerModal .sh-v3258-quality-list button{width:100%;height:36px;padding:0 9px;border:0;border-radius:9px;background:rgba(255,255,255,.08);color:#fff;font:800 12px/1 system-ui,sans-serif;white-space:nowrap}
+      #embedPlayerModal .sh-v3258-quality-list button[aria-checked="true"]{background:#f4b83f;color:#17120a}
+      #embedPlayerModal .sh-v3258-quality-list button:active{transform:scale(.97)}
       #subhub-vidsrc-subtitle-gesture-v3229{z-index:2147483502!important}
       #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,
       #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar{z-index:2147483600!important;pointer-events:auto;touch-action:manipulation}
@@ -889,17 +908,74 @@
   }
 
   let vidSrcQualitySessionV3251 = null;
+
+  function removeVidSrcQualityListV3258(s) {
+    try {
+      const menu = s && s.menu ? s.menu : document.querySelector('.sh-v3258-quality-list');
+      if (menu) menu.remove();
+    } catch (_) {}
+    if (s) s.menu = null;
+  }
+
   function endVidSrcQualityV3251() {
     const s = vidSrcQualitySessionV3251;
     if (!s) return;
     vidSrcQualitySessionV3251 = null;
     clearTimeout(s.timer);
-    s.box.classList.remove('sh-v3251-quality');
-    if (s.button) { s.button.textContent = 'الجودة'; s.button.setAttribute('aria-expanded','false'); }
+    removeVidSrcQualityListV3258(s);
+    if (s.button) {
+      s.button.textContent = 'الجودة';
+      s.button.setAttribute('aria-expanded','false');
+    }
     wakeVidSrcControlsV3251(s.box);
     if (document.querySelector('#embedFrameContainer iframe') === s.frame) {
       sendVidSrcSafeCommandV3211('providerqualityclose', {requestId:s.id});
     }
+  }
+
+  function renderVidSrcQualityListV3258(s, options, selected) {
+    removeVidSrcQualityListV3258(s);
+    if (!s || !s.button || !Array.isArray(options) || !options.length) return false;
+
+    const menu = document.createElement('div');
+    menu.className = 'sh-v3258-quality-list';
+    menu.setAttribute('role','menu');
+    menu.setAttribute('aria-label','اختيار الجودة');
+
+    options.forEach(function (label) {
+      const text = String(label || '').trim();
+      if (!text) return;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = text;
+      b.setAttribute('role','menuitemradio');
+      b.setAttribute('aria-checked', String(text === selected));
+      b.addEventListener('click', function (ev) {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
+        if (vidSrcQualitySessionV3251 !== s) return;
+        sendVidSrcSafeCommandV3211('providerqualityselect', {requestId:s.id, quality:text});
+        Array.from(menu.querySelectorAll('button')).forEach(function (x) {
+          x.setAttribute('aria-checked', String(x === b));
+        });
+        s.timer = setTimeout(function () {
+          if (vidSrcQualitySessionV3251 === s) endVidSrcQualityV3251();
+        }, 450);
+      }, true);
+      menu.appendChild(b);
+    });
+
+    if (!menu.children.length) return false;
+    s.box.appendChild(menu);
+    s.menu = menu;
+
+    const br = s.button.getBoundingClientRect();
+    const xr = s.box.getBoundingClientRect();
+    const mw = Math.max(76, Math.min(96, menu.offsetWidth || 82));
+    let left = br.left - xr.left + (br.width - mw) / 2;
+    left = Math.max(6, Math.min(Math.max(6, xr.width - mw - 6), left));
+    menu.style.left = left + 'px';
+    menu.style.top = Math.max(58, br.bottom - xr.top + 7) + 'px';
+    return true;
   }
 
   function toggleVidSrcQualityV3251() {
@@ -909,32 +985,48 @@
     if (!frame || !box || !isVidSrcFrameActiveV328()) return;
     const id = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
     const button = box.querySelector('[data-provider-action="quality"]');
-    const s = {id, frame, box, button, timer:0};
+    const s = {id, frame, box, button, timer:0, menu:null};
     vidSrcQualitySessionV3251 = s;
     wakeVidSrcControlsV3251(box);
-    if (button) button.textContent = '…';
+    if (button) {
+      button.textContent = 'الجودة';
+      button.setAttribute('aria-expanded','true');
+    }
     sendVidSrcSafeCommandV3211('providerquality', {requestId:id});
     s.timer = setTimeout(function () {
       if (vidSrcQualitySessionV3251 !== s) return;
       endVidSrcQualityV3251();
       const note = document.createElement('div');
       note.className = 'sh-v3251-quality-note';
-      note.textContent = 'لم تظهر إعدادات الجودة لهذا المصدر. حاول بعد بدء الفيديو.';
+      note.textContent = 'لم تظهر جودات لهذا المصدر. حاول بعد بدء الفيديو.';
       box.appendChild(note);
-      setTimeout(function () { note.remove(); }, 3500);
-    }, 1800);
+      setTimeout(function () { note.remove(); }, 3200);
+    }, 2400);
   }
 
   window.addEventListener('message', function (ev) {
     const d = ev.data, s = vidSrcQualitySessionV3251;
     if (!s || !d || d.type !== 'SUBHUB_VIDSRC_QUALITY_V3251' || d.requestId !== s.id) return;
-    if (!s.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== s.frame) { endVidSrcQualityV3251(); return; }
-    if (d.open) {
-      clearTimeout(s.timer);
-      s.box.classList.add('sh-v3251-quality');
-      if (s.button) { s.button.textContent = 'عودة'; s.button.setAttribute('aria-expanded','true'); }
-      s.timer = setTimeout(endVidSrcQualityV3251, 15000);
-    } else endVidSrcQualityV3251();
+    if (!s.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== s.frame) {
+      endVidSrcQualityV3251();
+      return;
+    }
+    if (!d.open) {
+      endVidSrcQualityV3251();
+      return;
+    }
+    const options = Array.isArray(d.options) ? d.options : [];
+    if (!options.length) return;
+    clearTimeout(s.timer);
+    if (s.button) {
+      s.button.textContent = 'الجودة';
+      s.button.setAttribute('aria-expanded','true');
+    }
+    if (renderVidSrcQualityListV3258(s, options, String(d.selected || ''))) {
+      s.timer = setTimeout(function () {
+        if (vidSrcQualitySessionV3251 === s) endVidSrcQualityV3251();
+      }, 15000);
+    }
   });
 
   function fmtVidSrcTimeV3222(v) {
