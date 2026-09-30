@@ -454,7 +454,7 @@ assert 'view details' in direct
 assert 'peachify' in direct
 assert '(autoServer || !selectedProviderLabel.isEmpty())' in direct
 assert 'External top-frame navigations are ads often enough' in direct
-assert 'resolvedMainHost = host.toLowerCase(Locale.ROOT)' in direct
+assert 'resolvedMainHost = host;' in direct
 
 
 # 322.3.67: saved-server mode stays visible through ads/verification and waits until the target button is actually clickable.
