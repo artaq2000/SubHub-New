@@ -25,12 +25,51 @@ const root={parentElement:box,style:{setProperty:(k,v)=>values[k]=v,getPropertyV
 const g={document:{getElementById:()=>viewport}};vm.createContext(g);vm.runInContext(fn(site,'syncVidSrcViewportControlsV3251'),g);
 g.syncVidSrcViewportControlsV3251(root);const first={...values};height=1100;g.syncVidSrcViewportControlsV3251(root);assert.deepEqual(values,first);assert.equal(values.height,'202.5px');
 console.log('Opening subtitle settings does not extend video control bounds: PASS');
-// Quality entry restores hidden source controls, opens once, then cleans up.
-const classes=new Set(),listeners=new Map();let clicks=0,restored=0,scrubbed=0;
-const button={getAttribute:()=>null,click(){clicks++}};
-const q={document:{documentElement:{classList:{add:c=>classes.add(c),remove:c=>classes.delete(c)}},getElementById:()=>({}),addEventListener:(n,f)=>listeners.set(n,f),removeEventListener:n=>listeners.delete(n)},window:{top:{postMessage(){}}},activeVidSrcVideoV3227:()=>video,findVidSrcProviderButtonV3231:()=>button,restoreVidSrcProviderUiV3234:()=>restored++,setVidSrcProviderUiScrubV3234:()=>scrubbed++,vidSrcTakeoverActiveV3224:true,setTimeout:()=>1,clearTimeout(){}};
-vm.createContext(q);vm.runInContext('let vidSrcQualityMenuV3251=null;'+['reportVidSrcQualityV3251','closeVidSrcQualityV3251','openVidSrcProviderQualityV3231'].map(n=>fn(clock,n)).join('\n'),q);
-assert.equal(q.openVidSrcProviderQualityV3231({requestId:'session'}),true);assert.equal(clicks,1);assert.equal(restored,1);assert(classes.has('subhub-provider-menu-v3251'));
-q.closeVidSrcQualityV3251();assert.equal(scrubbed,1);assert.equal(classes.size,0);assert.equal(listeners.size,0);
-console.log('Quality opens source settings and restores SubHub controls on close: PASS');
+// Quality entry reads the provider's real options, reports them to SubHub,
+ // selects the requested provider option, then restores the protected controls.
+ const classes=new Set(),messages=[];let clicks=0,chosen=0,restored=0,scrubbed=0;
+ function option(text,selected){
+   return {
+     textContent:text,className:selected?'selected':'',isConnected:true,tagName:'BUTTON',
+     matches:()=>true,closest(){return this},
+     getAttribute:n=>n==='aria-checked'?(selected?'true':'false'):null,
+     getBoundingClientRect:()=>({width:54,height:28}),
+     click(){chosen++}
+   };
+ }
+ const q360=option('360p',false),q720=option('720p',true),q1080=option('1080p',false);
+ const settings={
+   getAttribute:()=>null,
+   click(){clicks++},
+   isConnected:true
+ };
+ const q={
+   document:{
+     documentElement:{classList:{add:c=>classes.add(c),remove:c=>classes.delete(c)}},
+     getElementById:()=>({}),
+     querySelectorAll:()=>[]
+   },
+   window:{top:{postMessage:m=>messages.push(m)}},
+   activeVidSrcVideoV3227:()=>video,
+   findVidSrcProviderButtonV3231:()=>settings,
+   restoreVidSrcProviderUiV3234:()=>restored++,
+   setVidSrcProviderUiScrubV3234:()=>scrubbed++,
+   vidSrcTakeoverActiveV3224:true,
+   vidSrcDeepQueryAllV3226:sel=>sel.includes('quality')||sel.includes('menuitem')?[q360,q720,q1080]:[],
+   setTimeout:(fn,ms)=>(ms<1000&&fn(),1),
+   clearTimeout(){}
+ };
+ vm.createContext(q);
+ vm.runInContext('let vidSrcQualityMenuV3251=null;'+[
+   'vidSrcQualityKeyV3259','vidSrcQualityLabelV3259','vidSrcQualityCandidateScoreV3259',
+   'vidSrcQualityClickTargetV3259','collectVidSrcQualityOptionsV3259','findVidSrcQualitySubmenuV3259',
+   'reportVidSrcQualityV3251','closeVidSrcQualityV3251','selectVidSrcProviderQualityV3259',
+   'openVidSrcProviderQualityV3231'
+ ].map(n=>fn(clock,n)).join('\n'),q);
+ assert.equal(q.openVidSrcProviderQualityV3231({requestId:'session'}),true);
+ assert.equal(clicks,1);assert.equal(restored,1);
+ assert(messages.some(m=>m.open===true&&m.options.join(',')==='1080p,720p,360p'&&m.selected==='720p'));
+ assert.equal(q.selectVidSrcProviderQualityV3259({requestId:'session',quality:'1080p'}),true);
+ assert.equal(chosen,1);assert(scrubbed>=1);
+ console.log('Quality reads real provider values and selects the requested hidden option: PASS');
 module.exports={fn,site,clock};
