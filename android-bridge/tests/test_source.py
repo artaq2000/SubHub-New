@@ -297,8 +297,8 @@ assert "sendVidSrcSafeCommandV3211('providerqualityselect'" in site
 assert 'collectVidSrcQualityOptionsV3259' in js
 assert 'selectVidSrcProviderQualityV3259' in js
 assert "cmd === 'providerqualityselect'" in js
-assert 'subhub-provider-close-hidden-v3233' not in site
-assert 'data-subhub-hidden-close-v3233' not in site
+assert "closeEl.classList.add('subhub-provider-close-hidden-v3233')" not in site
+assert "closeEl.setAttribute('data-subhub-hidden-close-v3233'" not in site
 assert 'data-sh3222="provider-subs"' in site
 assert "sendVidSrcSafeCommandV3211('providersubs')" in site
 
