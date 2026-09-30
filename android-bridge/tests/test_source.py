@@ -453,7 +453,7 @@ assert 'probe.setAlpha(1.0f)' in direct
 assert 'view details' in direct
 assert 'peachify' in direct
 assert '(autoServer || !selectedProviderLabel.isEmpty())' in direct
-assert 'Before a server is selected' in direct
+assert 'External top-frame navigations are ads often enough' in direct
 assert 'resolvedMainHost = host.toLowerCase(Locale.ROOT)' in direct
 
 
