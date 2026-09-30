@@ -54,12 +54,12 @@ const fixture=n=>fs.readFileSync(path.join(__dirname,'fixtures',n),'utf8');
  await page.waitForFunction(()=>document.querySelector('#embedFrameContainer iframe'));
  while(!leaf()) await new Promise(r=>setTimeout(r,50));
  await leaf().waitForFunction(()=>document.querySelector('video')?.currentTime>0.1);
- const center=page.locator('.sh-v3222-center');
+ const play=page.locator('[data-sh3222="play"]');
  async function toggle(expectPaused){
-   await center.tap();
-   await page.waitForFunction(()=>!document.querySelector('.sh-v3222-center').disabled);
+   await play.tap();
+   await page.waitForFunction(()=>!document.querySelector('[data-sh3222="play"]').disabled);
    assert.equal(await leaf().evaluate(()=>document.querySelector('video').paused),expectPaused);
-   assert.equal(await center.textContent(),expectPaused?'▶':'❚❚');
+   assert.equal(await play.textContent(),expectPaused?'▶':'❚❚');
    assert.equal(await page.locator('.sh-v3252-status').textContent(),'');
  }
  for(let i=0;i<2;i++){await toggle(true);await toggle(false);}
