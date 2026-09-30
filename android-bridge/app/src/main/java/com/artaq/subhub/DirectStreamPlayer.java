@@ -69,7 +69,7 @@ public final class DirectStreamPlayer {
     public interface Listener {
         void closed();
         void subtitleRequested(int index);
-        void serverSelected(String key, String label);
+        void serverSelected(String key, String label, String serverPageUrl);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -131,6 +131,7 @@ public final class DirectStreamPlayer {
     private long pendingServerPickedAt = 0L;
     private boolean serverChoiceReported = false;
     private boolean serverChooserShown = false;
+    private String discoveredServerPageUrl = "";
     private TextView manualServerButton;
     private String resolvedMainHost = "";
     private String selectedProviderLabel = "";
@@ -577,6 +578,18 @@ public final class DirectStreamPlayer {
         try { probe.evaluateJavascript(js, null); } catch (Exception ignored) {}
     }
 
+    private void recordServerPage(String rawUrl) {
+        if (rawUrl == null || rawUrl.trim().isEmpty() || rawUrl.length() > 2200) return;
+        try {
+            Uri u = Uri.parse(rawUrl.trim());
+            String host = u.getHost();
+            if (!"https".equalsIgnoreCase(u.getScheme()) || host == null) return;
+            String h = host.toLowerCase(Locale.ROOT);
+            if (!h.equals(allowedHost) && !h.endsWith("." + allowedHost)) return;
+            discoveredServerPageUrl = u.toString();
+        } catch (Exception ignored) {}
+    }
+
     private void openResolvedProvider(String rawLabel, String rawUrl) {
         if (probe == null || closed || playing) return;
         String label = normalizeServerLabel(rawLabel);
@@ -600,6 +613,12 @@ public final class DirectStreamPlayer {
     }
 
     private final class SourceChoiceBridge {
+        @JavascriptInterface
+        public void serverPage(String token, String rawUrl) {
+            if (!sourceChoiceToken.equals(token)) return;
+            handler.post(() -> recordServerPage(rawUrl));
+        }
+
         @JavascriptInterface
         public void servers(String token, String json) {
             if (!sourceChoiceToken.equals(token)) return;
@@ -652,6 +671,7 @@ public final class DirectStreamPlayer {
                 + "if((e.hasAttribute('data-src')||e.hasAttribute('data-url')||e.hasAttribute('data-embed'))&&known(t))return true;"
                 + "return known(t);});}"
                 + "function sendList(){try{var names=[],seen={};serverEls().forEach(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');var k=norm(t);if(k&&!seen[k]){seen[k]=1;names.push(t);}});"
+                + "if(names.length&&window.SubHubSourceChoice&&window.SubHubSourceChoice.serverPage)window.SubHubSourceChoice.serverPage(bridgeToken,String(location.href||''));"
                 + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.servers(bridgeToken,JSON.stringify(names));}catch(_){}}"
                 + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
                 + "function uncovered(e){try{var r=e.getBoundingClientRect(),x=Math.max(1,Math.min((innerWidth||9999)-1,r.left+r.width/2)),y=Math.max(1,Math.min((innerHeight||9999)-1,r.top+r.height/2)),top=document.elementFromPoint(x,y);return !!top&&(top===e||e.contains(top)||top.contains(e));}catch(_){return false;}}"
@@ -669,7 +689,8 @@ public final class DirectStreamPlayer {
                 + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);return true;}catch(_){return false;}}"
                 + "window.__subhubSelectProvider=activate;"
                 + "window.__subhubRequestServerList=function(){sendList();var n=0,t=setInterval(function(){n++;sendList();if(n>=8)clearInterval(t);},350);};"
-                + "if(wanted){var tries=0,t=setInterval(function(){tries++;if(activate(wanted)||tries>=240)clearInterval(t);},500);}"
+                + "sendList();"
+                + "if(wanted){var tries=0,t=setInterval(function(){tries++;sendList();if(activate(wanted)||tries>=240)clearInterval(t);},500);}"
                 + "}catch(_){}})();";
     }
 
@@ -841,7 +862,7 @@ public final class DirectStreamPlayer {
                 long age = SystemClock.elapsedRealtime() - pendingServerPickedAt;
                 if (!key.isEmpty() && !label.isEmpty() && (autoServer || (age >= 0L && age < 30000L))) {
                     serverChoiceReported = true;
-                    listener.serverSelected(key, label);
+                    listener.serverSelected(key, label, discoveredServerPageUrl);
                 }
             }
             handler.postDelayed(() -> {
