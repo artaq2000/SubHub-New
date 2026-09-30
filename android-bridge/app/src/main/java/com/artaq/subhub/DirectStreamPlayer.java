@@ -930,12 +930,8 @@ public final class DirectStreamPlayer {
         }
 
         handler.postDelayed(() -> {
-            if (!closed && !playing) {
-                if (autoServer) {
-                    message("تعذّر الاتصال بالسيرفر المحفوظ. يمكن للمالك اختيار سيرفر آخر واعتماده.");
-                } else {
-                    message("لم يُلتقط بث بعد. اختر سيرفراً آخر أو أعد المحاولة.");
-                }
+            if (interactiveSource && !closed && !playing) {
+                message("لم يُلتقط بث بعد. اختر سيرفراً آخر أو أعد المحاولة.");
             }
         }, 45000);
     }
@@ -1061,7 +1057,7 @@ public final class DirectStreamPlayer {
                     status.setVisibility(View.GONE);
                     showTransientValue("تم تشغيل الفيديو", 700);
                 } else if (state == Player.STATE_BUFFERING) {
-                    showStage("جارٍ تحميل الفيديو…");
+                    showStage(interactiveSource ? "جارٍ تحميل الفيديو…" : "جارٍ تشغيل الفيديو…");
                 } else if (state == Player.STATE_ENDED) {
                     clearResumePosition();
                 }
@@ -1073,6 +1069,8 @@ public final class DirectStreamPlayer {
                 } else if (!interactiveSource) {
                     subscriberStartupGeneration++;
                     subscriberStartupPhase = 0;
+                    cleanupPlayerForRetry();
+                    destroyProbe();
                     showStage("تعذّر تشغيل الفيديو. حاول مرة أخرى.");
                 } else {
                     message("تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة.");
