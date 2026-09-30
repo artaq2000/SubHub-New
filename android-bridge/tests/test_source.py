@@ -449,7 +449,7 @@ assert 'manualServerButton' in direct
 assert 'جلب السيرفرات' in direct
 assert 'requestServerList' in direct
 assert 'window.__subhubRequestServerList' in direct
-assert 'probe.setAlpha(autoServer ? 0.02f : 1.0f)' in direct
+assert 'probe.setAlpha(1.0f)' in direct
 assert 'view details' in direct
 assert 'peachify' in direct
 assert '(autoServer || !selectedProviderLabel.isEmpty())' in direct
