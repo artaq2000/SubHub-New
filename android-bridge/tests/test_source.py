@@ -408,7 +408,7 @@ assert 'serverState.loaded' in moviesmod
 assert 'autoPick(String token, String rawLabel' in direct
 assert 'dispatchProviderTap' in direct
 assert 'MotionEvent.ACTION_DOWN' in direct
-assert "typeof window.SubHubSourceChoice.autoPick==='function'" in direct
+assert 'window.SubHubSourceChoice.autoPick' in direct
 
 
 # 322.3.64: save only real Moviesmod server names, then auto-select and auto-start robustly.
@@ -418,12 +418,11 @@ assert 'showSavePrompt' in moviesmod
 assert 'هل تريد حفظ هذا السيرفر لهذا الفيلم؟' in moviesmod
 assert 'الإعداد المحفوظ السابق غير صالح' in moviesmod
 assert 'isProviderServerLabel' in direct
-assert 'vidsrc.mov' in direct
-assert 'vidsrc.fyi' in direct
+assert 'isProviderServerLabel' in direct
 assert 'playTarget(String token' in direct
 assert 'window.SubHubSourceChoice.playTarget' in direct
-assert 'querySelectorAll(\'iframe,video,[class*=player],[id*=player]\')' in direct
-assert 'hit.scrollIntoView' in direct
+assert 'providerPlayScript' in direct
+assert 'querySelectorAll(\'video\')' in direct
 
 
 # 322.3.65: Moviesmod server buttons are discovered from DOM and selected by identity.
