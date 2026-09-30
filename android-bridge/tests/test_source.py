@@ -39,8 +39,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 68" in gradle
-assert "versionName '322.3.59'" in gradle
+assert "versionCode 69" in gradle
+assert "versionName '322.3.60'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -296,6 +296,9 @@ assert 'renderVidSrcQualityListV3259' in site
 assert "sendVidSrcSafeCommandV3211('providerqualityselect'" in site
 assert 'collectVidSrcQualityOptionsV3259' in js
 assert 'selectVidSrcProviderQualityV3259' in js
+assert 'vidSrcProviderButtonCandidatesV3260' in js
+assert 'vidSrcProviderButtonScoreV3260' in js
+assert "restoreVidSrcProviderUiV3234();\n      const settings = findVidSrcProviderButtonV3231('quality');" in js
 assert "cmd === 'providerqualityselect'" in js
 assert "closeEl.classList.add('subhub-provider-close-hidden-v3233')" not in site
 assert "closeEl.setAttribute('data-subhub-hidden-close-v3233'" not in site
