@@ -137,6 +137,11 @@ public final class DirectStreamPlayer {
     private TextView manualServerButton;
     private String resolvedMainHost = "";
     private String selectedProviderLabel = "";
+    private int subscriberStartupAttempt = 0;
+    private int subscriberStartupGeneration = 0;
+    private int subscriberStartupPhase = 0; // 1=connecting, 2=starting player
+    private long subscriberStartupDeadlineMs = 0L;
+    private boolean playbackReady = false;
     private final String sourceChoiceToken = UUID.randomUUID().toString().replace("-", "");
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
@@ -435,6 +440,86 @@ public final class DirectStreamPlayer {
         status.setText(text);
         status.setVisibility(View.VISIBLE);
         status.bringToFront();
+    }
+
+    private String arabicDigits(int value) {
+        String s = String.valueOf(Math.max(0, value));
+        return s.replace('0','٠').replace('1','١').replace('2','٢').replace('3','٣')
+                .replace('4','٤').replace('5','٥').replace('6','٦').replace('7','٧')
+                .replace('8','٨').replace('9','٩');
+    }
+
+    private void startSubscriberStartupTimer(int phase) {
+        if (interactiveSource || closed) return;
+        subscriberStartupPhase = phase;
+        subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + 10000L;
+        int generation = subscriberStartupGeneration;
+        if (phase == 1) showStage("جارٍ الاتصال بالسيرفر… " + arabicDigits(10));
+        else showStage("جارٍ تشغيل الفيديو… " + arabicDigits(10));
+        handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
+    }
+
+    private void subscriberStartupTick(int generation) {
+        if (closed || interactiveSource || playbackReady
+                || generation != subscriberStartupGeneration) return;
+
+        long remainingMs = subscriberStartupDeadlineMs - SystemClock.elapsedRealtime();
+        int remaining = Math.max(0, (int) Math.ceil(remainingMs / 1000.0));
+        if (remaining > 0) {
+            if (subscriberStartupPhase == 1) {
+                showStage("جارٍ الاتصال بالسيرفر… " + arabicDigits(remaining));
+            } else {
+                showStage("جارٍ تشغيل الفيديو… " + arabicDigits(remaining));
+            }
+            handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
+            return;
+        }
+
+        retrySubscriberStartup();
+    }
+
+    private void cleanupPlayerForRetry() {
+        if (playerView != null) {
+            playerView.setPlayer(null);
+            ViewGroup parent = (ViewGroup) playerView.getParent();
+            if (parent != null) parent.removeView(playerView);
+            playerView = null;
+        }
+        if (player != null) {
+            try { player.release(); } catch (Exception ignored) {}
+            player = null;
+        }
+        playing = false;
+        playbackReady = false;
+        candidate = null;
+        candidateHeaders = null;
+        resolvedMainHost = "";
+        selectedProviderLabel = "";
+        pendingServerKey = "";
+        pendingServerLabel = "";
+        pendingServerPickedAt = 0L;
+        serverChoiceReported = false;
+    }
+
+    private void retrySubscriberStartup() {
+        if (closed || interactiveSource || playbackReady) return;
+        subscriberStartupGeneration++;
+        if (subscriberStartupAttempt >= 2) {
+            cleanupPlayerForRetry();
+            destroyProbe();
+            subscriberStartupPhase = 0;
+            showStage("تعذّر الاتصال. حاول مرة أخرى.");
+            return;
+        }
+
+        subscriberStartupAttempt++;
+        showStage("جارٍ إعادة المحاولة…");
+        cleanupPlayerForRetry();
+        destroyProbe();
+        handler.postDelayed(() -> {
+            if (closed || interactiveSource) return;
+            beginCapture();
+        }, 450L);
     }
 
     private String normalizeServerLabel(String raw) {
@@ -763,7 +848,9 @@ public final class DirectStreamPlayer {
         if (interactiveSource) {
             showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
         } else {
-            showStage("جارٍ الاتصال بالمصدر…");
+            if (subscriberStartupAttempt == 0) subscriberStartupAttempt = 1;
+            subscriberStartupGeneration++;
+            showStage(subscriberStartupAttempt > 1 ? "جارٍ إعادة المحاولة…" : "جارٍ الاتصال بالسيرفر…");
         }
         probe = new WebView(activity);
         WebSettings s = probe.getSettings();
@@ -836,7 +923,11 @@ public final class DirectStreamPlayer {
         // completely hidden while it reuses the saved server page + server name.
         probe.setAlpha(interactiveSource ? 1.0f : 0.0f);
         probe.loadUrl(source);
-        if (interactiveSource) showManualServerButton();
+        if (interactiveSource) {
+            showManualServerButton();
+        } else {
+            startSubscriberStartupTimer(1);
+        }
 
         handler.postDelayed(() -> {
             if (!closed && !playing) {
@@ -859,7 +950,12 @@ public final class DirectStreamPlayer {
             candidateHeaders = headers;
         }
         if (first) {
-            showStage("تم العثور على البث… جارٍ تجهيز الفيديو…");
+            if (interactiveSource) {
+                showStage("تم العثور على البث… جارٍ تجهيز الفيديو…");
+            } else {
+                subscriberStartupGeneration++;
+                startSubscriberStartupTimer(2);
+            }
             if (!serverChoiceReported) {
                 String key = pendingServerKey;
                 String label = pendingServerLabel;
@@ -875,7 +971,7 @@ public final class DirectStreamPlayer {
             }
             handler.postDelayed(() -> {
                 if (!closed && !playing) startStream();
-            }, 1400);
+            }, interactiveSource ? 1200L : 300L);
         }
     }
 
@@ -901,7 +997,7 @@ public final class DirectStreamPlayer {
     private void startStream() {
         if (candidate == null || closed) return;
         playing = true;
-        showStage("جارٍ تشغيل الفيديو…");
+        showStage(interactiveSource ? "جارٍ تشغيل الفيديو…" : "جارٍ تشغيل الفيديو…");
 
         String userAgent = header("User-Agent", WebSettings.getDefaultUserAgent(activity));
         String referer = header("Referer", source);
@@ -953,6 +1049,9 @@ public final class DirectStreamPlayer {
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
+                    playbackReady = true;
+                    subscriberStartupGeneration++;
+                    subscriberStartupPhase = 0;
                     long duration = player == null ? 0L : player.getDuration();
                     if (pendingResumeMs > 0L && duration > 0L
                             && pendingResumeMs >= Math.max(0L, duration - 45000L)) {
@@ -969,7 +1068,15 @@ public final class DirectStreamPlayer {
             }
 
             @Override public void onPlayerError(PlaybackException error) {
-                message("تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة.");
+                if (!interactiveSource && subscriberStartupAttempt < 2) {
+                    retrySubscriberStartup();
+                } else if (!interactiveSource) {
+                    subscriberStartupGeneration++;
+                    subscriberStartupPhase = 0;
+                    showStage("تعذّر تشغيل الفيديو. حاول مرة أخرى.");
+                } else {
+                    message("تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة.");
+                }
             }
         });
 
