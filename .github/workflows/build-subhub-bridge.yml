@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.66 Moviesmod Manual Bootstrap
+name: Build TEST SubHub 322.3.67 Moviesmod Visible Gate
 
 on:
   push:
     branches:
-      - 'test/moviesmod-manual-bootstrap-322.3.66'
+      - 'test/moviesmod-visible-gate-322.3.67'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -130,21 +130,21 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='75'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.66'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='76'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.67'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
           echo "Actual signing SHA-256:   $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Prepare Moviesmod manual-bootstrap test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.66-moviesmod-manual-bootstrap.apk
+      - name: Prepare Moviesmod visible-gate test APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.67-moviesmod-visible-gate.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.66-moviesmod-manual-bootstrap
-          path: SubHub-322.3.66-moviesmod-manual-bootstrap.apk
+          name: SubHub-322.3.67-moviesmod-visible-gate
+          path: SubHub-322.3.67-moviesmod-visible-gate.apk
           retention-days: 7
 
       - name: Remove signing key from runner
