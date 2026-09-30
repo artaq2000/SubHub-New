@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.56';
+  const BRIDGE_BUILD = '322.3.57';
 
   let lastSig = '';
   let clockSource = '';
@@ -530,6 +530,8 @@
   let vidSrcPlaybackStatusTimerV3252 = 0;
   let vidSrcResumeTargetV3256 = 0;
   let vidSrcWakeTimerV3256 = 0;
+  let vidSrcWakeRetryTimerV3257 = 0;
+  let vidSrcWakeRetryCountV3257 = 0;
   function vidSrcPlaybackStatusV3252(text) {
     clearTimeout(vidSrcPlaybackStatusTimerV3252);
     const status = document.querySelector('#subhub-vidsrc-takeover-v3222 .sh-v3252-status');
@@ -539,6 +541,8 @@
   function cancelVidSrcPlaybackV3252() {
     const p = vidSrcPlaybackPendingV3252;
     if (p) clearTimeout(p.timer);
+    clearTimeout(vidSrcWakeRetryTimerV3257);
+    vidSrcWakeRetryTimerV3257 = 0;
     if (p && p.native) {
       try { window.SubHubAndroidBridge.cancelVidSrcPlayback(VIDSRC_GUARD_TOKEN, p.id); } catch (_) {}
     }
@@ -557,6 +561,8 @@
 
     cancelVidSrcPlaybackV3252();
     clearTimeout(vidSrcWakeTimerV3256);
+    clearTimeout(vidSrcWakeRetryTimerV3257);
+    vidSrcWakeRetryCountV3257 = 0;
     vidSrcResumeTargetV3256 = point;
     clockSource = '';
     lastSeq = -1;
@@ -569,13 +575,20 @@
     updateVidSrcTakeoverV3222(point, window.__subhubVidSrcDurationV3211 || 0, false);
     vidSrcPlaybackStatusV3252('جارٍ تهيئة المشغّل…');
 
-    if (!nativeTapVidSrcV3213()) {
-      clockWaiting = false;
-      vidSrcPlaybackStatusV3252('تعذّر تهيئة المشغّل. اضغط التشغيل مرة أخرى.');
-      return false;
-    }
+    const tryTap = function () {
+      if (clockReadyState >= 1 || !frame.isConnected || !isVidSrcFrameActiveV328()) return;
+      vidSrcWakeRetryCountV3257++;
+      nativeTapVidSrcV3213();
+      if (vidSrcWakeRetryCountV3257 < 3) {
+        vidSrcWakeRetryTimerV3257 = setTimeout(tryTap, vidSrcWakeRetryCountV3257 === 1 ? 1150 : 1450);
+      }
+    };
+
+    tryTap();
 
     vidSrcWakeTimerV3256 = setTimeout(function () {
+      clearTimeout(vidSrcWakeRetryTimerV3257);
+      vidSrcWakeRetryTimerV3257 = 0;
       if (clockReadyState >= 1) {
         vidSrcPlaybackStatusV3252('');
         return;
@@ -587,7 +600,7 @@
         window.__subhubVidSrcDurationV3211 || 0,
         false
       );
-    }, 3200);
+    }, 4600);
     return true;
   }
 
@@ -684,14 +697,15 @@
   function tickVidSrcControlsV3254() {
     const root=document.getElementById('subhub-vidsrc-takeover-v3222');
     if(!root)return;
-    const hidden=!!window.__subhubVidSrcPlayingV3222 && !vidSrcPlaybackPendingV3252
+    const hidden=clockReadyState>=1 && !vidSrcPlaybackPendingV3252
       && !vidSrcTakeoverDraggingV3222 && Date.now()>=vidSrcControlsDeadlineV3254;
     root.setAttribute('data-sh-controls-hidden',hidden?'1':'0');
   }
 
-  window.SubHubNativeResumeV3256=function(){
+  window.SubHubNativeResumeV3257=function(){
     cancelVidSrcPlaybackV3252();
     clearTimeout(vidSrcWakeTimerV3256);
+    clearTimeout(vidSrcWakeRetryTimerV3257);
     syncVidSrcGuardV328(true);
     const session=syncVidSrcSessionV3254();
     vidSrcControlsDeadlineV3254=Date.now()+2600;
@@ -721,8 +735,9 @@
     vidSrcPlaybackStatusV3252('');
     updateVidSrcTakeoverV3222(point,window.__subhubVidSrcDurationV3211||0,false);
   };
-  window.SubHubNativeResumeV3255=window.SubHubNativeResumeV3256;
-  window.SubHubNativeResumeV3254=window.SubHubNativeResumeV3256;
+  window.SubHubNativeResumeV3256=window.SubHubNativeResumeV3257;
+  window.SubHubNativeResumeV3255=window.SubHubNativeResumeV3257;
+  window.SubHubNativeResumeV3254=window.SubHubNativeResumeV3257;
 
   function nativeVidSrcPlaybackV3253(frame) {
     if (typeof syncVidSrcSessionV3254 === 'function') syncVidSrcSessionV3254();
@@ -1547,7 +1562,9 @@
   function updateVidSrcTakeoverV3222(t, d, playing) {
     try {
       window.__subhubVidSrcTimeV3222 = Number(t || 0);
-      if (playing && !window.__subhubVidSrcPlayingV3222 && typeof vidSrcControlsDeadlineV3254 !== 'undefined') vidSrcControlsDeadlineV3254=Date.now()+2600;
+      if (!!playing !== !!window.__subhubVidSrcPlayingV3222 && typeof vidSrcControlsDeadlineV3254 !== 'undefined') {
+        vidSrcControlsDeadlineV3254=Date.now()+900;
+      }
       window.__subhubVidSrcPlayingV3222 = !!playing;
       if (Number.isFinite(Number(d)) && Number(d) > 0) {
         window.__subhubVidSrcDurationV3211 = Number(d);
@@ -2058,6 +2075,9 @@
       }
       if (clockReadyState >= 1) {
         clearTimeout(vidSrcWakeTimerV3256);
+        clearTimeout(vidSrcWakeRetryTimerV3257);
+        vidSrcWakeRetryTimerV3257 = 0;
+        vidSrcWakeRetryCountV3257 = 0;
         vidSrcPlaybackStatusV3252('');
       }
       if (clockReadyState >= 2 && vidSrcResumeTargetV3256 > 2) {
