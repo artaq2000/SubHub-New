@@ -99,6 +99,7 @@ public final class DirectStreamPlayer {
     private final String resumeKey;
     private final String preferredServerKey;
     private final String preferredServerLabel;
+    private final boolean interactiveSource;
     private final boolean autoServer;
     private final SharedPreferences prefs;
 
@@ -131,6 +132,7 @@ public final class DirectStreamPlayer {
     private long pendingServerPickedAt = 0L;
     private boolean serverChoiceReported = false;
     private boolean serverChooserShown = false;
+    private boolean serverListRequested = false;
     private String discoveredServerPageUrl = "";
     private TextView manualServerButton;
     private String resolvedMainHost = "";
@@ -140,7 +142,7 @@ public final class DirectStreamPlayer {
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
                               JSONArray catalog, String resumeKey, String allowedHost,
                               String preferredServerKey, String preferredServerLabel,
-                              Listener listener) {
+                              boolean interactiveSource, Listener listener) {
         this.activity = activity;
         this.listener = listener;
         this.source = source;
@@ -149,7 +151,8 @@ public final class DirectStreamPlayer {
         this.allowedHost = allowedHost == null ? "" : allowedHost.trim().toLowerCase(Locale.ROOT);
         this.preferredServerKey = preferredServerKey == null ? "" : preferredServerKey.trim();
         this.preferredServerLabel = preferredServerLabel == null ? "" : preferredServerLabel.trim();
-        this.autoServer = !this.preferredServerLabel.isEmpty();
+        this.interactiveSource = interactiveSource;
+        this.autoServer = !this.interactiveSource && !this.preferredServerLabel.isEmpty();
         this.prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
         String resumePref = resumePrefKey();
         pendingResumeMs = resumePref.isEmpty() ? 0L : Math.max(0L, prefs.getLong(resumePref, 0L));
@@ -474,7 +477,9 @@ public final class DirectStreamPlayer {
         pendingServerKey = key;
         pendingServerLabel = label;
         pendingServerPickedAt = SystemClock.elapsedRealtime();
-        showStage("جارٍ الاتصال بالسيرفر " + label + "…");
+        showStage(interactiveSource
+                ? "تم اختيار السيرفر " + label + "…"
+                : "جارٍ الاتصال بالسيرفر…");
     }
 
     private void dispatchProviderTap(double normalizedX, double normalizedY) {
@@ -501,7 +506,8 @@ public final class DirectStreamPlayer {
     }
 
     private void showServerChooser(String json) {
-        if (closed || playing || autoServer || serverChooserShown) return;
+        if (closed || playing || autoServer || !interactiveSource
+                || !serverListRequested || serverChooserShown) return;
         try {
             JSONArray arr = new JSONArray(json);
             ArrayList<String> names = new ArrayList<>();
@@ -510,10 +516,12 @@ public final class DirectStreamPlayer {
                 if (isProviderServerLabel(name) && !names.contains(name)) names.add(name);
             }
             if (names.isEmpty()) {
+                serverListRequested = false;
                 showStage("لم أجد السيرفرات بعد. ادخل إلى صفحة الفيلم ثم اضغط «جلب السيرفرات» مرة أخرى.");
                 if (manualServerButton != null) manualServerButton.setVisibility(View.VISIBLE);
                 return;
             }
+            serverListRequested = false;
             serverChooserShown = true;
             showStage("اختر السيرفر الذي تريد تجربته…");
             CharSequence[] items = new CharSequence[names.size()];
@@ -536,7 +544,8 @@ public final class DirectStreamPlayer {
     }
 
     private void requestServerList() {
-        if (probe == null || closed || playing || autoServer) return;
+        if (probe == null || closed || playing || autoServer || !interactiveSource) return;
+        serverListRequested = true;
         showStage("جارٍ قراءة قائمة السيرفرات…");
         try {
             probe.evaluateJavascript(providerPickerScript(), null);
@@ -553,7 +562,7 @@ public final class DirectStreamPlayer {
     }
 
     private void showManualServerButton() {
-        if (autoServer || closed || manualServerButton != null) return;
+        if (!interactiveSource || autoServer || closed || manualServerButton != null) return;
         manualServerButton = chip("جلب السيرفرات", 15, this::requestServerList);
         manualServerButton.setBackground(round(0xee102a40, 0xff2f93c7, 1, 18));
         manualServerButton.setElevation(dp(28));
@@ -751,10 +760,10 @@ public final class DirectStreamPlayer {
     }
 
     private void beginCapture() {
-        if (autoServer) {
-            showStage("أغلق أي إعلان أو تحقق ظاهر؛ عند ظهور السيرفرات سأشغّل السيرفر المحفوظ تلقائياً.");
+        if (interactiveSource) {
+            showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
         } else {
-            showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+            showStage("جارٍ الاتصال بالمصدر…");
         }
         probe = new WebView(activity);
         WebSettings s = probe.getSettings();
@@ -786,10 +795,10 @@ public final class DirectStreamPlayer {
                     showStage("جارٍ تشغيل السيرفر…");
                     try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
                 } else {
-                    if (autoServer) {
-                        showStage("أكمل التحقق وأغلق الإعلانات؛ عند ظهور السيرفرات سأشغّل المحفوظ تلقائياً.");
+                    if (interactiveSource) {
+                        showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
                     } else {
-                        showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+                        showStage("جارٍ الاتصال بالسيرفر…");
                     }
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
                 }
@@ -812,7 +821,7 @@ public final class DirectStreamPlayer {
                 String url = r.getUrl().toString();
                 if ("https".equals(r.getUrl().getScheme())
                         && url.toLowerCase(Locale.ROOT).contains(".m3u8")
-                        && (autoServer || !selectedProviderLabel.isEmpty())) {
+                        && ((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())) {
                     Map<String,String> headers = new HashMap<>(r.getRequestHeaders());
                     handler.post(() -> capture(url, headers));
                 }
@@ -823,12 +832,11 @@ public final class DirectStreamPlayer {
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
         p.topMargin = dp(60);
         root.addView(probe, 0, p);
-        // Keep Moviesmod fully visible even when a server is already saved.
-        // The site may require a manual ad/verification step before its real
-        // server buttons become clickable.
-        probe.setAlpha(1.0f);
+        // Owner setup remains visible and manual. Subscriber capture stays
+        // completely hidden while it reuses the saved server page + server name.
+        probe.setAlpha(interactiveSource ? 1.0f : 0.0f);
         probe.loadUrl(source);
-        if (!autoServer) showManualServerButton();
+        if (interactiveSource) showManualServerButton();
 
         handler.postDelayed(() -> {
             if (!closed && !playing) {
