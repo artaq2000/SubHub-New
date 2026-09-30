@@ -27,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.63'" in site
+assert "BRIDGE_BUILD = '322.3.64'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 72" in gradle
-assert "versionName '322.3.63'" in gradle
+assert "versionCode 73" in gradle
+assert "versionName '322.3.64'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -409,3 +409,18 @@ assert 'autoPick(String token, String rawLabel' in direct
 assert 'dispatchProviderTap' in direct
 assert 'MotionEvent.ACTION_DOWN' in direct
 assert "typeof window.SubHubSourceChoice.autoPick==='function'" in direct
+
+
+# 322.3.64: save only real Moviesmod server names, then auto-select and auto-start robustly.
+assert 'validServerLabel' in moviesmod
+assert 'Watch now' not in moviesmod.split('validServerLabel',1)[1].split('normalizeSaved',1)[0]
+assert 'showSavePrompt' in moviesmod
+assert 'هل تريد حفظ هذا السيرفر لهذا الفيلم؟' in moviesmod
+assert 'الإعداد المحفوظ السابق غير صالح' in moviesmod
+assert 'isProviderServerLabel' in direct
+assert 'vidsrc.mov' in direct
+assert 'vidsrc.fyi' in direct
+assert 'playTarget(String token' in direct
+assert 'window.SubHubSourceChoice.playTarget' in direct
+assert 'querySelectorAll(\'iframe,video,[class*=player],[id*=player]\')' in direct
+assert 'hit.scrollIntoView' in direct
