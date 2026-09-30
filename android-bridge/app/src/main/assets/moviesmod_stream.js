@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  if (window.__subhubMoviesmodInstalledV3265) return;
-  window.__subhubMoviesmodInstalledV3265 = true;
+  if (window.__subhubMoviesmodInstalledV3268) return;
+  window.__subhubMoviesmodInstalledV3268 = true;
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   let active = null;
@@ -16,7 +16,8 @@
     enabled: false,
     invalid: false,
     key: '',
-    label: ''
+    label: '',
+    pageUrl: ''
   };
 
   function current() {
@@ -53,16 +54,31 @@
     return !/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(v);
   }
 
+  function normalizeServerPageUrl(raw) {
+    const v = String(raw || '').trim();
+    if (!v || v.length > 2200) return '';
+    try {
+      const u = new URL(v);
+      const h = String(u.hostname || '').toLowerCase();
+      if (u.protocol !== 'https:' || !(h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd'))) return '';
+      return u.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function normalizeSaved(raw) {
     const d = raw || {};
     const label = cleanServerLabel(d.moviesmodServerLabel || '');
     const key = String(d.moviesmodServerKey || '').trim().slice(0, 80);
+    const pageUrl = normalizeServerPageUrl(d.moviesmodServerPageUrl || '');
     const valid = d.moviesmodEnabled === true && validServerLabel(label);
     return {
       enabled: valid,
       invalid: d.moviesmodEnabled === true && !!label && !valid,
       key: valid ? key : '',
-      label: valid ? label : ''
+      label: valid ? label : '',
+      pageUrl: pageUrl
     };
   }
 
@@ -78,7 +94,8 @@
         enabled: serverState.enabled,
         invalid: serverState.invalid,
         key: serverState.key,
-        label: serverState.label
+        label: serverState.label,
+        pageUrl: serverState.pageUrl
       };
     }
     return fallbackSaved();
@@ -101,6 +118,7 @@
         moviesmodEnabled: !!next.enabled,
         moviesmodServerKey: next.key || '',
         moviesmodServerLabel: next.label || '',
+        moviesmodServerPageUrl: next.pageUrl || '',
         moviesmodUpdatedAt: Date.now()
       });
       window._lastRenderedMovieDoc = merged;
@@ -116,7 +134,8 @@
       enabled: !!saved.enabled,
       invalid: !!saved.invalid,
       key: String(saved.key || ''),
-      label: String(saved.label || '')
+      label: String(saved.label || ''),
+      pageUrl: normalizeServerPageUrl(saved.pageUrl || '')
     };
     syncMovieDocCache(movieId, saved);
   }
@@ -140,7 +159,8 @@
       enabled: false,
       invalid: false,
       key: '',
-      label: ''
+      label: '',
+      pageUrl: ''
     };
 
     loadPromise = (async function () {
@@ -263,7 +283,8 @@
         manualChoice: owner && !useSaved,
         usedSavedServer: useSaved,
         serverKey: useSaved ? saved.key : '',
-        serverLabel: useSaved ? saved.label : ''
+        serverLabel: useSaved ? saved.label : '',
+        serverPageUrl: saved.pageUrl || ''
       };
 
       bridge.openDirectStream(token, JSON.stringify({
@@ -275,6 +296,7 @@
         kind: resolved.kind,
         serverKey: useSaved ? saved.key : '',
         serverLabel: useSaved ? saved.label : '',
+        serverPageUrl: saved.pageUrl || '',
         catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub') })),
         defaultIndex: catalog.findIndex(x => x.isDefault === true)
       }));
@@ -300,13 +322,15 @@
       const next = {
         enabled: true,
         key: pendingChoice.key,
-        label: pendingChoice.label
+        label: pendingChoice.label,
+        pageUrl: normalizeServerPageUrl(pendingChoice.pageUrl || '')
       };
 
       await db.collection('subtitles').doc(movieId).set({
         moviesmodEnabled: true,
         moviesmodServerKey: next.key,
         moviesmodServerLabel: next.label,
+        moviesmodServerPageUrl: next.pageUrl,
         moviesmodUpdatedAt: Date.now()
       }, { merge: true });
 
@@ -397,12 +421,13 @@
         moviesmodEnabled: false,
         moviesmodServerKey: '',
         moviesmodServerLabel: '',
+        moviesmodServerPageUrl: '',
         moviesmodUpdatedAt: Date.now()
       }, { merge: true });
 
       pendingChoice = null;
       removeSavePrompt();
-      applyLoadedState(movieId, { enabled: false, key: '', label: '' });
+      applyLoadedState(movieId, { enabled: false, key: '', label: '', pageUrl: '' });
       refreshCard();
       notify('تم حذف سيرفر Moviesmod لهذا الفيلم.', 'success');
     } catch (_) {
@@ -410,7 +435,7 @@
     }
   }
 
-  window.__subhubMoviesmodServerSelected = function (session, rawKey, rawLabel) {
+  window.__subhubMoviesmodServerSelected = function (session, rawKey, rawLabel, rawPageUrl) {
     const state = active;
     if (!state || state.session !== session) return;
 
@@ -418,15 +443,18 @@
     const label = cleanServerLabel(rawLabel);
     if (!key || !label || !validServerLabel(label)) return;
 
+    const pageUrl = normalizeServerPageUrl(rawPageUrl || state.serverPageUrl || '');
     state.serverKey = key;
     state.serverLabel = label;
+    state.serverPageUrl = pageUrl;
 
     if (state.owner && state.manualChoice && current()
         && String(current().id || '') === state.movieId) {
       pendingChoice = {
         movieId: state.movieId,
         key,
-        label
+        label,
+        pageUrl
       };
       notify('السيرفر يعمل: ' + label + ' — اضغط حفظ لاعتماده.', 'success');
     }
