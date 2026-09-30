@@ -439,7 +439,7 @@ assert 'MutationObserver' in direct
 assert 'openResolvedProvider' in direct
 assert 'providerPlayScript' in direct
 assert 'resolvedMainHost' in direct
-assert 'ادخل إلى الفيلم وأغلق الإعلانات' in direct
+assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
 assert 'window.__subhubMoviesmodInstalledV3268' in moviesmod
 assert 'validServerLabel' in moviesmod
 
