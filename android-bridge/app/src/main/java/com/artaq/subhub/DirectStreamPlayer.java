@@ -1,6 +1,7 @@
 package com.artaq.subhub;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -129,6 +130,9 @@ public final class DirectStreamPlayer {
     private String pendingServerLabel = "";
     private long pendingServerPickedAt = 0L;
     private boolean serverChoiceReported = false;
+    private boolean serverChooserShown = false;
+    private String resolvedMainHost = "";
+    private String selectedProviderLabel = "";
     private final String sourceChoiceToken = UUID.randomUUID().toString().replace("-", "");
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
@@ -437,20 +441,18 @@ public final class DirectStreamPlayer {
     }
 
     private boolean isProviderServerLabel(String raw) {
-        String v = normalizeServerLabel(raw).toLowerCase(Locale.ROOT);
-        return v.equals("vidsrc.mov")
-                || v.equals("vidsrc.fyi")
-                || v.equals("vidrock")
-                || v.equals("vidnest")
-                || v.equals("vidking")
-                || v.equals("vidlink")
-                || v.equals("vidfast")
-                || v.equals("vidup")
-                || v.equals("videasy")
-                || v.equals("111movies")
-                || v.equals("2embed")
-                || v.equals("multiembed")
-                || v.equals("superflix");
+        String v = normalizeServerLabel(raw);
+        if (v.isEmpty() || v.length() > 48) return false;
+        String lower = v.toLowerCase(Locale.ROOT);
+        return !(lower.equals("watch now")
+                || lower.equals("play")
+                || lower.equals("play now")
+                || lower.equals("home")
+                || lower.equals("movies")
+                || lower.equals("select server")
+                || lower.equals("trailer")
+                || lower.equals("download")
+                || lower.equals("settings"));
     }
 
     private String serverKey(String label) {
@@ -495,11 +497,87 @@ public final class DirectStreamPlayer {
         }
     }
 
+    private void showServerChooser(String json) {
+        if (closed || playing || autoServer || serverChooserShown) return;
+        try {
+            JSONArray arr = new JSONArray(json);
+            ArrayList<String> names = new ArrayList<>();
+            for (int i = 0; i < arr.length(); i++) {
+                String name = normalizeServerLabel(arr.optString(i));
+                if (isProviderServerLabel(name) && !names.contains(name)) names.add(name);
+            }
+            if (names.isEmpty()) return;
+            serverChooserShown = true;
+            showStage("اختر السيرفر الذي تريد تجربته…");
+            CharSequence[] items = new CharSequence[names.size()];
+            for (int i = 0; i < names.size(); i++) items[i] = names.get(i);
+            new AlertDialog.Builder(activity)
+                    .setTitle("سيرفرات Moviesmod")
+                    .setItems(items, (dialog, which) -> {
+                        serverChooserShown = false;
+                        enterImmersive();
+                        if (which >= 0 && which < names.size()) {
+                            selectProviderServer(names.get(which));
+                        }
+                    })
+                    .setOnCancelListener(dialog -> {
+                        serverChooserShown = false;
+                        enterImmersive();
+                    })
+                    .show();
+        } catch (Exception ignored) {}
+    }
+
+    private void selectProviderServer(String rawLabel) {
+        String label = normalizeServerLabel(rawLabel);
+        if (probe == null || closed || playing || !isProviderServerLabel(label)) return;
+        selectedProviderLabel = label;
+        recordProviderChoice(label);
+        showStage("جارٍ فتح السيرفر " + label + "…");
+        String js = "window.__subhubSelectProvider && window.__subhubSelectProvider("
+                + JSONObject.quote(label) + ")";
+        try { probe.evaluateJavascript(js, null); } catch (Exception ignored) {}
+    }
+
+    private void openResolvedProvider(String rawLabel, String rawUrl) {
+        if (probe == null || closed || playing) return;
+        String label = normalizeServerLabel(rawLabel);
+        if (!label.isEmpty() && isProviderServerLabel(label)) {
+            selectedProviderLabel = label;
+            recordProviderChoice(label);
+        }
+        try {
+            Uri u = Uri.parse(rawUrl == null ? "" : rawUrl.trim());
+            if (!"https".equalsIgnoreCase(u.getScheme()) || u.getHost() == null) return;
+            String host = u.getHost().toLowerCase(Locale.ROOT);
+            if (host.equals(allowedHost) || host.endsWith("." + allowedHost)) return;
+            resolvedMainHost = host;
+            showStage("جارٍ الاتصال بالسيرفر " +
+                    (selectedProviderLabel.isEmpty() ? "" : selectedProviderLabel) + "…");
+            probe.setAlpha(0.02f);
+            Map<String,String> headers = new HashMap<>();
+            headers.put("Referer", source);
+            probe.loadUrl(u.toString(), headers);
+        } catch (Exception ignored) {}
+    }
+
     private final class SourceChoiceBridge {
+        @JavascriptInterface
+        public void servers(String token, String json) {
+            if (!sourceChoiceToken.equals(token)) return;
+            handler.post(() -> showServerChooser(json));
+        }
+
         @JavascriptInterface
         public void picked(String token, String rawLabel) {
             if (!sourceChoiceToken.equals(token)) return;
             handler.post(() -> recordProviderChoice(rawLabel));
+        }
+
+        @JavascriptInterface
+        public void resolved(String token, String rawLabel, String rawUrl) {
+            if (!sourceChoiceToken.equals(token)) return;
+            handler.post(() -> openResolvedProvider(rawLabel, rawUrl));
         }
 
         @JavascriptInterface
@@ -525,36 +603,51 @@ public final class DirectStreamPlayer {
         String wanted = JSONObject.quote(normalizeServerLabel(preferredServerLabel));
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
         return "(function(){try{"
-                + "if(window.__subhubMoviesmodPickV3264)return;"
-                + "window.__subhubMoviesmodPickV3264=true;"
-                + "var wanted=" + wanted + ",bridgeToken=" + bridgeToken + ";"
+                + "var bridgeToken=" + bridgeToken + ",wanted=" + wanted + ";"
                 + "function clean(v){return String(v||'').replace(/[⭐★☆]/g,'').replace(/\\s+/g,' ').trim();}"
                 + "function norm(v){return clean(v).toLowerCase();}"
-                + "function server(t){t=norm(t);return /^(vidsrc\\.mov|vidsrc\\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix)$/.test(t);}"
-                + "function vis(e){if(!e)return false;var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>20&&r.height>18&&r.bottom>0&&r.right>0&&r.top<(innerHeight||99999)&&s.display!=='none'&&s.visibility!=='hidden';}"
+                + "function bad(t){t=norm(t);return !t||/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(t);}"
+                + "function serverEls(){var all=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server],[data-src],[data-url],[data-embed]'));"
+                + "var heading=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,div,span')).find(function(e){return /select server/i.test(e.textContent||'');});"
+                + "return all.filter(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');if(bad(t)||t.length>48)return false;"
+                + "if(e.hasAttribute('data-server')||e.hasAttribute('data-src')||e.hasAttribute('data-url')||e.hasAttribute('data-embed'))return true;"
+                + "if(heading){var hp=heading.parentElement;return hp&&(hp===e.parentElement||hp.contains(e));}"
+                + "return /^(vid|super|multi|2embed|111movies|peach)/i.test(t);});}"
+                + "function sendList(){try{var names=[],seen={};serverEls().forEach(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');var k=norm(t);if(k&&!seen[k]){seen[k]=1;names.push(t);}});"
+                + "if(names.length&&window.SubHubSourceChoice)window.SubHubSourceChoice.servers(bridgeToken,JSON.stringify(names));}catch(_){}}"
                 + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
-                + "document.addEventListener('click',function(ev){try{"
-                + "var e=ev.target&&ev.target.closest?ev.target.closest('button,a,[role=button],[data-server]'):null;"
-                + "if(!e)return;var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');"
-                + "if(server(t)&&window.SubHubSourceChoice)SubHubSourceChoice.picked(bridgeToken,t);"
-                + "}catch(_){}} ,true);"
-                + "function kick(){try{"
-                + "if(!window.SubHubSourceChoice||typeof window.SubHubSourceChoice.playTarget!=='function')return;"
-                + "var clicks=[].slice.call(document.querySelectorAll('button,a,[role=button]')).filter(vis);"
-                + "var b=clicks.find(function(e){var t=norm(e.innerText||e.textContent||e.getAttribute('aria-label')||e.title||'');return /^(watch now|play|play now|start|continue|resume)$/.test(t)||/(^|\\s)play(\\s|$)/.test(t);});"
-                + "var e=b;"
-                + "if(!e){var frames=[].slice.call(document.querySelectorAll('iframe,video,[class*=player],[id*=player]')).filter(function(x){if(!vis(x))return false;var r=x.getBoundingClientRect();return r.width>180&&r.height>90;});e=frames[0];}"
-                + "if(e){var p=point(e);window.SubHubSourceChoice.playTarget(bridgeToken,p[0],p[1]);}"
+                + "function direct(e){var vals=[e.getAttribute('data-src'),e.getAttribute('data-url'),e.getAttribute('data-embed'),e.getAttribute('href')];"
+                + "for(var i=0;i<vals.length;i++){var v=String(vals[i]||'').trim();if(/^https:\\/\\//i.test(v)&&v.indexOf(location.host)<0)return v;}return '';}"
+                + "function reportFrame(label){try{var frames=[].slice.call(document.querySelectorAll('iframe[src]'));for(var i=0;i<frames.length;i++){var u=String(frames[i].src||'');if(/^https:\\/\\//i.test(u)&&u.indexOf(location.host)<0){window.SubHubSourceChoice.resolved(bridgeToken,label,u);return true;}}}catch(_){}return false;}"
+                + "function activate(label){try{var want=norm(label),els=serverEls(),hit=els.find(function(e){return norm(e.innerText||e.textContent||e.getAttribute('data-server')||'')===want;});"
+                + "if(!hit)return false;var lab=clean(hit.innerText||hit.textContent||hit.getAttribute('data-server')||label);"
+                + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.picked(bridgeToken,lab);"
+                + "var d=direct(hit);if(d){window.SubHubSourceChoice.resolved(bridgeToken,lab,d);return true;}"
+                + "var obs=new MutationObserver(function(){if(reportFrame(lab)){try{obs.disconnect();}catch(_){}}});"
+                + "try{obs.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src']});}catch(_){}"
+                + "try{hit.click();}catch(_){}"
+                + "setTimeout(function(){if(reportFrame(lab))return;var p=point(hit);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.autoPick)window.SubHubSourceChoice.autoPick(bridgeToken,lab,p[0],p[1]);},180);"
+                + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);return true;}catch(_){return false;}}"
+                + "window.__subhubSelectProvider=activate;"
+                + "sendList();var scans=0,scan=setInterval(function(){scans++;sendList();if(scans>=30)clearInterval(scan);},350);"
+                + "if(wanted){var tries=0,t=setInterval(function(){tries++;if(activate(wanted)||tries>=80)clearInterval(t);},250);}"
+                + "}catch(_){}})();";
+    }
+
+    private String providerPlayScript() {
+        String bridgeToken = JSONObject.quote(sourceChoiceToken);
+        return "(function(){try{"
+                + "if(window.__subhubProviderKickV3265)return;window.__subhubProviderKickV3265=true;"
+                + "var bridgeToken=" + bridgeToken + ";"
+                + "function vis(e){if(!e)return false;var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>25&&r.height>20&&r.bottom>0&&r.right>0&&r.top<(innerHeight||99999)&&s.display!=='none'&&s.visibility!=='hidden';}"
+                + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
+                + "function kick(){try{var vids=[].slice.call(document.querySelectorAll('video')).filter(vis);vids.forEach(function(v){try{v.muted=false;var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(_){}});"
+                + "var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[class*=play],[id*=play]')).filter(vis);"
+                + "var b=els.find(function(e){var t=String(e.innerText||e.textContent||e.getAttribute('aria-label')||e.title||'').trim().toLowerCase();return /(^|\\s)(play|watch|start|continue|resume)(\\s|$)/.test(t)||/(play|triangle)/.test(String(e.className||'').toLowerCase());});"
+                + "if(!b){var frames=[].slice.call(document.querySelectorAll('iframe,[class*=player],[id*=player]')).filter(function(e){if(!vis(e))return false;var r=e.getBoundingClientRect();return r.width>160&&r.height>90;});b=frames[0];}"
+                + "if(b&&window.SubHubSourceChoice&&window.SubHubSourceChoice.playTarget){var p=point(b);window.SubHubSourceChoice.playTarget(bridgeToken,p[0],p[1]);}"
                 + "}catch(_){}}"
-                + "if(!wanted)return;"
-                + "var tries=0,timer=setInterval(function(){try{"
-                + "tries++;var want=norm(wanted);var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server]'));"
-                + "var hit=els.find(function(e){var t=norm(e.innerText||e.textContent||e.getAttribute('data-server')||'');return server(t)&&t===want;});"
-                + "if(hit){clearInterval(timer);try{hit.scrollIntoView({block:'center',inline:'center'});}catch(_){}"
-                + "setTimeout(function(){var p=point(hit);if(window.SubHubSourceChoice&&typeof window.SubHubSourceChoice.autoPick==='function')window.SubHubSourceChoice.autoPick(bridgeToken,clean(hit.innerText||hit.textContent||wanted),p[0],p[1]);},180);"
-                + "var n=0,k=setInterval(function(){n++;kick();if(n>=10)clearInterval(k);},1100);"
-                + "}else if(tries>=100){clearInterval(timer);}"
-                + "}catch(_){if(tries>=100)clearInterval(timer);}},250);"
+                + "kick();var n=0,t=setInterval(function(){n++;kick();if(n>=14)clearInterval(t);},850);"
                 + "}catch(_){}})();";
     }
 
@@ -588,14 +681,18 @@ public final class DirectStreamPlayer {
     }
 
     private boolean isAllowedMainHost(String host) {
-        if (host == null || allowedHost.isEmpty()) return false;
+        if (host == null) return false;
         String h = host.toLowerCase(Locale.ROOT);
-        return h.equals(allowedHost) || h.endsWith("." + allowedHost);
+        boolean providerPage = !allowedHost.isEmpty()
+                && (h.equals(allowedHost) || h.endsWith("." + allowedHost));
+        boolean resolved = !resolvedMainHost.isEmpty()
+                && (h.equals(resolvedMainHost) || h.endsWith("." + resolvedMainHost));
+        return providerPage || resolved;
     }
 
     private void beginCapture() {
         if (autoServer) showStage("جارٍ الاتصال بالموقع…");
-        else showStage("اختر السيرفر المناسب من المصدر…");
+        else showStage("جارٍ جلب قائمة السيرفرات…");
         probe = new WebView(activity);
         WebSettings s = probe.getSettings();
         s.setJavaScriptEnabled(true);
@@ -618,8 +715,17 @@ public final class DirectStreamPlayer {
         probe.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String url) {
                 if (closed || v != probe) return;
-                if (autoServer) showStage("جارٍ البحث عن السيرفر المحفوظ…");
-                try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
+                String host = "";
+                try { host = Uri.parse(url).getHost(); } catch (Exception ignored) {}
+                if (host != null && !resolvedMainHost.isEmpty()
+                        && (host.equalsIgnoreCase(resolvedMainHost)
+                        || host.toLowerCase(Locale.ROOT).endsWith("." + resolvedMainHost))) {
+                    showStage("جارٍ تشغيل السيرفر…");
+                    try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
+                } else {
+                    if (autoServer) showStage("جارٍ البحث عن السيرفر المحفوظ…");
+                    try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
+                }
             }
 
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
@@ -647,7 +753,7 @@ public final class DirectStreamPlayer {
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
         p.topMargin = dp(60);
         root.addView(probe, 0, p);
-        if (autoServer) probe.setAlpha(0.02f);
+        probe.setAlpha(0.02f);
         probe.loadUrl(source);
 
         handler.postDelayed(() -> {
