@@ -442,20 +442,57 @@ public final class DirectStreamPlayer {
         return v.length() > 60 ? v.substring(0, 60) : v;
     }
 
+    private void recordProviderChoice(String rawLabel) {
+        final String label = normalizeServerLabel(rawLabel);
+        if (label.isEmpty()) return;
+        final String key = serverKey(label);
+        if (key.isEmpty()) return;
+        if (closed || playing) return;
+        pendingServerKey = key;
+        pendingServerLabel = label;
+        pendingServerPickedAt = SystemClock.elapsedRealtime();
+        showStage("جارٍ الاتصال بالسيرفر " + label + "…");
+    }
+
+    private void dispatchProviderTap(double normalizedX, double normalizedY) {
+        if (probe == null || closed || playing) return;
+        double nx = Math.max(0.02d, Math.min(0.98d, normalizedX));
+        double ny = Math.max(0.02d, Math.min(0.98d, normalizedY));
+        float x = (float) (probe.getWidth() * nx);
+        float y = (float) (probe.getHeight() * ny);
+        long downAt = SystemClock.uptimeMillis();
+
+        MotionEvent down = MotionEvent.obtain(
+                downAt, downAt, MotionEvent.ACTION_DOWN, x, y, 0
+        );
+        MotionEvent up = MotionEvent.obtain(
+                downAt, downAt + 70L, MotionEvent.ACTION_UP, x, y, 0
+        );
+        try {
+            probe.dispatchTouchEvent(down);
+            probe.dispatchTouchEvent(up);
+        } finally {
+            down.recycle();
+            up.recycle();
+        }
+    }
+
     private final class SourceChoiceBridge {
         @JavascriptInterface
         public void picked(String token, String rawLabel) {
             if (!sourceChoiceToken.equals(token)) return;
-            final String label = normalizeServerLabel(rawLabel);
-            if (label.isEmpty()) return;
-            final String key = serverKey(label);
-            if (key.isEmpty()) return;
+            handler.post(() -> recordProviderChoice(rawLabel));
+        }
+
+        @JavascriptInterface
+        public void autoPick(String token, String rawLabel, double normalizedX, double normalizedY) {
+            if (!sourceChoiceToken.equals(token)) return;
             handler.post(() -> {
-                if (closed || playing) return;
-                pendingServerKey = key;
-                pendingServerLabel = label;
-                pendingServerPickedAt = SystemClock.elapsedRealtime();
-                showStage("جارٍ الاتصال بالسيرفر " + label + "…");
+                recordProviderChoice(rawLabel);
+                handler.postDelayed(
+                        () -> dispatchProviderTap(normalizedX, normalizedY),
+                        140L
+                );
             });
         }
     }
@@ -480,8 +517,11 @@ public final class DirectStreamPlayer {
                 + "tries++;var want=norm(wanted);var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server]'));"
                 + "var hit=els.find(function(e){var t=norm(e.innerText||e.textContent||'');return t===want||t.indexOf(want)>=0;});"
                 + "if(hit){clearInterval(timer);"
-                + "if(window.SubHubSourceChoice)SubHubSourceChoice.picked(bridgeToken,String(hit.innerText||hit.textContent||wanted));"
-                + "setTimeout(function(){try{hit.click();}catch(_){try{hit.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}catch(__){}}},120);"
+                + "var r=hit.getBoundingClientRect(),vw=Math.max(1,window.innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,window.innerHeight||document.documentElement.clientHeight||1);"
+                + "var nx=Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),ny=Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh));"
+                + "if(window.SubHubSourceChoice&&typeof window.SubHubSourceChoice.autoPick==='function')"
+                + "SubHubSourceChoice.autoPick(bridgeToken,String(hit.innerText||hit.textContent||wanted),nx,ny);"
+                + "else setTimeout(function(){try{hit.click();}catch(_){try{hit.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}catch(__){}}},120);"
                 + "}else if(tries>=80){clearInterval(timer);}"
                 + "}catch(_){if(tries>=80)clearInterval(timer);}},250);"
                 + "}catch(_){}})();";
