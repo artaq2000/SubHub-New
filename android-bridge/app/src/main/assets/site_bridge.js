@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.54';
+  const BRIDGE_BUILD = '322.3.55';
 
   let lastSig = '';
   let clockSource = '';
@@ -610,7 +610,7 @@
     clockSource='';lastSeq=-1;clockPaused=true;clockWaiting=true;
     vidSrcPlaybackStatusV3252(point>0?'جارٍ إعادة فتح الفيديو واستعادة موضع التوقف…':'جارٍ إعادة تشغيل الفيديو من البداية…');
     updateVidSrcTakeoverV3222(point,window.__subhubVidSrcDurationV3211||0,false);
-    armVidSrcPlaybackTimeoutV3253(q,12500);
+    armVidSrcPlaybackTimeoutV3253(q,point>0?18000:16000);
     return true;
   }
 
@@ -622,12 +622,22 @@
     root.setAttribute('data-sh-controls-hidden',hidden?'1':'0');
   }
 
-  window.SubHubNativeResumeV3254=function(){
+  window.SubHubNativeResumeV3255=function(){
     cancelVidSrcPlaybackV3252();
     syncVidSrcGuardV328(true);
-    syncVidSrcSessionV3254();
+    const session=syncVidSrcSessionV3254();
     vidSrcControlsDeadlineV3254=Date.now()+2600;
+    const frame=document.querySelector('#embedFrameContainer iframe');
+    const box=document.querySelector('#embedPlayerModal .video-modal-box');
+    if(box)wakeVidSrcControlsV3251(box);
+    if(!session||!frame||session.frame!==frame||!frame.isConnected||!isVidSrcFrameActiveV328())return;
+    const p={frame:frame,src:frame.src,recovery:false,resumeAt:Math.max(0,Number(session.resumeAt)||0)};
+    if(!recoverVidSrcPlaybackV3254(p)){
+      clockPaused=true;clockWaiting=false;
+      updateVidSrcTakeoverV3222(Number(session.resumeAt)||0,window.__subhubVidSrcDurationV3211||0,false);
+    }
   };
+  window.SubHubNativeResumeV3254=window.SubHubNativeResumeV3255;
 
   function nativeVidSrcPlaybackV3253(frame) {
     if (typeof syncVidSrcSessionV3254 === 'function') syncVidSrcSessionV3254();
@@ -729,7 +739,8 @@
     style.textContent = `
       #subhub-vidsrc-takeover-v3222 .sh-v3251-surface{position:absolute;inset:0;pointer-events:none;touch-action:manipulation}
       #subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3251-surface{pointer-events:auto}
-      #embedPlayerModal #subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3222-center{display:flex!important;align-items:center;justify-content:center;visibility:visible!important;opacity:1!important;pointer-events:auto!important;z-index:2;touch-action:manipulation}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-center{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-play{display:inline-flex!important;align-items:center;justify-content:center!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}
       #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{bottom:8px!important;z-index:3;direction:rtl}
       #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-time{white-space:nowrap;min-width:0;font-size:12px}
       #embedPlayerModal .video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;flex-wrap:wrap}
