@@ -64,8 +64,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.52";
-    private static final int NATIVE_VERSION_CODE = 61;
+    private static final String NATIVE_VERSION = "322.3.53";
+    private static final int NATIVE_VERSION_CODE = 62;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -93,6 +93,7 @@ public class MainActivity extends Activity {
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Object clockLock = new Object();
+    private final PlaybackMailbox playbackMailbox = new PlaybackMailbox();
 
     private FrameLayout root;
     private WebView webView;
@@ -243,7 +244,7 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new NativeBridge(), "SubHubAndroidBridge");
         installDownloadSupport();
-        clockScript = readAsset("player_clock.js");
+        clockScript = readAsset("player_clock.js").replace("__VIDSRC_GUARD_TOKEN__", vidSrcGuardToken);
         siteBridgeScript = readAsset("site_bridge.js") + "\n" + readAsset("direct_stream.js") + "\n" + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -259,7 +260,17 @@ public class MainActivity extends Activity {
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 try {
                     Uri u = Uri.parse(url);
-                    if (HOME_HOST.equalsIgnoreCase(u.getHost())) homePageReady = false;
+                    if (HOME_HOST.equalsIgnoreCase(u.getHost())) {
+                        homePageReady = false;
+                        vidSrcGuardActive = false;
+                        playbackMailbox.clear();
+                        synchronized (clockLock) {
+                            activeClockSource = "";
+                            activeClockSeq = -1L;
+                            activeClockSeenAt = 0L;
+                            pendingClockRaw = null;
+                        }
+                    }
                 } catch (Exception ignored) {}
 
                 if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
@@ -1523,6 +1534,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        playbackMailbox.clear();
         if (fileChooserCallback != null) {
             fileChooserCallback.onReceiveValue(null);
             fileChooserCallback = null;
@@ -1634,6 +1646,7 @@ public class MainActivity extends Activity {
                 if (!isTrustedHomePage()) return;
                 vidSrcGuardActive = active;
                 if (!active) {
+                    playbackMailbox.clear();
                     lastVidSrcBlockedAt = 0L;
                     if (vidSrcPseudoFullscreenActive) {
                         applyVidSrcImmersiveUi(false);
@@ -1734,6 +1747,61 @@ public class MainActivity extends Activity {
                     ).show();
                 }
             });
+        }
+
+        @JavascriptInterface
+        public boolean requestVidSrcPlayback(String token, String requestId) {
+            if (!vidSrcGuardToken.equals(token) || !vidSrcGuardActive
+                    || requestId == null || requestId.length() > 160) return false;
+            synchronized (clockLock) {
+                return playbackMailbox.begin(requestId, activeClockSource, SystemClock.elapsedRealtime());
+            }
+        }
+
+        @JavascriptInterface
+        public void cancelVidSrcPlayback(String token, String requestId) {
+            if (vidSrcGuardToken.equals(token) && requestId != null) playbackMailbox.cancel(requestId);
+        }
+
+        @JavascriptInterface
+        public String pollVidSrcPlayback(String token, String source) {
+            if (!vidSrcGuardToken.equals(token) || !vidSrcGuardActive
+                    || source == null || source.isEmpty() || source.length() > 300) return "{}";
+            try {
+                final long now = SystemClock.elapsedRealtime();
+                final PlaybackMailbox.Request request;
+                synchronized (clockLock) {
+                    request = playbackMailbox.take(source, activeClockSource, now);
+                }
+                JSONObject reply = new JSONObject();
+                reply.put("activeRequest", playbackMailbox.liveRequest(source, now));
+                if (request != null) {
+                    reply.put("requestId", request.id);
+                    reply.put("targetSource", source);
+                    reply.put("timeoutMs", PlaybackMailbox.PLAY_TIMEOUT_MS - 300L);
+                }
+                return reply.toString();
+            } catch (Exception ignored) { return "{}"; }
+        }
+
+        @JavascriptInterface
+        public void vidSrcPlaybackResult(String token, String raw) {
+            if (!vidSrcGuardToken.equals(token) || !vidSrcGuardActive
+                    || raw == null || raw.length() > 8192) return;
+            try {
+                JSONObject p = new JSONObject(raw);
+                String phase = p.optString("phase", "");
+                if (!phase.equals("preparing") && !phase.equals("complete") && !phase.equals("error")) return;
+                if (!playbackMailbox.accept(p.optString("requestId", ""), p.optString("source", ""),
+                        !phase.equals("preparing"), SystemClock.elapsedRealtime())) return;
+                queueClock(raw, p);
+                final String quoted = JSONObject.quote(raw);
+                ui.post(() -> {
+                    if (webView == null || !vidSrcGuardActive || !isTrustedHomePage()) return;
+                    webView.evaluateJavascript("(function(){if(window.SubHubNativePlayback){window.SubHubNativePlayback(JSON.parse("
+                            + quoted + "));}})();", null);
+                });
+            } catch (Exception ignored) {}
         }
 
         @JavascriptInterface

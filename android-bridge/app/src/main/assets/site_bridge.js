@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.52';
+  const BRIDGE_BUILD = '322.3.53';
 
   let lastSig = '';
   let clockSource = '';
@@ -523,6 +523,9 @@
   function cancelVidSrcPlaybackV3252() {
     const p = vidSrcPlaybackPendingV3252;
     if (p) clearTimeout(p.timer);
+    if (p && p.native) {
+      try { window.SubHubAndroidBridge.cancelVidSrcPlayback(VIDSRC_GUARD_TOKEN, p.id); } catch (_) {}
+    }
     vidSrcPlaybackPendingV3252 = null;
     vidSrcPlaybackStatusV3252('');
   }
@@ -530,7 +533,9 @@
   function requestVidSrcPlaybackV3252() {
     if (vidSrcPlaybackPendingV3252) return false;
     const frame = document.querySelector('#embedFrameContainer iframe');
-    if (!frame || !isVidSrcFrameActiveV328() || !clockSource) return false;
+    if (!frame || !isVidSrcFrameActiveV328()) return false;
+    if (window.SubHubAndroidBridge && typeof window.SubHubAndroidBridge.requestVidSrcPlayback === 'function') return nativeVidSrcPlaybackV3253(frame);
+    if (!clockSource) return false;
     const playing = !(window.__subhubVidSrcPlayingV3222 === true);
     const p = {frame, source:clockSource, playing, timer:0,
       id:Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')};
@@ -553,7 +558,7 @@
 
   function receiveVidSrcPlaybackV3252(ev) {
     const d = ev.data, p = vidSrcPlaybackPendingV3252;
-    if (!p || !d || d.type !== 'SUBHUB_PLAYBACK_ACK_V3252' || d.requestId !== p.id || d.source !== p.source) return;
+    if (!p || p.native || !d || d.type !== 'SUBHUB_PLAYBACK_ACK_V3252' || d.requestId !== p.id || d.source !== p.source) return;
     if (!p.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== p.frame || !isVidSrcFrameActiveV328()) { cancelVidSrcPlaybackV3252(); return; }
     cancelVidSrcPlaybackV3252();
     if (clockSource === p.source) {
@@ -567,6 +572,66 @@
     }
   }
   window.addEventListener('message', receiveVidSrcPlaybackV3252);
+
+  function nativeVidSrcPlaybackV3253(frame) {
+    const p = {frame, src:frame.src, native:true, source:'', timer:0,
+      id:Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')};
+    vidSrcPlaybackPendingV3252 = p;
+    let accepted = false;
+    try { accepted = window.SubHubAndroidBridge.requestVidSrcPlayback(VIDSRC_GUARD_TOKEN, p.id); } catch (_) {}
+    if (!accepted) {
+      cancelVidSrcPlaybackV3252();
+      vidSrcPlaybackStatusV3252('لم يجهز المشغّل بعد. حاول التشغيل مجدداً.');
+      vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},4000);
+      return false;
+    }
+    vidSrcPlaybackStatusV3252('جارٍ الاتصال بالمشغّل…');
+    const box = document.querySelector('#embedPlayerModal .video-modal-box');
+    if (box) wakeVidSrcControlsV3251(box);
+    updateVidSrcTakeoverV3222(window.__subhubVidSrcTimeV3222 || 0, window.__subhubVidSrcDurationV3211 || 0, !clockPaused && !clockEnded);
+    armVidSrcPlaybackTimeoutV3253(p, 3500);
+    return true;
+  }
+
+  function armVidSrcPlaybackTimeoutV3253(p, delay) {
+    clearTimeout(p.timer);
+    p.timer = setTimeout(function () {
+      if (vidSrcPlaybackPendingV3252 !== p) return;
+      cancelVidSrcPlaybackV3252();
+      if (!p.frame.isConnected || p.frame.src !== p.src) return;
+      vidSrcPlaybackStatusV3252(p.started ? 'توقف تحميل الفيديو. اضغط التشغيل لإعادة المحاولة.' : 'تعذّر الاتصال بالمشغّل. اضغط التشغيل لإعادة المحاولة.');
+      updateVidSrcTakeoverV3222(window.__subhubVidSrcTimeV3222 || 0, window.__subhubVidSrcDurationV3211 || 0, !clockPaused && !clockEnded);
+      vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},6000);
+    }, delay);
+  }
+
+  function receiveVidSrcPlaybackV3253(d) {
+    const p = vidSrcPlaybackPendingV3252;
+    if (!p || !p.native || !d || d.requestId !== p.id) return;
+    if (!p.frame.isConnected || p.frame.src !== p.src || document.querySelector('#embedFrameContainer iframe') !== p.frame || !isVidSrcFrameActiveV328()) { cancelVidSrcPlaybackV3252(); return; }
+    p.source = d.source;
+    if (clockSource !== d.source) lastSeq = -1;
+    clockSource = d.source;
+    clockPaused = !!d.paused;
+    clockEnded = !!d.ended;
+    clockWaiting = !!d.waiting;
+    lastSeq = Math.max(lastSeq, Number(d.seq) || 0);
+    if (d.phase === 'preparing') {
+      if (!p.started) {
+        p.started = true;
+        vidSrcPlaybackStatusV3252('جارٍ تحضير الفيديو للتشغيل…');
+        armVidSrcPlaybackTimeoutV3253(p, 16000);
+      }
+    } else {
+      cancelVidSrcPlaybackV3252();
+      if (d.phase === 'error') {
+        vidSrcPlaybackStatusV3252(d.error === 'buffer-timeout' ? 'توقف تحميل الفيديو. اضغط التشغيل لإعادة المحاولة.' : 'تعذّر تشغيل الفيديو. اضغط التشغيل لإعادة المحاولة.');
+        vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},6000);
+      }
+    }
+    updateVidSrcTakeoverV3222(Number(d.currentTime) || 0, Number(d.duration) || window.__subhubVidSrcDurationV3211 || 0, !clockPaused && !clockEnded);
+  }
+  window.SubHubNativePlayback = receiveVidSrcPlaybackV3253;
 
   function wakeVidSrcControlsV3251(box) {
     box.classList.remove('sh-v374-idle');
@@ -2442,7 +2507,7 @@
 
   setInterval(function () {
     syncVidSrcGuardV328(false);
-    if (vidSrcPlaybackPendingV3252 && (!vidSrcPlaybackPendingV3252.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== vidSrcPlaybackPendingV3252.frame)) cancelVidSrcPlaybackV3252();
+    if (vidSrcPlaybackPendingV3252 && (!vidSrcPlaybackPendingV3252.frame.isConnected || (vidSrcPlaybackPendingV3252.native && vidSrcPlaybackPendingV3252.frame.src !== vidSrcPlaybackPendingV3252.src) || document.querySelector('#embedFrameContainer iframe') !== vidSrcPlaybackPendingV3252.frame)) cancelVidSrcPlaybackV3252();
     if (vidSrcQualitySessionV3251) wakeVidSrcControlsV3251(vidSrcQualitySessionV3251.box);
     if (vidSrcQualitySessionV3251 && (!vidSrcQualitySessionV3251.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== vidSrcQualitySessionV3251.frame)) endVidSrcQualityV3251();
     try { syncVidSrcSubPanelLayoutV3230(); } catch (_) {}

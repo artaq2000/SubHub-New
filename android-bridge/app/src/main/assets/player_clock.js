@@ -1097,6 +1097,102 @@
     }
   }
 
+  // Commands and results use Android IPC, independent of provider message handlers.
+  // Capture the media methods before provider scripts can wrap play()/pause().
+  const vidSrcMediaPlayV3253 = typeof HTMLMediaElement !== 'undefined' ? HTMLMediaElement.prototype.play : null;
+  const vidSrcMediaPauseV3253 = typeof HTMLMediaElement !== 'undefined' ? HTMLMediaElement.prototype.pause : null;
+  const vidSrcPlaybackTokenV3253 = '__VIDSRC_GUARD_TOKEN__';
+  const vidSrcCompletedV3253 = new Set();
+  let vidSrcOperationV3253 = null;
+
+  function mediaActionV3253(video, playing) {
+    const method = playing ? vidSrcMediaPlayV3253 : vidSrcMediaPauseV3253;
+    return method ? method.call(video) : (playing ? video.play() : video.pause());
+  }
+
+  function reportVidSrcPlaybackV3253(op, phase, error) {
+    if (vidSrcOperationV3253 !== op) return;
+    const b = bridge();
+    const p = payload(op.video, phase === 'preparing' ? 'waiting' : (op.video.paused ? 'pause' : 'playing'));
+    p.type = 'SUBHUB_NATIVE_PLAYBACK_V3253';
+    p.requestId = op.id;
+    p.phase = phase;
+    p.error = error || '';
+    p.playing = !op.video.paused && !op.video.ended;
+    p.ok = phase === 'complete';
+    if (phase !== 'preparing') {
+      vidSrcOperationV3253 = null;
+      vidSrcCompletedV3253.add(op.id);
+      if (vidSrcCompletedV3253.size > 32) vidSrcCompletedV3253.delete(vidSrcCompletedV3253.values().next().value);
+    }
+    try { b.vidSrcPlaybackResult(vidSrcPlaybackTokenV3253, JSON.stringify(p)); } catch (_) {}
+  }
+
+  function abortVidSrcPlaybackV3253(op, error, report) {
+    if (vidSrcOperationV3253 !== op) return;
+    // pause() cancels an outstanding play promise; it must not start after closing.
+    if (op.playing) { try { mediaActionV3253(op.video, false); } catch (_) {} }
+    if (report) reportVidSrcPlaybackV3253(op, 'error', error);
+    else vidSrcOperationV3253 = null;
+  }
+
+  function startVidSrcPlaybackV3253(d, video) {
+    if (!d.requestId || d.targetSource !== sourceId || vidSrcCompletedV3253.has(d.requestId)) return;
+    if (vidSrcOperationV3253) {
+      if (vidSrcOperationV3253.id === d.requestId) return;
+      abortVidSrcPlaybackV3253(vidSrcOperationV3253, 'cancelled', false);
+    }
+    if (!video || !video.isConnected) return;
+    // Decide once from the real element, never from the page's cached pause icon.
+    const op = {id:d.requestId, video, playing:!!(video.paused || video.ended),
+      startedTime:Number(video.currentTime || 0), deadline:Date.now()+Math.min(14700, Number(d.timeoutMs) || 14700)};
+    vidSrcOperationV3253 = op;
+    try {
+      const result = mediaActionV3253(video, op.playing);
+      if (!op.playing) {
+        reportVidSrcPlaybackV3253(op, video.paused ? 'complete' : 'error', video.paused ? '' : 'pause-failed');
+        return;
+      }
+      // This phase starts only after calling the actual media play method.
+      reportVidSrcPlaybackV3253(op, 'preparing');
+      if (result && typeof result.then === 'function') {
+        result.then(function () {
+          if (vidSrcOperationV3253 !== op) return;
+          if (!video.isConnected || video !== activeVideo) { abortVidSrcPlaybackV3253(op,'media-replaced',true); return; }
+          if (!video.paused && !video.ended && video.readyState >= 2) reportVidSrcPlaybackV3253(op,'complete');
+          else abortVidSrcPlaybackV3253(op,'play-interrupted',true);
+        }, function (error) {
+          if (vidSrcOperationV3253 === op) abortVidSrcPlaybackV3253(op, String(error && error.name || 'play-failed'), true);
+        });
+      }
+    } catch (error) {
+      abortVidSrcPlaybackV3253(op, String(error && error.name || 'play-failed'), true);
+    }
+  }
+
+  function pollVidSrcPlaybackV3253() {
+    if (!isVidSrcChainV3216()) return;
+    const b = bridge();
+    if (!b || typeof b.pollVidSrcPlayback !== 'function') return;
+    try {
+      const d = JSON.parse(b.pollVidSrcPlayback(vidSrcPlaybackTokenV3253, sourceId) || '{}');
+      const op = vidSrcOperationV3253;
+      if (op && d.activeRequest !== op.id) abortVidSrcPlaybackV3253(op,'cancelled',false);
+      if (d.requestId) startVidSrcPlaybackV3253(d, activeVideo);
+    } catch (_) {}
+    const op = vidSrcOperationV3253;
+    if (!op) return;
+    if (!op.video.isConnected || op.video !== activeVideo) { abortVidSrcPlaybackV3253(op,'media-replaced',true); return; }
+    if (op.video.error) { abortVidSrcPlaybackV3253(op,'media-error-'+op.video.error.code,true); return; }
+    // Progress is a second real confirmation for providers with nonstandard play promises.
+    if (!op.video.paused && !op.video.ended && op.video.readyState >= 2
+        && Number(op.video.currentTime) > op.startedTime + 0.02 && !op.video.seeking) {
+      reportVidSrcPlaybackV3253(op,'complete');
+    } else if (Date.now() >= op.deadline) {
+      abortVidSrcPlaybackV3253(op,'buffer-timeout',true);
+    }
+  }
+
   const vidSrcPlaybackCommandsV3252 = new Map();
   function applyVidSrcPlaybackV3252(d, video) {
     if (d.targetSource !== sourceId) return false;
@@ -1443,7 +1539,7 @@
       p.currentTime.toFixed(3), p.paused ? 1 : 0, p.seeking ? 1 : 0, p.waiting ? 1 : 0,
       p.playbackRate.toFixed(3), p.readyState, p.ended ? 1 : 0, p.source
     ].join('|');
-    if (!force && sig === lastSig) return;
+    if (!force && sig === lastSig && now - lastSentAt < 500) return;
     lastSentAt = now;
     lastSig = sig;
     try { b.mediaClock(JSON.stringify(p)); } catch (_) {}
@@ -1865,5 +1961,6 @@
         send(activeVideo, false, 'poll');
       }
     } catch (_) {}
+    try { pollVidSrcPlaybackV3253(); } catch (_) {}
   }, 90);
 })();
