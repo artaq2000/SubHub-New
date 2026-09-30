@@ -1687,6 +1687,7 @@ public class MainActivity extends Activity {
                     final String resumeKey;
                     final String preferredServerKey;
                     final String preferredServerLabel;
+                    final boolean interactiveSource;
                     if ("moviesmod".equals(mode)) {
                         String tmdbId = config.optString("tmdbId");
                         String kind = config.optString("kind", "movie");
@@ -1714,6 +1715,7 @@ public class MainActivity extends Activity {
                         resumeKey = "moviesmod_" + stableKey;
                         preferredServerKey = config.optString("serverKey", "").trim();
                         preferredServerLabel = config.optString("serverLabel", "").trim();
+                        interactiveSource = config.optBoolean("interactiveSource", false);
                         if (preferredServerKey.length() > 80 || preferredServerLabel.length() > 80) return;
                     } else {
                         if (!id.matches("[A-Za-z0-9_-]{1,80}")) return;
@@ -1722,6 +1724,7 @@ public class MainActivity extends Activity {
                         resumeKey = "";
                         preferredServerKey = "";
                         preferredServerLabel = "";
+                        interactiveSource = false;
                     }
 
                     if (directStreamPlayer != null) directStreamPlayer.close();
@@ -1730,7 +1733,7 @@ public class MainActivity extends Activity {
                     if (catalog == null) catalog = new org.json.JSONArray();
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
                             sourceUrl, catalog, resumeKey, allowedHost,
-                            preferredServerKey, preferredServerLabel,
+                            preferredServerKey, preferredServerLabel, interactiveSource,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
