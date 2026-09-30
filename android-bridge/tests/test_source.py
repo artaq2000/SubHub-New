@@ -305,10 +305,12 @@ assert 'media-control-bar' in js
 assert 'data-subhub-provider-ui-hidden-v3234' in js
 assert 'startVidSrcProviderUiSyncV3233();' in site
 
-# 322.3.35 provider center play remains interactive across reopen.
+# 322.3.57 provider center feedback is hidden during SubHub takeover; the
+# Android wake path temporarily disables takeover before forwarding a real tap.
 assert "display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important;}" in site
 assert "media-control-bar" in js
-assert "button[aria-label*=\"play\" i]" not in js[js.find("function scrubVidSrcProviderUiV3234"):js.find("function restoreVidSrcProviderUiV3234")]
+assert "button[aria-label*=\"play\" i]" in js[js.find("function scrubVidSrcProviderUiV3234"):js.find("function restoreVidSrcProviderUiV3234")]
+assert "root.querySelectorAll('button,[role=\"button\"]')" in js
 assert "modal && box" in site
 
 # Direct stream 322.3.41 keeps 322.3.36 playback and polishes only its UI.
