@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.56";
-    private static final int NATIVE_VERSION_CODE = 65;
+    private static final String NATIVE_VERSION = "322.3.57";
+    private static final int NATIVE_VERSION_CODE = 66;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1616,7 +1616,8 @@ public class MainActivity extends Activity {
             ui.postDelayed(() -> {
                 if (webView == null || !isTrustedHomePage()) return;
                 webView.evaluateJavascript(
-                        "(function(){if(window.SubHubNativeResumeV3256){window.SubHubNativeResumeV3256();}"
+                        "(function(){if(window.SubHubNativeResumeV3257){window.SubHubNativeResumeV3257();}"
+                                + "else if(window.SubHubNativeResumeV3256){window.SubHubNativeResumeV3256();}"
                                 + "else if(window.SubHubNativeResumeV3255){window.SubHubNativeResumeV3255();}"
                                 + "else if(window.SubHubNativeResumeV3254){window.SubHubNativeResumeV3254();}})();",
                         ignored -> {
@@ -1820,6 +1821,14 @@ public class MainActivity extends Activity {
                     down.recycle();
                     up.recycle();
                 }
+
+                // A real center tap can wake VidSrc before its old WebView
+                // message channel reconnects. Ask surviving player frames to
+                // re-register shortly after the tap so the user does not need
+                // to press play two or three times manually.
+                ui.postDelayed(() -> refreshVidSrcChannels("refresh"), 260L);
+                ui.postDelayed(() -> refreshVidSrcChannels("refresh"), 760L);
+                ui.postDelayed(() -> refreshVidSrcChannels("refresh"), 1450L);
             });
         }
 
