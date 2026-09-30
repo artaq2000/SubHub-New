@@ -23,6 +23,7 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -63,7 +64,11 @@ import java.util.Map;
  */
 @androidx.media3.common.util.UnstableApi
 public final class DirectStreamPlayer {
-    public interface Listener { void closed(); void subtitleRequested(int index); }
+    public interface Listener {
+        void closed();
+        void subtitleRequested(int index);
+        void serverSelected(String key, String label);
+    }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
     private static final int PANEL = Color.rgb(8, 24, 38);
@@ -90,6 +95,9 @@ public final class DirectStreamPlayer {
     private final String source;
     private final String allowedHost;
     private final String resumeKey;
+    private final String preferredServerKey;
+    private final String preferredServerLabel;
+    private final boolean autoServer;
     private final SharedPreferences prefs;
 
     private WebView probe;
@@ -116,9 +124,14 @@ public final class DirectStreamPlayer {
     private Runnable valueToastHideTask;
     private long pendingResumeMs;
     private long lastResumePersistAt;
+    private String pendingServerKey = "";
+    private String pendingServerLabel = "";
+    private long pendingServerPickedAt = 0L;
+    private boolean serverChoiceReported = false;
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
                               JSONArray catalog, String resumeKey, String allowedHost,
+                              String preferredServerKey, String preferredServerLabel,
                               Listener listener) {
         this.activity = activity;
         this.listener = listener;
@@ -126,6 +139,9 @@ public final class DirectStreamPlayer {
         this.catalog = catalog;
         this.resumeKey = resumeKey == null ? "" : resumeKey.trim();
         this.allowedHost = allowedHost == null ? "" : allowedHost.trim().toLowerCase(Locale.ROOT);
+        this.preferredServerKey = preferredServerKey == null ? "" : preferredServerKey.trim();
+        this.preferredServerLabel = preferredServerLabel == null ? "" : preferredServerLabel.trim();
+        this.autoServer = !this.preferredServerLabel.isEmpty();
         this.prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
         String resumePref = resumePrefKey();
         pendingResumeMs = resumePref.isEmpty() ? 0L : Math.max(0L, prefs.getLong(resumePref, 0L));
@@ -399,8 +415,72 @@ public final class DirectStreamPlayer {
         status.setVisibility(View.GONE);
         if (text == null) return;
         if (text.startsWith("تعذّر") || text.startsWith("لم يُلتقط")) {
-            showTransientValue(text, 1600);
+            showTransientValue(text, 1900);
         }
+    }
+
+    private void showStage(String text) {
+        if (closed || text == null || text.trim().isEmpty()) return;
+        status.setText(text);
+        status.setVisibility(View.VISIBLE);
+        status.bringToFront();
+    }
+
+    private String normalizeServerLabel(String raw) {
+        if (raw == null) return "";
+        String v = raw.replaceAll("\\s+", " ").trim();
+        if (v.length() > 48) v = v.substring(0, 48).trim();
+        return v;
+    }
+
+    private String serverKey(String label) {
+        String v = normalizeServerLabel(label).toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9._-]+", "-")
+                .replaceAll("^-+|-+$", "");
+        return v.length() > 60 ? v.substring(0, 60) : v;
+    }
+
+    private final class SourceChoiceBridge {
+        @JavascriptInterface
+        public void picked(String rawLabel) {
+            final String label = normalizeServerLabel(rawLabel);
+            if (label.isEmpty()) return;
+            final String key = serverKey(label);
+            if (key.isEmpty()) return;
+            handler.post(() -> {
+                if (closed || playing) return;
+                pendingServerKey = key;
+                pendingServerLabel = label;
+                pendingServerPickedAt = SystemClock.elapsedRealtime();
+                showStage("جارٍ الاتصال بالسيرفر " + label + "…");
+            });
+        }
+    }
+
+    private String providerPickerScript() {
+        String wanted = JSONObject.quote(preferredServerLabel);
+        return "(function(){try{"
+                + "if(window.__subhubMoviesmodPickV3262)return;"
+                + "window.__subhubMoviesmodPickV3262=true;"
+                + "var wanted=" + wanted + ";"
+                + "function norm(v){return String(v||'').replace(/\\s+/g,' ').trim().toLowerCase();}"
+                + "function good(t){t=norm(t);if(!t||t.length>48)return false;"
+                + "return !/^(play|watch|home|movies|search|menu|close|download|trailer|next|previous|fullscreen|settings)$/i.test(t);}"
+                + "document.addEventListener('click',function(ev){try{"
+                + "var e=ev.target&&ev.target.closest?ev.target.closest('button,a,[role=button],[data-server]'):null;"
+                + "if(!e)return;var t=String(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim();"
+                + "if(good(t)&&window.SubHubSourceChoice)SubHubSourceChoice.picked(t);"
+                + "}catch(_){}} ,true);"
+                + "if(!wanted)return;"
+                + "var tries=0, timer=setInterval(function(){try{"
+                + "tries++;var want=norm(wanted);var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server]'));"
+                + "var hit=els.find(function(e){var t=norm(e.innerText||e.textContent||'');return t===want||t.indexOf(want)>=0;});"
+                + "if(hit){clearInterval(timer);"
+                + "if(window.SubHubSourceChoice)SubHubSourceChoice.picked(String(hit.innerText||hit.textContent||wanted));"
+                + "setTimeout(function(){try{hit.click();}catch(_){try{hit.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}catch(__){}}},120);"
+                + "}else if(tries>=80){clearInterval(timer);}"
+                + "}catch(_){if(tries>=80)clearInterval(timer);}},250);"
+                + "}catch(_){}})();";
     }
 
     private String resumePrefKey() {
@@ -439,7 +519,8 @@ public final class DirectStreamPlayer {
     }
 
     private void beginCapture() {
-        message("جارٍ التقاط البث… اضغط تشغيل المصدر إذا احتاج ذلك.");
+        if (autoServer) showStage("جارٍ الاتصال بالموقع…");
+        else showStage("اختر السيرفر المناسب من المصدر…");
         probe = new WebView(activity);
         WebSettings s = probe.getSettings();
         s.setJavaScriptEnabled(true);
@@ -450,6 +531,7 @@ public final class DirectStreamPlayer {
         s.setSupportMultipleWindows(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         CookieManager.getInstance().setAcceptThirdPartyCookies(probe, true);
+        probe.addJavascriptInterface(new SourceChoiceBridge(), "SubHubSourceChoice");
         probe.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onCreateWindow(
                     WebView view, boolean isDialog, boolean isUserGesture,
@@ -459,6 +541,12 @@ public final class DirectStreamPlayer {
             }
         });
         probe.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView v, String url) {
+                if (closed || v != probe) return;
+                if (autoServer) showStage("جارٍ البحث عن السيرفر المحفوظ…");
+                try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
+            }
+
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 String host = u.getHost();
@@ -484,11 +572,16 @@ public final class DirectStreamPlayer {
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
         p.topMargin = dp(60);
         root.addView(probe, 0, p);
+        if (autoServer) probe.setAlpha(0.02f);
         probe.loadUrl(source);
 
         handler.postDelayed(() -> {
             if (!closed && !playing) {
-                message("لم يُلتقط بث بعد. اضغط تشغيل المصدر، أو أغلق وأعد المحاولة.");
+                if (autoServer) {
+                    message("تعذّر الاتصال بالسيرفر المحفوظ. يمكن للمالك اختيار سيرفر آخر واعتماده.");
+                } else {
+                    message("لم يُلتقط بث بعد. اختر سيرفراً آخر أو أعد المحاولة.");
+                }
             }
         }, 45000);
     }
@@ -502,6 +595,20 @@ public final class DirectStreamPlayer {
             candidateHeaders = headers;
         }
         if (first) {
+            showStage("تم العثور على البث… جارٍ تجهيز الفيديو…");
+            if (!serverChoiceReported) {
+                String key = pendingServerKey;
+                String label = pendingServerLabel;
+                if ((key.isEmpty() || label.isEmpty()) && autoServer) {
+                    key = preferredServerKey.isEmpty() ? serverKey(preferredServerLabel) : preferredServerKey;
+                    label = preferredServerLabel;
+                }
+                long age = SystemClock.elapsedRealtime() - pendingServerPickedAt;
+                if (!key.isEmpty() && !label.isEmpty() && (autoServer || (age >= 0L && age < 30000L))) {
+                    serverChoiceReported = true;
+                    listener.serverSelected(key, label);
+                }
+            }
             handler.postDelayed(() -> {
                 if (!closed && !playing) startStream();
             }, 1400);
@@ -530,6 +637,7 @@ public final class DirectStreamPlayer {
     private void startStream() {
         if (candidate == null || closed) return;
         playing = true;
+        showStage("جارٍ تشغيل الفيديو…");
 
         String userAgent = header("User-Agent", WebSettings.getDefaultUserAgent(activity));
         String referer = header("Referer", source);
@@ -588,6 +696,7 @@ public final class DirectStreamPlayer {
                         clearResumePosition();
                     }
                     status.setVisibility(View.GONE);
+                    showTransientValue("تم تشغيل الفيديو", 700);
                 } else if (state == Player.STATE_BUFFERING) {
                     message("جارٍ تحميل البث…");
                 } else if (state == Player.STATE_ENDED) {
