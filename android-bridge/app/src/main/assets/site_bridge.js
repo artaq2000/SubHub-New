@@ -295,7 +295,7 @@
         s.id = 'subhub-vidsrc-provider-style-v3233';
         s.textContent = [
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar .video-top-btn,',
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar button,',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231{',
           'width:48px!important;height:48px!important;min-width:48px!important;max-width:48px!important;',
           'padding:0!important;border:0!important;border-radius:50%!important;',
@@ -873,7 +873,7 @@
       #embedPlayerModal #subhub-vidsrc-takeover-v3222.controls-hidden .sh-v3222-center{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:10.5px;width:48px!important;min-width:48px!important;max-width:48px!important;height:48px!important;padding:0!important;flex:0 0 48px!important}
       #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,
-      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar .video-top-btn{width:48px!important;height:48px!important;min-width:48px!important;max-width:48px!important;padding:0!important;border-radius:50%!important;align-items:center!important;justify-content:center!important}
+      #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar button{width:48px!important;height:48px!important;min-width:48px!important;max-width:48px!important;padding:0!important;border-radius:50%!important;align-items:center!important;justify-content:center!important}
       #embedPlayerModal .sh-v3258-quality-list{position:absolute;display:flex;flex-direction:column;gap:5px;padding:6px;min-width:76px;max-width:96px;background:rgba(7,11,18,.95);border:1px solid rgba(255,255,255,.15);border-radius:13px;box-shadow:0 8px 24px rgba(0,0,0,.42);backdrop-filter:blur(10px);z-index:2147483647;pointer-events:auto!important}
       #embedPlayerModal .sh-v3258-quality-list button{width:100%;height:36px;padding:0 9px;border:0;border-radius:9px;background:rgba(255,255,255,.08);color:#fff;font:800 12px/1 system-ui,sans-serif;white-space:nowrap}
       #embedPlayerModal .sh-v3258-quality-list button[aria-checked="true"]{background:#f4b83f;color:#17120a}
