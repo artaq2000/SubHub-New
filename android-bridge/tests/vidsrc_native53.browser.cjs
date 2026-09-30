@@ -46,7 +46,7 @@ const fixture=n=>fs.readFileSync(path.join(__dirname,'fixtures',n),'utf8');
  const fr=document.createElement('iframe');fr.src='https://vidsrc.to/embed/test';fr.allow='autoplay';fr.style.cssText='width:100%;height:100%;position:absolute;border:0';document.querySelector('#embedFrameContainer').appendChild(fr);
  },fixture('web374_embed.html'));
  const methods=['isVidSrcFrameActiveV328','sendVidSrcSafeCommandV3211','wakeVidSrcControlsV3251','syncVidSrcViewportControlsV3251','installVidSrcViewportControlsV3251','fmtVidSrcTimeV3222','ensureVidSrcTakeoverV3222','updateVidSrcTakeoverV3222','vidSrcPlaybackStatusV3252','cancelVidSrcPlaybackV3252','requestVidSrcPlaybackV3252','nativeVidSrcPlaybackV3253','armVidSrcPlaybackTimeoutV3253','receiveVidSrcPlaybackV3253'];
- await page.addScriptTag({content:`let vidSrcTakeoverDraggingV3222=false,vidSrcTakeoverHideTimerV3222=0,clockReadyState=2,vidSrcPlaybackPendingV3252=null,vidSrcPlaybackStatusTimerV3252=0,clockSource='intentionally-stale',clockPaused=true,clockWaiting=false,clockEnded=false,lastSeq=1;const VIDSRC_GUARD_TOKEN='test';
+ await page.addScriptTag({content:`let vidSrcTakeoverDraggingV3222=false,vidSrcTakeoverHideTimerV3222=0,clockReadyState=2,vidSrcPlaybackPendingV3252=null,vidSrcPlaybackStatusTimerV3252=0,vidSrcWakeRetryTimerV3257=0,clockSource='intentionally-stale',clockPaused=true,clockWaiting=false,clockEnded=false,lastSeq=1;const VIDSRC_GUARD_TOKEN='test';
  ${methods.map(n=>fn(site,n)).join('\n')}
  window.SubHubNativePlayback=receiveVidSrcPlaybackV3253;
  const root=ensureVidSrcTakeoverV3222();root.classList.add('on');updateVidSrcTakeoverV3222(120,3600,false);`});
