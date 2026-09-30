@@ -25,7 +25,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.56'" in site
+assert "BRIDGE_BUILD = '322.3.57'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,14 +39,19 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 65" in gradle
-assert "versionName '322.3.56'" in gradle
-assert 'SubHubNativeResumeV3256' in site
+assert "versionCode 66" in gradle
+assert "versionName '322.3.57'" in gradle
+assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
+assert 'vidSrcWakeRetryCountV3257' in site
+assert 'vidSrcWakeRetryCountV3257 < 3' in site
+assert "clockReadyState>=1 && !vidSrcPlaybackPendingV3252" in site
+assert "vidSrcControlsDeadlineV3254=Date.now()+900" in site
 assert "sendVidSrcSafeCommandV3211('takeover', {active:false})" in site
 assert "root.style.setProperty('display', 'none', 'important')" in site
 assert 'retryDelivery' in main
 assert 'activeClockReadyState = 0' in main
+assert 'refreshVidSrcChannels("refresh")' in main
 assert '.sh-v3222-play{display:none!important' in site
 assert '#subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3222-center{display:flex!important' in site
 assert 'recoverVidSrcPlaybackV3254(p)) return' not in site
