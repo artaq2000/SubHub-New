@@ -378,7 +378,7 @@ assert 'moviesmodServerKey' in moviesmod
 assert 'moviesmodServerLabel' in moviesmod
 assert 'moviesmodEnabled' in moviesmod
 assert 'isSubscriber' in moviesmod
-assert 'جاري جلب رابط جديد عند كل تشغيل' in moviesmod
+assert 'يتم جلب رابط جديد عند كل تشغيل' in moviesmod
 assert '__subhubMoviesmodServerSelected' in moviesmod
 assert 'serverKey: useSaved ? saved.key' in moviesmod
 assert 'openMoviesmod(true)' in moviesmod
