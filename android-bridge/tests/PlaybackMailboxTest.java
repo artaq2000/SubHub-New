@@ -31,12 +31,18 @@ public final class PlaybackMailboxTest {
         check(m.liveRequest("new-leaf", 206).equals("reopened"));
         m.cancel("reopened");
         check(m.liveRequest("new-leaf", 207).isEmpty());
+        check(m.begin("stale-proxy", "old-leaf", 300));
+        PlaybackMailbox.Request stale = m.take("old-leaf", "old-leaf", 301);
+        check(stale != null && stale.id.equals("stale-proxy"));
+        check(m.retryDelivery("stale-proxy", "old-leaf", 302));
+        check(m.take("fresh-leaf", "fresh-leaf", 303) != null);
+        check(m.accept("stale-proxy", "fresh-leaf", true, 304));
         check(m.begin("unreachable", "leaf", 1000));
         check(m.take("leaf", "leaf", 4000) == null);
         check(m.begin("buffering", "leaf", 5000));
         check(m.take("leaf", "leaf", 5001) != null);
         check(!m.accept("buffering", "leaf", true, 20001));
         check(m.liveRequest("leaf", 20002).isEmpty());
-        System.out.println("Native mailbox: exactly-once delivery, source handoff, repeat resume, close/reopen, expiry: PASS");
+        System.out.println("Native mailbox: exactly-once delivery, stale-proxy retry, source handoff, repeat resume, close/reopen, expiry: PASS");
     }
 }
