@@ -273,18 +273,24 @@
       const stableKey = stableRaw.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 100)
         || ('tmdb_' + resolved.kind + '_' + resolved.id);
       const session = 'moviesmod_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-      const useSaved = !forceManual && !!saved.enabled && !!saved.label && !!saved.pageUrl;
+      // Owner setup is deliberately manual: no automatic Watch Now, server
+      // selection, or retry clicking. Subscribers use the saved server page
+      // and saved server identity automatically in a hidden capture WebView.
+      const useSaved = subscriber && !forceManual
+        && !!saved.enabled && !!saved.label && !!saved.pageUrl;
+      const ownerPageUrl = owner && !forceManual ? (saved.pageUrl || '') : '';
+      const startPageUrl = useSaved ? saved.pageUrl : ownerPageUrl;
 
       active = {
         session,
         movieId: String(selected.id || ''),
         catalog,
         owner,
-        manualChoice: owner && !useSaved,
+        manualChoice: owner,
         usedSavedServer: useSaved,
         serverKey: useSaved ? saved.key : '',
         serverLabel: useSaved ? saved.label : '',
-        serverPageUrl: saved.pageUrl || ''
+        serverPageUrl: startPageUrl
       };
 
       bridge.openDirectStream(token, JSON.stringify({
@@ -294,9 +300,10 @@
         resumeKey: stableKey,
         tmdbId: resolved.id,
         kind: resolved.kind,
+        interactiveSource: owner,
         serverKey: useSaved ? saved.key : '',
         serverLabel: useSaved ? saved.label : '',
-        serverPageUrl: saved.pageUrl || '',
+        serverPageUrl: startPageUrl,
         catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub') })),
         defaultIndex: catalog.findIndex(x => x.isDefault === true)
       }));
