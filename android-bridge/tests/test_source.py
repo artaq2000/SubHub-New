@@ -498,3 +498,15 @@ assert '!serverListRequested' in direct
 assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
 assert 'subscriberStartupAttempt' in direct
+
+
+# 322.3.70: subscriber startup timeout/retry flow.
+assert 'subscriberStartupAttempt' in direct
+assert 'startSubscriberStartupTimer' in direct
+assert 'subscriberStartupTick' in direct
+assert 'retrySubscriberStartup' in direct
+assert 'subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + 10000L' in direct
+assert 'arabicDigits' in direct
+assert 'subscriberStartupAttempt >= 2' in direct
+assert 'interactiveSource ? 1200L : 300L' in direct
+assert 'playbackReady = true' in direct
