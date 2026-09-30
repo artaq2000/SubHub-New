@@ -25,12 +25,39 @@ const root={parentElement:box,style:{setProperty:(k,v)=>values[k]=v,getPropertyV
 const g={document:{getElementById:()=>viewport}};vm.createContext(g);vm.runInContext(fn(site,'syncVidSrcViewportControlsV3251'),g);
 g.syncVidSrcViewportControlsV3251(root);const first={...values};height=1100;g.syncVidSrcViewportControlsV3251(root);assert.deepEqual(values,first);assert.equal(values.height,'202.5px');
 console.log('Opening subtitle settings does not extend video control bounds: PASS');
-// Quality entry restores hidden source controls, opens once, then cleans up.
-const classes=new Set(),listeners=new Map();let clicks=0,restored=0,scrubbed=0;
-const button={getAttribute:()=>null,click(){clicks++}};
-const q={document:{documentElement:{classList:{add:c=>classes.add(c),remove:c=>classes.delete(c)}},getElementById:()=>({}),addEventListener:(n,f)=>listeners.set(n,f),removeEventListener:n=>listeners.delete(n)},window:{top:{postMessage(){}}},activeVidSrcVideoV3227:()=>video,findVidSrcProviderButtonV3231:()=>button,restoreVidSrcProviderUiV3234:()=>restored++,setVidSrcProviderUiScrubV3234:()=>scrubbed++,vidSrcTakeoverActiveV3224:true,setTimeout:()=>1,clearTimeout(){}};
-vm.createContext(q);vm.runInContext('let vidSrcQualityMenuV3251=null;'+['reportVidSrcQualityV3251','closeVidSrcQualityV3251','openVidSrcProviderQualityV3231'].map(n=>fn(clock,n)).join('\n'),q);
-assert.equal(q.openVidSrcProviderQualityV3231({requestId:'session'}),true);assert.equal(clicks,1);assert.equal(restored,1);assert(classes.has('subhub-provider-menu-v3251'));
-q.closeVidSrcQualityV3251();assert.equal(scrubbed,1);assert.equal(classes.size,0);assert.equal(listeners.size,0);
-console.log('Quality opens source settings and restores SubHub controls on close: PASS');
+// Quality entry reads the provider's hidden qualities, reports them to SubHub,
+ // selects the requested provider item, then restores the protected controls.
+ const classes=new Set(),messages=[];let clicks=0,selectedClicks=0,restored=0,scrubbed=0;
+ const button={getAttribute:()=>null,click(){clicks++}};
+ const q360={textContent:'360p',className:'',isConnected:true,getAttribute:n=>n==='aria-checked'?'false':null,click(){selectedClicks++}};
+ const q720={textContent:'720p',className:'selected',isConnected:true,getAttribute:n=>n==='aria-checked'?'true':null,click(){selectedClicks++}};
+ const q1080={textContent:'1080p',className:'',isConnected:true,getAttribute:n=>n==='aria-checked'?'false':null,click(){selectedClicks++}};
+ const q={
+   document:{
+     documentElement:{classList:{add:c=>classes.add(c),remove:c=>classes.delete(c)}},
+     getElementById:()=>({}),
+     querySelectorAll:()=>[]
+   },
+   window:{top:{postMessage:m=>messages.push(m)}},
+   activeVidSrcVideoV3227:()=>video,
+   findVidSrcProviderButtonV3231:()=>button,
+   restoreVidSrcProviderUiV3234:()=>restored++,
+   setVidSrcProviderUiScrubV3234:()=>scrubbed++,
+   vidSrcTakeoverActiveV3224:true,
+   vidSrcDeepQueryAllV3226:()=>[q360,q720,q1080],
+   setTimeout:f=>(f(),1),
+   clearTimeout(){}
+ };
+ vm.createContext(q);
+ vm.runInContext('let vidSrcQualityMenuV3251=null;'+[
+   'vidSrcQualityKeyV3258','collectVidSrcQualityOptionsV3258','findVidSrcQualitySubmenuV3258',
+   'reportVidSrcQualityV3251','closeVidSrcQualityV3251','selectVidSrcProviderQualityV3258',
+   'openVidSrcProviderQualityV3231'
+ ].map(n=>fn(clock,n)).join('\n'),q);
+ assert.equal(q.openVidSrcProviderQualityV3231({requestId:'session'}),true);
+ assert.equal(clicks,1);assert.equal(restored,1);
+ assert(messages.some(m=>m.open===true&&m.options.join(',')==='360p,720p,1080p'&&m.selected==='720p'));
+ assert.equal(q.selectVidSrcProviderQualityV3258({requestId:'session',quality:'1080p'}),true);
+ assert.equal(selectedClicks,1);assert(scrubbed>=1);
+ console.log('Quality reads provider values, selects a hidden provider option and restores SubHub controls: PASS');
 module.exports={fn,site,clock};
