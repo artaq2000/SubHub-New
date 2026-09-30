@@ -1017,19 +1017,67 @@
     return true;
   }
 
-  function findVidSrcProviderButtonV3231(kind) {
+  function vidSrcProviderButtonScoreV3260(el, kind) {
+    if (!el) return -10000;
+    let score = 0;
+    try {
+      if (deepVisibleV3227(el)) score += 100;
+      else score -= 20;
+
+      if (el.disabled || String(el.getAttribute && el.getAttribute('aria-disabled') || '') === 'true') score -= 120;
+
+      const meta = [
+        deepTextV3227(el),
+        el.getAttribute && el.getAttribute('aria-label'),
+        el.getAttribute && el.getAttribute('title'),
+        el.getAttribute && el.getAttribute('data-testid'),
+        el.getAttribute && el.getAttribute('data-plyr'),
+        el.id,
+        typeof el.className === 'string' ? el.className : '',
+        String(el.innerHTML || '').slice(0,240)
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      if (kind === 'quality') {
+        if (/settings?|quality|resolution|gear|cog/.test(meta)) score += 55;
+        if (/caption|subtitle|fullscreen|play|pause/.test(meta)) score -= 35;
+        if (String(el.getAttribute && el.getAttribute('aria-haspopup') || '').toLowerCase() === 'menu') score += 10;
+      } else {
+        if (/caption|subtitle|\bcc\b/.test(meta)) score += 55;
+        if (/settings?|quality|resolution/.test(meta)) score -= 20;
+      }
+
+      const video = activeVidSrcVideoV3227();
+      if (video && deepVisibleV3227(el)) {
+        const vr = video.getBoundingClientRect();
+        const er = el.getBoundingClientRect();
+        const cx = er.left + er.width / 2;
+        const cy = er.top + er.height / 2;
+        if (cx >= vr.left - 8 && cx <= vr.right + 8 && cy >= vr.top - 8 && cy <= vr.bottom + 8) score += 12;
+        if (cy >= vr.top + vr.height * 0.55) score += 6;
+      }
+    } catch (_) {}
+    return score;
+  }
+
+  function vidSrcProviderButtonCandidatesV3260(kind) {
     const selectors = kind === 'quality'
       ? [
           'button[aria-label*="settings" i]',
           '[role="button"][aria-label*="settings" i]',
           'button[title*="settings" i]',
+          '[role="button"][title*="settings" i]',
           '.vjs-settings-control',
           '.jw-icon-settings',
           '[data-plyr="settings"]',
           'button[aria-label*="quality" i]',
+          '[role="button"][aria-label*="quality" i]',
           'button[title*="quality" i]',
+          '[role="button"][title*="quality" i]',
           '[data-testid*="settings" i]',
-          'button[class*="settings" i]'
+          '[class*="settings" i]',
+          '[class*="gear" i]',
+          '[class*="cog" i]',
+          '[class*="quality" i]'
         ]
       : [
           'button[aria-label*="caption" i]',
@@ -1043,33 +1091,49 @@
           '[data-plyr="captions"]'
         ];
 
-    const roots = typeof vidSrcDeepRootsV3226 === 'function'
-      ? vidSrcDeepRootsV3226()
-      : [document];
+    const out = [];
+    const seen = new WeakSet();
+    const roots = typeof vidSrcDeepRootsV3226 === 'function' ? vidSrcDeepRootsV3226() : [document];
 
-    for (const root of roots) {
-      for (const sel of selectors) {
-        try {
-          const el = root.querySelector(sel);
-          if (el) return el;
-        } catch (_) {}
-      }
-    }
+    const add = function (el) {
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      out.push(el);
+    };
+
+    roots.forEach(function (root) {
+      selectors.forEach(function (sel) {
+        try { root.querySelectorAll(sel).forEach(add); } catch (_) {}
+      });
+    });
 
     const all = typeof vidSrcDeepQueryAllV3226 === 'function'
       ? vidSrcDeepQueryAllV3226('button,[role="button"]')
       : Array.from(document.querySelectorAll('button,[role="button"]'));
 
-    for (const el of all) {
+    all.forEach(function (el) {
       const t = deepTextV3227(el);
+      let meta = t;
+      try {
+        meta += ' ' + String(el.getAttribute('aria-label') || '') +
+          ' ' + String(el.getAttribute('title') || '') +
+          ' ' + String(el.id || '') +
+          ' ' + (typeof el.className === 'string' ? el.className : '') +
+          ' ' + String(el.innerHTML || '').slice(0,180);
+      } catch (_) {}
       if (kind === 'quality') {
-        if (t === 'settings' || t.indexOf('setting') >= 0 || t.indexOf('quality') >= 0) return el;
-      } else {
-        if (t === 'cc' || t.indexOf('subtitle') >= 0 || t.indexOf('caption') >= 0) return el;
-      }
-    }
+        if (/settings?|quality|resolution|gear|cog/i.test(meta)) add(el);
+      } else if (/caption|subtitle|\bcc\b/i.test(meta)) add(el);
+    });
 
-    return null;
+    return out.sort(function (a,b) {
+      return vidSrcProviderButtonScoreV3260(b,kind) - vidSrcProviderButtonScoreV3260(a,kind);
+    });
+  }
+
+  function findVidSrcProviderButtonV3231(kind) {
+    const list = vidSrcProviderButtonCandidatesV3260(kind);
+    return list.length ? list[0] : null;
   }
 
   let vidSrcQualityMenuV3251 = null;
@@ -1125,8 +1189,16 @@
 
     const best = new Map();
     for (const el of all) {
-      const raw = String((el && (el.textContent || el.getAttribute && el.getAttribute('aria-label'))) || '')
-        .replace(/\s+/g,' ').trim();
+      const raw = String((el && (
+        el.textContent ||
+        el.getAttribute && (
+          el.getAttribute('aria-label') ||
+          el.getAttribute('title') ||
+          el.getAttribute('data-quality') ||
+          el.getAttribute('data-value') ||
+          el.getAttribute('value')
+        )
+      )) || '').replace(/\s+/g,' ').trim();
       if (!raw || raw.length > 36) continue;
       const key = vidSrcQualityKeyV3259(raw);
       if (!key) continue;
@@ -1224,16 +1296,24 @@
   function openVidSrcProviderQualityV3231(d) {
     try {
       if (!activeVidSrcVideoV3227() || !d.requestId) return false;
-      const settings = findVidSrcProviderButtonV3231('quality');
-      if (!settings) return false;
 
       closeVidSrcQualityV3251();
+
+      // 322.3.60: reveal the provider toolbar first, then choose the real
+      // visible gear/settings button. Older code picked the first matching
+      // hidden duplicate, so the real quality menu never opened.
+      restoreVidSrcProviderUiV3234();
+      const settings = findVidSrcProviderButtonV3231('quality');
+      if (!settings) {
+        setVidSrcProviderUiScrubV3234(vidSrcTakeoverActiveV3224);
+        return false;
+      }
+
       const session = {
         id:d.requestId, button:settings, timer:0, probeTimer:0,
         options:[], submenuOpened:false
       };
       vidSrcQualityMenuV3251 = session;
-      restoreVidSrcProviderUiV3234();
 
       let style = document.getElementById('subhub-provider-menu-style-v3251');
       if (!style) {
