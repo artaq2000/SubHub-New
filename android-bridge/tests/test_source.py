@@ -427,7 +427,7 @@ assert 'querySelectorAll(\'video\')' in direct
 
 # 322.3.65: Moviesmod server buttons are discovered from DOM and selected by identity.
 assert 'showServerChooser' in direct
-assert 'Sيرفرات Moviesmod' in direct
+assert 'سيرفرات Moviesmod' in direct
 assert 'window.__subhubSelectProvider' in direct
 assert 'SubHubSourceChoice.servers' in direct
 assert 'SubHubSourceChoice.resolved' in direct
