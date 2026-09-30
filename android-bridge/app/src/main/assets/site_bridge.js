@@ -374,6 +374,24 @@
         // same existing round-button class as CC/fullscreen/close.
         q.style.setProperty('order', '', '');
         q.removeAttribute('hidden');
+
+        // Match the existing round toolbar button exactly without touching
+        // the toolbar, three-dot trigger, or video frame geometry.
+        const refButton =
+          (closeEl && closeEl.parentElement === controls) ? closeEl :
+          (cc && cc.parentElement === controls ? cc : document.getElementById('embedFsBtn'));
+        if (refButton && typeof refButton.getBoundingClientRect === 'function') {
+          const rr = refButton.getBoundingClientRect();
+          if (rr && rr.width > 0 && rr.height > 0) {
+            q.style.setProperty('width', rr.width + 'px', 'important');
+            q.style.setProperty('min-width', rr.width + 'px', 'important');
+            q.style.setProperty('max-width', rr.width + 'px', 'important');
+            q.style.setProperty('height', rr.height + 'px', 'important');
+            q.style.setProperty('padding', '0', 'important');
+            q.style.setProperty('border-radius', '50%', 'important');
+            q.style.setProperty('flex', '0 0 ' + rr.width + 'px', 'important');
+          }
+        }
       } catch (_) {}
 
       try {
