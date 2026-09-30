@@ -25,6 +25,35 @@ const root={parentElement:box,style:{setProperty:(k,v)=>values[k]=v,getPropertyV
 const g={document:{getElementById:()=>viewport}};vm.createContext(g);vm.runInContext(fn(site,'syncVidSrcViewportControlsV3251'),g);
 g.syncVidSrcViewportControlsV3251(root);const first={...values};height=1100;g.syncVidSrcViewportControlsV3251(root);assert.deepEqual(values,first);assert.equal(values.height,'202.5px');
 console.log('Opening subtitle settings does not extend video control bounds: PASS');
+// Quality gear selection must prefer the real visible provider button over
+// a hidden duplicate left in the player DOM.
+{
+ const mk=(name,visible)=>({
+   visible,textContent:'',innerHTML:'<svg class="settings-icon"></svg>',
+   id:name,className:'settings-button',disabled:false,
+   getAttribute:n=>n==='aria-label'?'Settings':null,
+   getBoundingClientRect:()=>({left:300,top:160,width:40,height:40,right:340,bottom:200})
+ });
+ const hiddenGear=mk('hidden-settings',false),visibleGear=mk('visible-settings',true);
+ const root={querySelectorAll:()=>[hiddenGear,visibleGear]};
+ const ctx={
+   document:{querySelectorAll:()=>[hiddenGear,visibleGear]},
+   vidSrcDeepRootsV3226:()=>[root],
+   vidSrcDeepQueryAllV3226:()=>[hiddenGear,visibleGear],
+   deepVisibleV3227:el=>!!el.visible,
+   deepTextV3227:el=>String(el.getAttribute('aria-label')||'').toLowerCase(),
+   activeVidSrcVideoV3227:()=>({getBoundingClientRect:()=>({left:0,top:0,width:360,height:202,right:360,bottom:202})})
+ };
+ vm.createContext(ctx);
+ vm.runInContext([
+   fn(clock,'vidSrcProviderButtonScoreV3260'),
+   fn(clock,'vidSrcProviderButtonCandidatesV3260'),
+   fn(clock,'findVidSrcProviderButtonV3231')
+ ].join('\n'),ctx);
+ assert.equal(ctx.findVidSrcProviderButtonV3231('quality'),visibleGear);
+ console.log('Quality gear prefers the visible provider settings control: PASS');
+}
+
 // Quality entry reads the provider's real options, reports them to SubHub,
  // selects the requested provider option, then restores the protected controls.
  const classes=new Set(),messages=[];let clicks=0,chosen=0,restored=0,scrubbed=0;
