@@ -469,6 +469,7 @@ public final class DirectStreamPlayer {
         final String key = serverKey(label);
         if (key.isEmpty()) return;
         if (closed || playing) return;
+        selectedProviderLabel = label;
         pendingServerKey = key;
         pendingServerLabel = label;
         pendingServerPickedAt = SystemClock.elapsedRealtime();
@@ -771,9 +772,15 @@ public final class DirectStreamPlayer {
                 String host = u.getHost();
                 if (!"https".equals(u.getScheme())) return true;
                 if (!r.isForMainFrame()) return false;
-                // Keep the provider page in place. Server iframes/resources are still
-                // allowed, but ad clicks cannot replace the top capture page.
-                return !isAllowedMainHost(host);
+                if (isAllowedMainHost(host)) return false;
+                if (!selectedProviderLabel.isEmpty() && host != null && !host.trim().isEmpty()) {
+                    resolvedMainHost = host.toLowerCase(Locale.ROOT);
+                    showStage("جارٍ فتح السيرفر " + selectedProviderLabel + "…");
+                    return false;
+                }
+                // Before a server is selected, keep external ad navigations from
+                // replacing the Moviesmod setup page.
+                return true;
             }
 
             @Override public WebResourceResponse shouldInterceptRequest(
