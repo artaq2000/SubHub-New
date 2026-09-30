@@ -384,7 +384,7 @@ assert 'serverKey: useSaved ? saved.key' in moviesmod
 assert 'openMoviesmod(true)' in moviesmod
 assert 'preferredServerKey' in main
 assert 'preferredServerLabel' in main
-assert 'serverSelected(String key, String label)' in direct
+assert 'serverSelected(String key, String label, String serverPageUrl)' in direct
 assert 'SubHubSourceChoice' in direct
 assert 'providerPickerScript' in direct
 assert 'أغلق أي إعلان أو تحقق ظاهر' in direct
