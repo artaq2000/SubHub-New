@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.54";
-    private static final int NATIVE_VERSION_CODE = 63;
+    private static final String NATIVE_VERSION = "322.3.55";
+    private static final int NATIVE_VERSION_CODE = 64;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -279,6 +279,8 @@ public class MainActivity extends Activity {
                             activeClockSource = "";
                             activeClockSeq = -1L;
                             activeClockSeenAt = 0L;
+                            activeClockReadyState = 0;
+                            activeClockScore = -100000.0;
                             pendingClockRaw = null;
                         }
                     }
@@ -1239,7 +1241,13 @@ public class MainActivity extends Activity {
         if (reply == null) return;
         PlaybackMailbox.Request request = playbackMailbox.take(source, source, SystemClock.elapsedRealtime());
         if (request == null) return;
-        try { reply.postMessage(playbackCommand(request, source).toString()); } catch (Exception ignored) {}
+        try {
+            reply.postMessage(playbackCommand(request, source).toString());
+        } catch (Exception ignored) {
+            playbackReplies.remove(source);
+            playbackMailbox.retryDelivery(request.id, source, SystemClock.elapsedRealtime());
+            resetVidSrcClock();
+        }
     }
 
     private JSONObject playbackCommand(PlaybackMailbox.Request request, String source) throws Exception {
@@ -1253,8 +1261,14 @@ public class MainActivity extends Activity {
     }
 
     private void refreshVidSrcChannels(String command) {
-        for (JavaScriptReplyProxy reply : new ArrayList<>(playbackReplies.values())) {
-            try { reply.postMessage("{\"command\":\"" + command + "\"}"); } catch (Exception ignored) {}
+        for (String source : new ArrayList<>(playbackReplies.keySet())) {
+            JavaScriptReplyProxy reply = playbackReplies.get(source);
+            if (reply == null) continue;
+            try {
+                reply.postMessage("{\"command\":\"" + command + "\"}");
+            } catch (Exception ignored) {
+                playbackReplies.remove(source);
+            }
         }
     }
 
@@ -1264,6 +1278,7 @@ public class MainActivity extends Activity {
             activeClockSeq = -1L;
             activeClockSeenAt = 0L;
             activeClockScore = -100000;
+            activeClockReadyState = 0;
             pendingClockRaw = null;
         }
     }
@@ -1598,11 +1613,15 @@ public class MainActivity extends Activity {
         if (webView != null) {
             webView.onResume();
             webView.resumeTimers();
-            ui.post(() -> {
+            ui.postDelayed(() -> {
                 if (webView == null || !isTrustedHomePage()) return;
                 refreshVidSrcChannels("refresh");
-                webView.evaluateJavascript("window.SubHubNativeResumeV3254 && window.SubHubNativeResumeV3254();", null);
-            });
+                webView.evaluateJavascript(
+                        "(function(){if(window.SubHubNativeResumeV3255){window.SubHubNativeResumeV3255();}"
+                                + "else if(window.SubHubNativeResumeV3254){window.SubHubNativeResumeV3254();}})();",
+                        null
+                );
+            }, 120L);
         }
         if (directStreamPlayer != null) {
             ui.postDelayed(() -> {
@@ -1867,7 +1886,7 @@ public class MainActivity extends Activity {
             playbackMailbox.clear();
             resetVidSrcClock();
             boolean accepted = playbackMailbox.beginResume(requestId, "", time, SystemClock.elapsedRealtime());
-            ui.post(() -> { refreshVidSrcChannels("cancel"); playbackReplies.clear(); });
+            ui.post(() -> refreshVidSrcChannels("cancel"));
             return accepted;
         }
 
