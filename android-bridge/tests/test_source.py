@@ -479,7 +479,7 @@ assert 'savedServerPageUrl' in main
 assert 'resolvedSourceUrl = savedUri.toString()' in main
 assert 'moviesmodServerPageUrl' in moviesmod
 assert 'normalizeServerPageUrl' in moviesmod
-assert "serverPageUrl: saved.pageUrl || ''" in moviesmod
+assert 'serverPageUrl: startPageUrl' in moviesmod
 assert 'rawPageUrl' in moviesmod
 assert 'pageUrl' in moviesmod
 
