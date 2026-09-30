@@ -57,6 +57,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Working 322.3.36 direct-stream player with UI polish only.
@@ -128,6 +129,7 @@ public final class DirectStreamPlayer {
     private String pendingServerLabel = "";
     private long pendingServerPickedAt = 0L;
     private boolean serverChoiceReported = false;
+    private final String sourceChoiceToken = UUID.randomUUID().toString().replace("-", "");
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
                               JSONArray catalog, String resumeKey, String allowedHost,
@@ -442,7 +444,8 @@ public final class DirectStreamPlayer {
 
     private final class SourceChoiceBridge {
         @JavascriptInterface
-        public void picked(String rawLabel) {
+        public void picked(String token, String rawLabel) {
+            if (!sourceChoiceToken.equals(token)) return;
             final String label = normalizeServerLabel(rawLabel);
             if (label.isEmpty()) return;
             final String key = serverKey(label);
@@ -459,24 +462,25 @@ public final class DirectStreamPlayer {
 
     private String providerPickerScript() {
         String wanted = JSONObject.quote(preferredServerLabel);
+        String bridgeToken = JSONObject.quote(sourceChoiceToken);
         return "(function(){try{"
                 + "if(window.__subhubMoviesmodPickV3262)return;"
                 + "window.__subhubMoviesmodPickV3262=true;"
-                + "var wanted=" + wanted + ";"
+                + "var wanted=" + wanted + ",bridgeToken=" + bridgeToken + ";"
                 + "function norm(v){return String(v||'').replace(/\\s+/g,' ').trim().toLowerCase();}"
                 + "function good(t){t=norm(t);if(!t||t.length>48)return false;"
                 + "return !/^(play|watch|home|movies|search|menu|close|download|trailer|next|previous|fullscreen|settings)$/i.test(t);}"
                 + "document.addEventListener('click',function(ev){try{"
                 + "var e=ev.target&&ev.target.closest?ev.target.closest('button,a,[role=button],[data-server]'):null;"
                 + "if(!e)return;var t=String(e.innerText||e.textContent||'').replace(/\\s+/g,' ').trim();"
-                + "if(good(t)&&window.SubHubSourceChoice)SubHubSourceChoice.picked(t);"
+                + "if(good(t)&&window.SubHubSourceChoice)SubHubSourceChoice.picked(bridgeToken,t);"
                 + "}catch(_){}} ,true);"
                 + "if(!wanted)return;"
                 + "var tries=0, timer=setInterval(function(){try{"
                 + "tries++;var want=norm(wanted);var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server]'));"
                 + "var hit=els.find(function(e){var t=norm(e.innerText||e.textContent||'');return t===want||t.indexOf(want)>=0;});"
                 + "if(hit){clearInterval(timer);"
-                + "if(window.SubHubSourceChoice)SubHubSourceChoice.picked(String(hit.innerText||hit.textContent||wanted));"
+                + "if(window.SubHubSourceChoice)SubHubSourceChoice.picked(bridgeToken,String(hit.innerText||hit.textContent||wanted));"
                 + "setTimeout(function(){try{hit.click();}catch(_){try{hit.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window}));}catch(__){}}},120);"
                 + "}else if(tries>=80){clearInterval(timer);}"
                 + "}catch(_){if(tries>=80)clearInterval(timer);}},250);"
