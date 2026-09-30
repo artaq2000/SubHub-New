@@ -1,11 +1,22 @@
 (function () {
   'use strict';
-  if (window.__subhubMoviesmodInstalledV3262) return;
-  window.__subhubMoviesmodInstalledV3262 = true;
+  if (window.__subhubMoviesmodInstalledV3263) return;
+  window.__subhubMoviesmodInstalledV3263 = true;
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   let active = null;
   let opening = false;
+  let pendingChoice = null;
+  let loadSerial = 0;
+  let loadPromise = null;
+  let serverState = {
+    movieId: '',
+    loaded: false,
+    loading: false,
+    enabled: false,
+    key: '',
+    label: ''
+  };
 
   function current() {
     return typeof currentMovie !== 'undefined' ? currentMovie : null;
@@ -27,12 +38,30 @@
     catch (_) { return false; }
   }
 
+  function normalizeSaved(raw) {
+    const d = raw || {};
+    return {
+      enabled: d.moviesmodEnabled === true,
+      key: String(d.moviesmodServerKey || '').trim().slice(0, 80),
+      label: String(d.moviesmodServerLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    };
+  }
+
+  function fallbackSaved() {
+    return normalizeSaved(movieDoc());
+  }
+
   function savedServer() {
-    const d = movieDoc();
-    const key = String(d.moviesmodServerKey || '').trim();
-    const label = String(d.moviesmodServerLabel || '').trim();
-    const enabled = d.moviesmodEnabled === true;
-    return { key, label, enabled };
+    const selected = current();
+    const movieId = selected ? String(selected.id || '') : '';
+    if (movieId && serverState.movieId === movieId && serverState.loaded) {
+      return {
+        enabled: serverState.enabled,
+        key: serverState.key,
+        label: serverState.label
+      };
+    }
+    return fallbackSaved();
   }
 
   function notify(text, type) {
@@ -44,6 +73,77 @@
   function safeYear(v) {
     const m = String(v || '').match(/(?:19|20)\d{2}/);
     return m ? m[0] : '';
+  }
+
+  function syncMovieDocCache(movieId, next) {
+    try {
+      const merged = Object.assign({}, movieDoc(), {
+        moviesmodEnabled: !!next.enabled,
+        moviesmodServerKey: next.key || '',
+        moviesmodServerLabel: next.label || '',
+        moviesmodUpdatedAt: Date.now()
+      });
+      window._lastRenderedMovieDoc = merged;
+      if (typeof _mdocPut === 'function') _mdocPut(String(movieId), merged);
+    } catch (_) {}
+  }
+
+  function applyLoadedState(movieId, saved) {
+    serverState = {
+      movieId: String(movieId || ''),
+      loaded: true,
+      loading: false,
+      enabled: !!saved.enabled,
+      key: String(saved.key || ''),
+      label: String(saved.label || '')
+    };
+    syncMovieDocCache(movieId, saved);
+  }
+
+  async function ensureServerConfig(selected, force) {
+    const movieId = String(selected && selected.id || '').trim();
+    if (!movieId) return { enabled: false, key: '', label: '' };
+
+    if (!force && serverState.movieId === movieId && serverState.loaded) {
+      return savedServer();
+    }
+    if (!force && serverState.movieId === movieId && serverState.loading && loadPromise) {
+      return loadPromise;
+    }
+
+    const serial = ++loadSerial;
+    serverState = {
+      movieId,
+      loaded: false,
+      loading: true,
+      enabled: false,
+      key: '',
+      label: ''
+    };
+
+    loadPromise = (async function () {
+      let saved = fallbackSaved();
+      try {
+        if (typeof db !== 'undefined' && db && db.collection) {
+          const snap = await db.collection('subtitles').doc(movieId).get();
+          if (snap && snap.exists) saved = normalizeSaved(snap.data() || {});
+        }
+      } catch (_) {
+        // Keep the page cache as a fallback, but never erase a known saved server
+        // merely because the network changed or Firestore was temporarily unavailable.
+      }
+
+      if (serial === loadSerial && current() && String(current().id || '') === movieId) {
+        applyLoadedState(movieId, saved);
+        refreshCard();
+      }
+      return saved;
+    })();
+
+    try { return await loadPromise; }
+    finally {
+      if (serial === loadSerial) loadPromise = null;
+    }
   }
 
   async function resolveTmdb(selected) {
@@ -90,12 +190,14 @@
     if (opening || active) return;
     opening = true;
     const selected = current();
+
     try {
       if (!selected || current() !== selected) return;
 
       const owner = isOwner();
       const subscriber = isSubscriber();
       if (!owner && !subscriber) return;
+
       if (owner) {
         if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess()) || current() !== selected) return;
       }
@@ -105,7 +207,7 @@
         throw new Error('bridge unavailable');
       }
 
-      const saved = savedServer();
+      const saved = await ensureServerConfig(selected, true);
       if (subscriber && (!saved.enabled || !saved.label)) {
         notify('هذا المصدر لم يُعتمد بعد لهذا الفيلم.');
         return;
@@ -129,12 +231,14 @@
       const stableKey = stableRaw.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 100)
         || ('tmdb_' + resolved.kind + '_' + resolved.id);
       const session = 'moviesmod_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-      const useSaved = !forceManual && !!saved.label;
+      const useSaved = !forceManual && !!saved.enabled && !!saved.label;
+
       active = {
         session,
-        movieId: selected.id,
+        movieId: String(selected.id || ''),
         catalog,
         owner,
+        manualChoice: owner && !useSaved,
         usedSavedServer: useSaved,
         serverKey: useSaved ? saved.key : '',
         serverLabel: useSaved ? saved.label : ''
@@ -142,7 +246,7 @@
 
       bridge.openDirectStream(token, JSON.stringify({
         mode: 'moviesmod',
-        session: session,
+        session,
         movieId: stableKey,
         resumeKey: stableKey,
         tmdbId: resolved.id,
@@ -160,53 +264,89 @@
     }
   }
 
-  window.__subhubMoviesmodServerSelected = async function (session, rawKey, rawLabel) {
+  async function savePendingServer() {
+    const selected = current();
+    if (!selected || !isOwner() || !pendingChoice
+        || pendingChoice.movieId !== String(selected.id || '')) {
+      notify('اختر سيرفراً ناجحاً أولاً، ثم اضغط حفظ.');
+      return;
+    }
+
+    try {
+      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
+      const movieId = String(selected.id || '');
+      const next = {
+        enabled: true,
+        key: pendingChoice.key,
+        label: pendingChoice.label
+      };
+
+      await db.collection('subtitles').doc(movieId).set({
+        moviesmodEnabled: true,
+        moviesmodServerKey: next.key,
+        moviesmodServerLabel: next.label,
+        moviesmodUpdatedAt: Date.now()
+      }, { merge: true });
+
+      applyLoadedState(movieId, next);
+      pendingChoice = null;
+      refreshCard();
+      notify('تم حفظ السيرفر للمشتركين: ' + next.label, 'success');
+    } catch (_) {
+      notify('تعذّر حفظ السيرفر. لم يتم تغيير الإعداد السابق.');
+    }
+  }
+
+  async function deleteSavedServer() {
+    const selected = current();
+    if (!selected || !isOwner()) return;
+
+    try {
+      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
+      const movieId = String(selected.id || '');
+
+      await db.collection('subtitles').doc(movieId).set({
+        moviesmodEnabled: false,
+        moviesmodServerKey: '',
+        moviesmodServerLabel: '',
+        moviesmodUpdatedAt: Date.now()
+      }, { merge: true });
+
+      pendingChoice = null;
+      applyLoadedState(movieId, { enabled: false, key: '', label: '' });
+      refreshCard();
+      notify('تم حذف سيرفر Moviesmod لهذا الفيلم.', 'success');
+    } catch (_) {
+      notify('تعذّر حذف السيرفر.');
+    }
+  }
+
+  window.__subhubMoviesmodServerSelected = function (session, rawKey, rawLabel) {
     const state = active;
     if (!state || state.session !== session) return;
 
     const key = String(rawKey || '').trim().slice(0, 80);
     const label = String(rawLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     if (!key || !label) return;
+
     state.serverKey = key;
     state.serverLabel = label;
 
-    if (!state.owner || !isOwner() || !current() || current().id !== state.movieId) return;
-
-    const before = savedServer();
-    if (before.enabled && before.key === key && before.label === label) return;
-
-    try {
-      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
-      if (!current() || current().id !== state.movieId) return;
-
-      await db.collection('subtitles').doc(String(state.movieId)).set({
-        moviesmodEnabled: true,
-        moviesmodServerKey: key,
-        moviesmodServerLabel: label,
-        moviesmodUpdatedAt: Date.now()
-      }, { merge: true });
-
-      try {
-        const merged = Object.assign({}, movieDoc(), {
-          moviesmodEnabled: true,
-          moviesmodServerKey: key,
-          moviesmodServerLabel: label,
-          moviesmodUpdatedAt: Date.now()
-        });
-        window._lastRenderedMovieDoc = merged;
-        if (typeof _mdocPut === 'function') _mdocPut(String(state.movieId), merged);
-      } catch (_) {}
-
-      refreshButton();
-      notify('تم اعتماد السيرفر: ' + label, 'success');
-    } catch (_) {
-      notify('تم تشغيل الفيديو، لكن تعذّر حفظ السيرفر للمشتركين.');
+    if (state.owner && state.manualChoice && current()
+        && String(current().id || '') === state.movieId) {
+      pendingChoice = {
+        movieId: state.movieId,
+        key,
+        label
+      };
+      notify('السيرفر يعمل: ' + label + ' — اضغط حفظ لاعتماده.', 'success');
     }
   };
 
   const previousClosed = window.__subhubDirectClosed;
   window.__subhubDirectClosed = function (session) {
     if (active && active.session === session) active = null;
+    refreshCard();
     if (typeof previousClosed === 'function') {
       try { return previousClosed(session); } catch (_) {}
     }
@@ -235,89 +375,156 @@
       error = 'تعذّر تحميل الترجمة. اختر ترجمة أخرى من CC.';
     }
 
-    if (active !== state || !current() || current().id !== state.movieId) return;
+    if (active !== state || !current() || String(current().id || '') !== state.movieId) return;
     window.SubHubAndroidBridge.directStreamSubtitles(
       token, session, index, JSON.stringify(cues), error
     );
   };
 
-  function refreshButton() {
-    const old = document.getElementById('subhub-moviesmod-stream-button');
-    if (old) old.remove();
+  function escapeHtmlLite(v) {
+    return String(v || '').replace(/[&<>"]/g, function (ch) {
+      return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[ch];
+    });
+  }
+
+  function removeCard() {
+    const ids = [
+      'subhub-moviesmod-stream-card',
+      'subhub-moviesmod-stream-button'
+    ];
+    ids.forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    });
+  }
+
+  function refreshCard() {
+    removeCard();
     install();
   }
 
+  function ownerCard(selected, saved) {
+    const movieId = String(selected.id || '');
+    const pending = pendingChoice && pendingChoice.movieId === movieId ? pendingChoice : null;
+
+    const card = document.createElement('div');
+    card.id = 'subhub-moviesmod-stream-card';
+    card.className = 'watch-pill owner-quick-pill';
+    card.style.cssText =
+      'min-height:104px;border:1px solid #7b68ee;border-radius:16px;' +
+      'background:#171d36;color:#fff;padding:10px;display:flex;flex-direction:column;' +
+      'gap:8px;align-items:stretch;justify-content:center;position:relative';
+
+    const title = document.createElement('button');
+    title.type = 'button';
+    title.style.cssText =
+      'border:0;background:transparent;color:#fff;font:inherit;font-weight:800;' +
+      'cursor:pointer;line-height:1.5;padding:0 4px';
+    title.innerHTML = '🎬 Moviesmod — تجريبي';
+
+    const detail = document.createElement('small');
+    detail.style.cssText = 'display:block;color:#a9b7cb;font-size:.62rem;font-weight:700;margin-top:2px';
+    if (pending) {
+      detail.innerHTML = 'جاهز للحفظ: <b style="color:#7dd3fc">' + escapeHtmlLite(pending.label) + '</b>';
+    } else if (saved.enabled && saved.label) {
+      detail.innerHTML = 'المحفوظ: <b style="color:#86efac">' + escapeHtmlLite(saved.label) + '</b>';
+    } else if (serverState.loading) {
+      detail.textContent = 'جارٍ تحميل إعداد السيرفر…';
+    } else {
+      detail.textContent = 'لا يوجد سيرفر محفوظ';
+    }
+    title.appendChild(detail);
+    title.addEventListener('click', function () {
+      openMoviesmod(!(saved.enabled && saved.label));
+    });
+    card.appendChild(title);
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;width:100%';
+
+    function control(label, kind, disabled, action) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.disabled = !!disabled;
+      b.style.cssText =
+        'min-height:34px;border-radius:9px;font:inherit;font-size:.64rem;font-weight:850;' +
+        'cursor:pointer;padding:5px 3px;border:1px solid ' +
+        (kind === 'danger' ? '#7f1d1d' : kind === 'save' ? '#166534' : '#36506b') + ';' +
+        'background:' + (kind === 'danger' ? '#2b1115' : kind === 'save' ? '#10271a' : '#0c1d2d') + ';' +
+        'color:#fff;opacity:' + (disabled ? '.42' : '1');
+      b.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (!b.disabled) action();
+      });
+      return b;
+    }
+
+    row.appendChild(control('حفظ', 'save', !pending, savePendingServer));
+    row.appendChild(control('تعديل', 'edit', false, function () { openMoviesmod(true); }));
+    row.appendChild(control('حذف', 'danger', !(saved.enabled && saved.label), deleteSavedServer));
+    card.appendChild(row);
+
+    return card;
+  }
+
+  function subscriberButton() {
+    const button = document.createElement('button');
+    button.id = 'subhub-moviesmod-stream-card';
+    button.type = 'button';
+    button.className = 'watch-pill';
+    button.style.cssText =
+      'min-height:56px;border:1px solid #7b68ee;border-radius:12px;' +
+      'background:#171d36;color:#fff;padding:10px;font:inherit;cursor:pointer';
+    button.innerHTML =
+      '🎬 مشاهدة بالتطبيق<small style="display:block;margin-top:4px;opacity:.78">' +
+      'يتم جلب رابط جديد عند كل تشغيل</small>';
+    button.title = 'يستخدم السيرفر الذي اعتمده المالك ويجلب بثاً جديداً لهذا الجهاز';
+    button.addEventListener('click', function () { openMoviesmod(false); });
+    return button;
+  }
+
   function install() {
-    const old = document.getElementById('subhub-moviesmod-stream-button');
     const selected = current();
     if (!selected) {
-      if (old) old.remove();
+      removeCard();
       return;
+    }
+
+    const movieId = String(selected.id || '');
+    if (serverState.movieId !== movieId || (!serverState.loaded && !serverState.loading)) {
+      ensureServerConfig(selected, false).catch(function () {});
     }
 
     const owner = isOwner();
     const subscriber = isSubscriber();
     const saved = savedServer();
-    const allowed = owner || (subscriber && saved.enabled && !!saved.label);
-    if (!allowed) {
-      if (old) old.remove();
-      return;
-    }
-    if (old) return;
-
-    const ownerReference =
-      document.getElementById('subhub-direct-stream-button') ||
-      document.getElementById('vidsrcOwnerTrialV355');
-    const subscriberGrid = document.querySelector('.watch-pills:not(.owner-watch-pills)');
-    if (owner && (!ownerReference || !ownerReference.parentElement)) return;
-    if (!owner && !subscriberGrid) return;
-
-    const button = document.createElement('button');
-    button.id = 'subhub-moviesmod-stream-button';
-    button.type = 'button';
-    button.className = owner
-      ? ownerReference.className
-      : 'watch-pill';
-    button.style.cssText = owner
-      ? ('min-height:68px;border:1px solid #7b68ee;border-radius:16px;' +
-         'background:#171d36;color:#fff;padding:12px;font:inherit;cursor:pointer;position:relative')
-      : ('min-height:56px;border:1px solid #7b68ee;border-radius:12px;' +
-         'background:#171d36;color:#fff;padding:10px;font:inherit;cursor:pointer');
 
     if (owner) {
-      const detail = saved.label ? ('السيرفر: ' + saved.label) : 'اختر السيرفر واعتمده';
-      button.innerHTML = '🎬 Moviesmod — تجريبي<small style="display:block;margin-top:4px;opacity:.8">'
-        + detail.replace(/[&<>"]/g, function (ch) {
-            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[ch];
-          }) + '</small>';
-      if (saved.label) {
-        const edit = document.createElement('span');
-        edit.textContent = '✎';
-        edit.title = 'تغيير السيرفر المعتمد';
-        edit.setAttribute('aria-label', 'تغيير السيرفر المعتمد');
-        edit.style.cssText =
-          'position:absolute;left:8px;top:8px;width:28px;height:28px;display:flex;' +
-          'align-items:center;justify-content:center;border:1px solid #64748b;border-radius:9px;' +
-          'background:#0b1625;color:#fff;z-index:2';
-        edit.addEventListener('click', function (ev) {
-          ev.preventDefault();
-          ev.stopPropagation();
-          openMoviesmod(true);
-        });
-        button.appendChild(edit);
-      }
-    } else {
-      button.innerHTML = '🎬 مشاهدة Moviesmod<small style="display:block;margin-top:4px;opacity:.8">جاري جلب رابط جديد عند كل تشغيل</small>';
+      if (document.getElementById('subhub-moviesmod-stream-card')) return;
+
+      const grid = document.querySelector('.owner-watch-pills');
+      if (!grid) return;
+
+      const card = ownerCard(selected, saved);
+      const m3u = document.getElementById('m3uOwnerTrialV360');
+      if (m3u && m3u.parentElement === grid) grid.insertBefore(card, m3u);
+      else grid.appendChild(card);
+      return;
     }
 
-    button.title = owner
-      ? 'ضغطة عادية تستخدم السيرفر المعتمد، والقلم يتيح اختيار سيرفر آخر'
-      : 'يستخدم السيرفر الذي اعتمده المالك ويجلب بثاً جديداً لهذا الجهاز';
-    button.addEventListener('click', function () { openMoviesmod(false); });
-    if (owner) ownerReference.insertAdjacentElement('afterend', button);
-    else subscriberGrid.appendChild(button);
+    if (!subscriber || !serverState.loaded || !saved.enabled || !saved.label) {
+      removeCard();
+      return;
+    }
+    if (document.getElementById('subhub-moviesmod-stream-card')) return;
+
+    const grid = document.querySelector('.watch-pills:not(.owner-watch-pills)');
+    if (!grid) return;
+    grid.appendChild(subscriberButton());
   }
 
   install();
-  setInterval(install, 1000);
+  setInterval(install, 900);
 })();
