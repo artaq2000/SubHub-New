@@ -14,6 +14,7 @@
     loaded: false,
     loading: false,
     enabled: false,
+    invalid: false,
     key: '',
     label: ''
   };
@@ -58,6 +59,7 @@
     const valid = d.moviesmodEnabled === true && validServerLabel(label);
     return {
       enabled: valid,
+      invalid: d.moviesmodEnabled === true && !!label && !valid,
       key: valid ? key : '',
       label: valid ? label : ''
     };
@@ -73,6 +75,7 @@
     if (movieId && serverState.movieId === movieId && serverState.loaded) {
       return {
         enabled: serverState.enabled,
+        invalid: serverState.invalid,
         key: serverState.key,
         label: serverState.label
       };
@@ -110,6 +113,7 @@
       loaded: true,
       loading: false,
       enabled: !!saved.enabled,
+      invalid: !!saved.invalid,
       key: String(saved.key || ''),
       label: String(saved.label || '')
     };
@@ -133,6 +137,7 @@
       loaded: false,
       loading: true,
       enabled: false,
+      invalid: false,
       key: '',
       label: ''
     };
@@ -517,6 +522,8 @@
         '</b><br>هل تريد حفظه؟';
     } else if (saved.enabled && saved.label) {
       detail.innerHTML = 'المحفوظ: <b style="color:#86efac">' + escapeHtmlLite(saved.label) + '</b>';
+    } else if (saved.invalid) {
+      detail.textContent = 'الإعداد المحفوظ السابق غير صالح — عدّله أو احذفه';
     } else if (serverState.loading) {
       detail.textContent = 'جارٍ تحميل إعداد السيرفر…';
     } else {
@@ -552,7 +559,7 @@
 
     row.appendChild(control('حفظ', 'save', !pending, savePendingServer));
     row.appendChild(control('تعديل', 'edit', false, function () { openMoviesmod(true); }));
-    row.appendChild(control('حذف', 'danger', !(saved.enabled && saved.label), deleteSavedServer));
+    row.appendChild(control('حذف', 'danger', !(saved.enabled && saved.label) && !saved.invalid, deleteSavedServer));
     card.appendChild(row);
 
     return card;
