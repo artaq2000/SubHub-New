@@ -3,6 +3,8 @@ root=Path(__file__).resolve().parents[1]
 main=(root/'app/src/main/java/com/artaq/subhub/MainActivity.java').read_text(encoding='utf-8')
 js=(root/'app/src/main/assets/player_clock.js').read_text(encoding='utf-8')
 site=(root/'app/src/main/assets/site_bridge.js').read_text(encoding='utf-8')
+direct=(root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
+moviesmod=(root/'app/src/main/assets/moviesmod_stream.js').read_text(encoding='utf-8')
 
 assert 'SubHubAndroidBridge' in main
 assert 'window.SubHubNativeClock' in main
@@ -25,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.57'" in site
+assert "BRIDGE_BUILD = '322.3.61'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -39,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 66" in gradle
-assert "versionName '322.3.57'" in gradle
+assert "versionCode 70" in gradle
+assert "versionName '322.3.61'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -350,3 +352,22 @@ assert 'showTransientValue("خلفية "' in direct_player
 assert 'applySubtitleText' in direct_player
 assert 'public boolean handleBack()' in direct_player
 
+
+
+# 322.3.61: isolated owner-only Moviesmod capture path.
+assert 'readAsset("moviesmod_stream.js")' in main
+assert '"moviesmod".equals(mode)' in main
+assert 'sourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId)' in main
+assert 'allowedHost = "moviesmod.gd"' in main
+assert 'resumeKey = "moviesmod_" + stableKey' in main
+assert 'resumePrefKey' in direct
+assert 'persistResume(false)' in direct
+assert 'prefs.edit().putLong(key, position).apply()' in direct
+assert 'player.seekTo(pendingResumeMs)' in direct
+assert 'onCreateWindow' in direct
+assert 'url.toLowerCase(Locale.ROOT).contains(".m3u8")' in direct
+assert 'subhub-moviesmod-stream-button' in moviesmod
+assert 'checkOwnerAccess' in moviesmod
+assert "mode: 'moviesmod'" in moviesmod
+assert 'external_source=imdb_id' in moviesmod
+assert 'Moviesmod — تجريبي' in moviesmod
