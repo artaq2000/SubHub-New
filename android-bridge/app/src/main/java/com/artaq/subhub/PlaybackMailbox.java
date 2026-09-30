@@ -57,6 +57,18 @@ final class PlaybackMailbox {
         return pending != null && source.equals(pending.source) ? pending.id : "";
     }
 
+    synchronized boolean retryDelivery(String id, String source, long now) {
+        expire(now);
+        if (pending == null || !pending.delivered || !pending.id.equals(id)
+                || (pending.source != null && !pending.source.isEmpty() && !pending.source.equals(source))) {
+            return false;
+        }
+        pending.delivered = false;
+        pending.source = "";
+        pending.deadline = now + (pending.resumeAt >= 0 ? 12000L : CONNECT_TIMEOUT_MS);
+        return true;
+    }
+
     synchronized boolean accept(String id, String source, boolean terminal, long now) {
         expire(now);
         if (pending == null || !pending.delivered || !pending.id.equals(id)
