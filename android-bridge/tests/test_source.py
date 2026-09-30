@@ -387,8 +387,8 @@ assert 'preferredServerLabel' in main
 assert 'serverSelected(String key, String label)' in direct
 assert 'SubHubSourceChoice' in direct
 assert 'providerPickerScript' in direct
-assert 'جارٍ الاتصال بالموقع' in direct
-assert 'جارٍ البحث عن السيرفر المحفوظ' in direct
+assert 'أغلق أي إعلان أو تحقق ظاهر' in direct
+assert 'أكمل التحقق وأغلق الإعلانات' in direct
 assert 'تم العثور على البث' in direct
 assert 'جارٍ تشغيل الفيديو' in direct
 assert 'preferredServerLabel' in direct
