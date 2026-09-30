@@ -131,6 +131,7 @@ public final class DirectStreamPlayer {
     private long pendingServerPickedAt = 0L;
     private boolean serverChoiceReported = false;
     private boolean serverChooserShown = false;
+    private TextView manualServerButton;
     private String resolvedMainHost = "";
     private String selectedProviderLabel = "";
     private final String sourceChoiceToken = UUID.randomUUID().toString().replace("-", "");
@@ -506,7 +507,11 @@ public final class DirectStreamPlayer {
                 String name = normalizeServerLabel(arr.optString(i));
                 if (isProviderServerLabel(name) && !names.contains(name)) names.add(name);
             }
-            if (names.isEmpty()) return;
+            if (names.isEmpty()) {
+                showStage("لم أجد السيرفرات بعد. ادخل إلى صفحة الفيلم ثم اضغط «جلب السيرفرات» مرة أخرى.");
+                if (manualServerButton != null) manualServerButton.setVisibility(View.VISIBLE);
+                return;
+            }
             serverChooserShown = true;
             showStage("اختر السيرفر الذي تريد تجربته…");
             CharSequence[] items = new CharSequence[names.size()];
@@ -528,10 +533,42 @@ public final class DirectStreamPlayer {
         } catch (Exception ignored) {}
     }
 
+    private void requestServerList() {
+        if (probe == null || closed || playing || autoServer) return;
+        showStage("جارٍ قراءة قائمة السيرفرات…");
+        try {
+            probe.evaluateJavascript(providerPickerScript(), null);
+            handler.postDelayed(() -> {
+                if (probe == null || closed || playing) return;
+                try {
+                    probe.evaluateJavascript(
+                            "window.__subhubRequestServerList && window.__subhubRequestServerList()",
+                            null
+                    );
+                } catch (Exception ignored) {}
+            }, 220L);
+        } catch (Exception ignored) {}
+    }
+
+    private void showManualServerButton() {
+        if (autoServer || closed || manualServerButton != null) return;
+        manualServerButton = chip("جلب السيرفرات", 15, this::requestServerList);
+        manualServerButton.setBackground(round(0xee102a40, 0xff2f93c7, 1, 18));
+        manualServerButton.setElevation(dp(28));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                dp(168), dp(46), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL
+        );
+        lp.bottomMargin = dp(18);
+        root.addView(manualServerButton, lp);
+        manualServerButton.bringToFront();
+    }
+
     private void selectProviderServer(String rawLabel) {
         String label = normalizeServerLabel(rawLabel);
         if (probe == null || closed || playing || !isProviderServerLabel(label)) return;
         selectedProviderLabel = label;
+        if (manualServerButton != null) manualServerButton.setVisibility(View.GONE);
+        probe.setAlpha(0.02f);
         recordProviderChoice(label);
         showStage("جارٍ فتح السيرفر " + label + "…");
         String js = "window.__subhubSelectProvider && window.__subhubSelectProvider("
@@ -606,15 +643,15 @@ public final class DirectStreamPlayer {
                 + "var bridgeToken=" + bridgeToken + ",wanted=" + wanted + ";"
                 + "function clean(v){return String(v||'').replace(/[⭐★☆]/g,'').replace(/\\s+/g,' ').trim();}"
                 + "function norm(v){return clean(v).toLowerCase();}"
-                + "function bad(t){t=norm(t);return !t||/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(t);}"
+                + "function bad(t){t=norm(t);return !t||/^(watch now|play|play now|home|movies|select server|trailer|download|settings|view details)$/.test(t);}"
+                + "function known(t){t=norm(t);return /^(vidsrc\\.mov|vidsrc\\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix|peachify)$/.test(t);}"
                 + "function serverEls(){var all=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server],[data-src],[data-url],[data-embed]'));"
-                + "var heading=[].slice.call(document.querySelectorAll('h1,h2,h3,h4,div,span')).find(function(e){return /select server/i.test(e.textContent||'');});"
                 + "return all.filter(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');if(bad(t)||t.length>48)return false;"
-                + "if(e.hasAttribute('data-server')||e.hasAttribute('data-src')||e.hasAttribute('data-url')||e.hasAttribute('data-embed'))return true;"
-                + "if(heading){var hp=heading.parentElement;return hp&&(hp===e.parentElement||hp.contains(e));}"
-                + "return /^(vid|super|multi|2embed|111movies|peach)/i.test(t);});}"
+                + "if(e.hasAttribute('data-server'))return true;"
+                + "if((e.hasAttribute('data-src')||e.hasAttribute('data-url')||e.hasAttribute('data-embed'))&&known(t))return true;"
+                + "return known(t);});}"
                 + "function sendList(){try{var names=[],seen={};serverEls().forEach(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');var k=norm(t);if(k&&!seen[k]){seen[k]=1;names.push(t);}});"
-                + "if(names.length&&window.SubHubSourceChoice)window.SubHubSourceChoice.servers(bridgeToken,JSON.stringify(names));}catch(_){}}"
+                + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.servers(bridgeToken,JSON.stringify(names));}catch(_){}}"
                 + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
                 + "function direct(e){var vals=[e.getAttribute('data-src'),e.getAttribute('data-url'),e.getAttribute('data-embed'),e.getAttribute('href')];"
                 + "for(var i=0;i<vals.length;i++){var v=String(vals[i]||'').trim();if(/^https:\\/\\//i.test(v)&&v.indexOf(location.host)<0)return v;}return '';}"
@@ -629,7 +666,7 @@ public final class DirectStreamPlayer {
                 + "setTimeout(function(){if(reportFrame(lab))return;var p=point(hit);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.autoPick)window.SubHubSourceChoice.autoPick(bridgeToken,lab,p[0],p[1]);},180);"
                 + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);return true;}catch(_){return false;}}"
                 + "window.__subhubSelectProvider=activate;"
-                + "sendList();var scans=0,scan=setInterval(function(){scans++;sendList();if(scans>=30)clearInterval(scan);},350);"
+                + "window.__subhubRequestServerList=function(){sendList();var n=0,t=setInterval(function(){n++;sendList();if(n>=8)clearInterval(t);},350);};"
                 + "if(wanted){var tries=0,t=setInterval(function(){tries++;if(activate(wanted)||tries>=80)clearInterval(t);},250);}"
                 + "}catch(_){}})();";
     }
@@ -692,7 +729,7 @@ public final class DirectStreamPlayer {
 
     private void beginCapture() {
         if (autoServer) showStage("جارٍ الاتصال بالموقع…");
-        else showStage("جارٍ جلب قائمة السيرفرات…");
+        else showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
         probe = new WebView(activity);
         WebSettings s = probe.getSettings();
         s.setJavaScriptEnabled(true);
@@ -724,6 +761,7 @@ public final class DirectStreamPlayer {
                     try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
                 } else {
                     if (autoServer) showStage("جارٍ البحث عن السيرفر المحفوظ…");
+                    else showStage("ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
                 }
             }
@@ -742,7 +780,8 @@ public final class DirectStreamPlayer {
                     WebView v, WebResourceRequest r) {
                 String url = r.getUrl().toString();
                 if ("https".equals(r.getUrl().getScheme())
-                        && url.toLowerCase(Locale.ROOT).contains(".m3u8")) {
+                        && url.toLowerCase(Locale.ROOT).contains(".m3u8")
+                        && (autoServer || !selectedProviderLabel.isEmpty())) {
                     Map<String,String> headers = new HashMap<>(r.getRequestHeaders());
                     handler.post(() -> capture(url, headers));
                 }
@@ -753,8 +792,9 @@ public final class DirectStreamPlayer {
         FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
         p.topMargin = dp(60);
         root.addView(probe, 0, p);
-        probe.setAlpha(0.02f);
+        probe.setAlpha(autoServer ? 0.02f : 1.0f);
         probe.loadUrl(source);
+        if (!autoServer) showManualServerButton();
 
         handler.postDelayed(() -> {
             if (!closed && !playing) {
@@ -769,6 +809,7 @@ public final class DirectStreamPlayer {
 
     private void capture(String url, Map<String,String> headers) {
         if (closed || playing) return;
+        if (manualServerButton != null) manualServerButton.setVisibility(View.GONE);
         boolean first = candidate == null;
         if (first || Uri.parse(url).getLastPathSegment()
                 .toLowerCase(Locale.ROOT).contains("master")) {
