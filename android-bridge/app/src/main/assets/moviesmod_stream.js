@@ -38,12 +38,28 @@
     catch (_) { return false; }
   }
 
+  function cleanServerLabel(raw) {
+    return String(raw || '')
+      .replace(/[⭐★☆]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 80);
+  }
+
+  function validServerLabel(raw) {
+    const v = cleanServerLabel(raw).toLowerCase();
+    return /^(vidsrc\.mov|vidsrc\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix)$/.test(v);
+  }
+
   function normalizeSaved(raw) {
     const d = raw || {};
+    const label = cleanServerLabel(d.moviesmodServerLabel || '');
+    const key = String(d.moviesmodServerKey || '').trim().slice(0, 80);
+    const valid = d.moviesmodEnabled === true && validServerLabel(label);
     return {
-      enabled: d.moviesmodEnabled === true,
-      key: String(d.moviesmodServerKey || '').trim().slice(0, 80),
-      label: String(d.moviesmodServerLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+      enabled: valid,
+      key: valid ? key : '',
+      label: valid ? label : ''
     };
   }
 
@@ -297,6 +313,72 @@
     }
   }
 
+  function removeSavePrompt() {
+    const old = document.getElementById('subhub-moviesmod-save-prompt');
+    if (old) old.remove();
+  }
+
+  function showSavePrompt(choice) {
+    if (!choice || !isOwner() || !validServerLabel(choice.label)) return;
+    removeSavePrompt();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'subhub-moviesmod-save-prompt';
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.72);' +
+      'display:flex;align-items:flex-end;justify-content:center;padding:18px;direction:rtl';
+
+    const box = document.createElement('div');
+    box.style.cssText =
+      'width:min(520px,96vw);border:1px solid #4b5f7a;border-radius:18px;' +
+      'background:#0b1625;color:#fff;padding:16px;box-shadow:0 16px 60px rgba(0,0,0,.55)';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:900;font-size:1rem;line-height:1.7;margin-bottom:6px';
+    title.textContent = 'تم تشغيل السيرفر بنجاح: ' + choice.label;
+
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#b8c5d6;font-size:.88rem;line-height:1.7;margin-bottom:14px';
+    msg.textContent = 'هل تريد حفظ هذا السيرفر لهذا الفيلم؟ يمكنك مشاهدة النسخة أولاً، ثم الحفظ إذا كانت النسخة المناسبة.';
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px';
+
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = 'حفظ';
+    save.style.cssText =
+      'min-height:44px;border-radius:11px;border:1px solid #166534;background:#12301d;' +
+      'color:#fff;font:inherit;font-weight:900';
+    save.addEventListener('click', async function () {
+      save.disabled = true;
+      await savePendingServer();
+      removeSavePrompt();
+    });
+
+    const later = document.createElement('button');
+    later.type = 'button';
+    later.textContent = 'ليس الآن';
+    later.style.cssText =
+      'min-height:44px;border-radius:11px;border:1px solid #41536b;background:#122033;' +
+      'color:#fff;font:inherit;font-weight:900';
+    later.addEventListener('click', function () {
+      removeSavePrompt();
+      refreshCard();
+    });
+
+    row.appendChild(save);
+    row.appendChild(later);
+    box.appendChild(title);
+    box.appendChild(msg);
+    box.appendChild(row);
+    overlay.appendChild(box);
+    overlay.addEventListener('click', function (ev) {
+      if (ev.target === overlay) removeSavePrompt();
+    });
+    document.body.appendChild(overlay);
+  }
+
   async function deleteSavedServer() {
     const selected = current();
     if (!selected || !isOwner()) return;
@@ -313,6 +395,7 @@
       }, { merge: true });
 
       pendingChoice = null;
+      removeSavePrompt();
       applyLoadedState(movieId, { enabled: false, key: '', label: '' });
       refreshCard();
       notify('تم حذف سيرفر Moviesmod لهذا الفيلم.', 'success');
@@ -326,8 +409,8 @@
     if (!state || state.session !== session) return;
 
     const key = String(rawKey || '').trim().slice(0, 80);
-    const label = String(rawLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-    if (!key || !label) return;
+    const label = cleanServerLabel(rawLabel);
+    if (!key || !label || !validServerLabel(label)) return;
 
     state.serverKey = key;
     state.serverLabel = label;
@@ -345,8 +428,13 @@
 
   const previousClosed = window.__subhubDirectClosed;
   window.__subhubDirectClosed = function (session) {
-    if (active && active.session === session) active = null;
+    const closing = active && active.session === session ? active : null;
+    if (closing) active = null;
     refreshCard();
+    if (closing && closing.owner && closing.manualChoice && pendingChoice
+        && pendingChoice.movieId === closing.movieId) {
+      setTimeout(function () { showSavePrompt(pendingChoice); }, 180);
+    }
     if (typeof previousClosed === 'function') {
       try { return previousClosed(session); } catch (_) {}
     }
@@ -425,7 +513,8 @@
     const detail = document.createElement('small');
     detail.style.cssText = 'display:block;color:#a9b7cb;font-size:.62rem;font-weight:700;margin-top:2px';
     if (pending) {
-      detail.innerHTML = 'جاهز للحفظ: <b style="color:#7dd3fc">' + escapeHtmlLite(pending.label) + '</b>';
+      detail.innerHTML = 'تم اختباره: <b style="color:#7dd3fc">' + escapeHtmlLite(pending.label) +
+        '</b><br>هل تريد حفظه؟';
     } else if (saved.enabled && saved.label) {
       detail.innerHTML = 'المحفوظ: <b style="color:#86efac">' + escapeHtmlLite(saved.label) + '</b>';
     } else if (serverState.loading) {
