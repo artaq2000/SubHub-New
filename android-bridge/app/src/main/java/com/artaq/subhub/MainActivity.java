@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.55";
-    private static final int NATIVE_VERSION_CODE = 64;
+    private static final String NATIVE_VERSION = "322.3.56";
+    private static final int NATIVE_VERSION_CODE = 65;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1615,11 +1615,17 @@ public class MainActivity extends Activity {
             webView.resumeTimers();
             ui.postDelayed(() -> {
                 if (webView == null || !isTrustedHomePage()) return;
-                refreshVidSrcChannels("refresh");
                 webView.evaluateJavascript(
-                        "(function(){if(window.SubHubNativeResumeV3255){window.SubHubNativeResumeV3255();}"
+                        "(function(){if(window.SubHubNativeResumeV3256){window.SubHubNativeResumeV3256();}"
+                                + "else if(window.SubHubNativeResumeV3255){window.SubHubNativeResumeV3255();}"
                                 + "else if(window.SubHubNativeResumeV3254){window.SubHubNativeResumeV3254();}})();",
-                        null
+                        ignored -> {
+                            if (webView != null && isTrustedHomePage()) {
+                                // Reset the top-page session first, then ask every surviving
+                                // player frame to re-register its live media channel.
+                                refreshVidSrcChannels("refresh");
+                            }
+                        }
                 );
             }, 120L);
         }
