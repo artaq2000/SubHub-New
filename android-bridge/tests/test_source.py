@@ -27,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.66'" in site
+assert "BRIDGE_BUILD = '322.3.67'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 75" in gradle
-assert "versionName '322.3.66'" in gradle
+assert "versionCode 76" in gradle
+assert "versionName '322.3.67'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -455,3 +455,14 @@ assert 'peachify' in direct
 assert '(autoServer || !selectedProviderLabel.isEmpty())' in direct
 assert 'Before a server is selected' in direct
 assert 'resolvedMainHost = host.toLowerCase(Locale.ROOT)' in direct
+
+
+# 322.3.67: saved-server mode stays visible through ads/verification and waits until the target button is actually clickable.
+assert 'probe.setAlpha(1.0f)' in direct
+assert 'أغلق أي إعلان أو تحقق ظاهر' in direct
+assert 'أكمل التحقق وأغلق الإعلانات' in direct
+assert 'function uncovered(e)' in direct
+assert 'elementFromPoint' in direct
+assert 'if(!hit||!uncovered(hit))return false' in direct
+assert 'tries>=240' in direct
+assert 'External top-frame navigations are ads often enough' in direct
