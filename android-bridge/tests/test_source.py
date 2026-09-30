@@ -27,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.68'" in site
+assert "BRIDGE_BUILD = '322.3.69'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 77" in gradle
-assert "versionName '322.3.68'" in gradle
+assert "versionCode 78" in gradle
+assert "versionName '322.3.69'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -387,8 +387,8 @@ assert 'preferredServerLabel' in main
 assert 'serverSelected(String key, String label, String serverPageUrl)' in direct
 assert 'SubHubSourceChoice' in direct
 assert 'providerPickerScript' in direct
-assert 'أغلق أي إعلان أو تحقق ظاهر' in direct
-assert 'أكمل التحقق وأغلق الإعلانات' in direct
+assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
+assert 'جارٍ الاتصال بالسيرفر' in direct
 assert 'تم العثور على البث' in direct
 assert 'جارٍ تشغيل الفيديو' in direct
 assert 'preferredServerLabel' in direct
@@ -449,18 +449,18 @@ assert 'manualServerButton' in direct
 assert 'جلب السيرفرات' in direct
 assert 'requestServerList' in direct
 assert 'window.__subhubRequestServerList' in direct
-assert 'probe.setAlpha(1.0f)' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'view details' in direct
 assert 'peachify' in direct
-assert '(autoServer || !selectedProviderLabel.isEmpty())' in direct
+assert '((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())' in direct
 assert 'External top-frame navigations are ads often enough' in direct
 assert 'resolvedMainHost = host;' in direct
 
 
 # 322.3.67: saved-server mode stays visible through ads/verification and waits until the target button is actually clickable.
-assert 'probe.setAlpha(1.0f)' in direct
-assert 'أغلق أي إعلان أو تحقق ظاهر' in direct
-assert 'أكمل التحقق وأغلق الإعلانات' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
+assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
+assert 'جارٍ الاتصال بالسيرفر' in direct
 assert 'function uncovered(e)' in direct
 assert 'elementFromPoint' in direct
 assert 'if(!hit||!uncovered(hit))return false' in direct
@@ -482,3 +482,19 @@ assert 'normalizeServerPageUrl' in moviesmod
 assert "serverPageUrl: saved.pageUrl || ''" in moviesmod
 assert 'rawPageUrl' in moviesmod
 assert 'pageUrl' in moviesmod
+
+
+# 322.3.69: owner setup is manual; subscriber reuse is hidden and automatic.
+assert 'interactiveSource' in main
+assert 'config.optBoolean("interactiveSource", false)' in main
+assert 'interactiveSource: owner' in moviesmod
+assert 'const useSaved = subscriber && !forceManual' in moviesmod
+assert 'manualChoice: owner' in moviesmod
+assert "const ownerPageUrl = owner && !forceManual ? (saved.pageUrl || '') : ''" in moviesmod
+assert 'this.interactiveSource = interactiveSource' in direct
+assert 'this.autoServer = !this.interactiveSource && !this.preferredServerLabel.isEmpty()' in direct
+assert 'serverListRequested = true' in direct
+assert '!serverListRequested' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
+assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
+assert 'جارٍ الاتصال بالمصدر' in direct
