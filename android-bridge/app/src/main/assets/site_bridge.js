@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.57';
+  const BRIDGE_BUILD = '322.3.59';
 
   let lastSig = '';
   let clockSource = '';
@@ -296,16 +296,18 @@
         s.textContent = [
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231{',
           'display:inline-flex!important;visibility:visible!important;opacity:1!important;',
-          'align-items:center;justify-content:center;min-width:48px;height:44px;',
-          'padding:0 10px;border:0;border-radius:999px;background:rgba(8,12,18,.78);color:#fff;',
-          'font:800 13px/1 system-ui,sans-serif;backdrop-filter:blur(8px);',
-          'pointer-events:auto!important;position:relative;z-index:2147483645!important;}',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="quality"]{min-width:52px;}',
+          'align-items:center!important;justify-content:center!important;',
+          'padding:0!important;background:rgba(0,0,0,.55);color:#fff;',
+          'font:800 9.5px/1 system-ui,sans-serif!important;letter-spacing:-.25px;',
+          'pointer-events:auto!important;z-index:2147483645!important;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="subs"]{display:none!important;}',
-          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-close-hidden-v3233{',
-          'display:none!important;visibility:hidden!important;opacity:0!important;',
-          'pointer-events:none!important;width:0!important;min-width:0!important;',
-          'margin:0!important;padding:0!important;overflow:hidden!important;}'
+          '#embedPlayerModal .sh-v3259-quality-list{position:absolute;display:flex;flex-direction:column;gap:5px;',
+          'padding:6px;min-width:76px;max-width:104px;background:rgba(7,11,18,.96);',
+          'border:1px solid rgba(255,255,255,.15);border-radius:12px;box-shadow:0 8px 22px rgba(0,0,0,.42);',
+          'z-index:2147483647;pointer-events:auto!important;}',
+          '#embedPlayerModal .sh-v3259-quality-list button{width:100%;height:34px;padding:0 8px;border:0;',
+          'border-radius:8px;background:rgba(255,255,255,.08);color:#fff;font:800 12px/1 system-ui,sans-serif;}',
+          '#embedPlayerModal .sh-v3259-quality-list button[aria-checked="true"]{background:#f4b83f;color:#17120a;}'
         ].join('');
         (document.head || document.documentElement).appendChild(s);
       }
@@ -329,12 +331,13 @@
 
       if (closeEl) {
         try {
-          closeEl.classList.add('subhub-provider-close-hidden-v3233');
-          closeEl.setAttribute('data-subhub-hidden-close-v3233', '1');
-          closeEl.style.setProperty('display', 'none', 'important');
-          closeEl.style.setProperty('visibility', 'hidden', 'important');
-          closeEl.style.setProperty('opacity', '0', 'important');
-          closeEl.style.setProperty('pointer-events', 'none', 'important');
+          closeEl.classList.remove('subhub-provider-close-hidden-v3233');
+          closeEl.removeAttribute('data-subhub-hidden-close-v3233');
+          closeEl.setAttribute('data-subhub-close-v3259', '1');
+          closeEl.style.setProperty('display', 'flex', 'important');
+          closeEl.style.setProperty('visibility', 'visible', 'important');
+          closeEl.style.setProperty('opacity', '1', 'important');
+          closeEl.style.setProperty('pointer-events', 'auto', 'important');
         } catch (_) {}
       }
 
@@ -342,7 +345,7 @@
       if (!q) {
         q = document.createElement('button');
         q.type = 'button';
-        q.className = 'video-top-btn subhub-provider-shortcut-v3231';
+        q.className = 'video-top-btn yt-close-btn subhub-provider-shortcut-v3231';
         q.setAttribute('data-provider-action', 'quality');
         q.setAttribute('aria-label', 'جودة المصدر');
         q.setAttribute('title', 'جودة المصدر');
@@ -367,7 +370,8 @@
           controls.insertBefore(q, anchor || null);
         }
 
-        // The old close button remains in the DOM but hidden. HD takes its slot.
+        // Keep the original toolbar geometry: the quality shortcut uses the
+        // same existing round-button class as CC/fullscreen/close.
         q.style.setProperty('order', '', '');
         q.removeAttribute('hidden');
       } catch (_) {}
@@ -889,52 +893,133 @@
   }
 
   let vidSrcQualitySessionV3251 = null;
+
+  function removeVidSrcQualityListV3259(session) {
+    try {
+      const menu = session && session.menu
+        ? session.menu
+        : document.querySelector('#embedPlayerModal .sh-v3259-quality-list');
+      if (menu) menu.remove();
+    } catch (_) {}
+    if (session) session.menu = null;
+  }
+
   function endVidSrcQualityV3251() {
-    const s = vidSrcQualitySessionV3251;
-    if (!s) return;
+    const session = vidSrcQualitySessionV3251;
+    if (!session) return;
     vidSrcQualitySessionV3251 = null;
-    clearTimeout(s.timer);
-    s.box.classList.remove('sh-v3251-quality');
-    if (s.button) { s.button.textContent = 'الجودة'; s.button.setAttribute('aria-expanded','false'); }
-    wakeVidSrcControlsV3251(s.box);
-    if (document.querySelector('#embedFrameContainer iframe') === s.frame) {
-      sendVidSrcSafeCommandV3211('providerqualityclose', {requestId:s.id});
+    clearTimeout(session.timer);
+    removeVidSrcQualityListV3259(session);
+    if (session.button) {
+      session.button.textContent = 'الجودة';
+      session.button.setAttribute('aria-expanded','false');
+    }
+    wakeVidSrcControlsV3251(session.box);
+    if (document.querySelector('#embedFrameContainer iframe') === session.frame) {
+      sendVidSrcSafeCommandV3211('providerqualityclose', {requestId:session.id});
     }
   }
 
+  function renderVidSrcQualityListV3259(session, options, selected) {
+    removeVidSrcQualityListV3259(session);
+    if (!session || !session.button || !Array.isArray(options) || !options.length) return false;
+
+    const menu = document.createElement('div');
+    menu.className = 'sh-v3259-quality-list';
+    menu.setAttribute('role','menu');
+    menu.setAttribute('aria-label','اختيار الجودة');
+
+    options.forEach(function (label) {
+      const value = String(label || '').trim();
+      if (!value) return;
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = value;
+      item.setAttribute('role','menuitemradio');
+      item.setAttribute('aria-checked', String(value === selected));
+      item.addEventListener('click', function (ev) {
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
+        if (vidSrcQualitySessionV3251 !== session) return;
+        sendVidSrcSafeCommandV3211('providerqualityselect', {
+          requestId:session.id,
+          quality:value
+        });
+        Array.from(menu.querySelectorAll('button')).forEach(function (b) {
+          b.setAttribute('aria-checked', String(b === item));
+        });
+        clearTimeout(session.timer);
+        session.timer = setTimeout(function () {
+          if (vidSrcQualitySessionV3251 === session) endVidSrcQualityV3251();
+        }, 450);
+      }, true);
+      menu.appendChild(item);
+    });
+
+    if (!menu.children.length) return false;
+    session.box.appendChild(menu);
+    session.menu = menu;
+
+    const br = session.button.getBoundingClientRect();
+    const xr = session.box.getBoundingClientRect();
+    const width = Math.max(76, Math.min(104, menu.offsetWidth || 82));
+    let left = br.left - xr.left + (br.width - width) / 2;
+    left = Math.max(6, Math.min(Math.max(6, xr.width - width - 6), left));
+    menu.style.left = left + 'px';
+    menu.style.top = Math.max(52, br.bottom - xr.top + 6) + 'px';
+    return true;
+  }
+
   function toggleVidSrcQualityV3251() {
-    if (vidSrcQualitySessionV3251) { endVidSrcQualityV3251(); return; }
+    if (vidSrcQualitySessionV3251) {
+      endVidSrcQualityV3251();
+      return;
+    }
     const frame = document.querySelector('#embedFrameContainer iframe');
     const box = document.querySelector('#embedPlayerModal .video-modal-box');
     if (!frame || !box || !isVidSrcFrameActiveV328()) return;
+
     const id = Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
     const button = box.querySelector('[data-provider-action="quality"]');
-    const s = {id, frame, box, button, timer:0};
-    vidSrcQualitySessionV3251 = s;
+    const session = {id:id, frame:frame, box:box, button:button, timer:0, menu:null};
+    vidSrcQualitySessionV3251 = session;
     wakeVidSrcControlsV3251(box);
-    if (button) button.textContent = '…';
+
+    if (button) button.setAttribute('aria-expanded','true');
     sendVidSrcSafeCommandV3211('providerquality', {requestId:id});
-    s.timer = setTimeout(function () {
-      if (vidSrcQualitySessionV3251 !== s) return;
+
+    session.timer = setTimeout(function () {
+      if (vidSrcQualitySessionV3251 !== session) return;
       endVidSrcQualityV3251();
       const note = document.createElement('div');
       note.className = 'sh-v3251-quality-note';
-      note.textContent = 'لم تظهر إعدادات الجودة لهذا المصدر. حاول بعد بدء الفيديو.';
+      note.textContent = 'لم تظهر جودات لهذا المصدر. حاول بعد بدء الفيديو.';
       box.appendChild(note);
-      setTimeout(function () { note.remove(); }, 3500);
-    }, 1800);
+      setTimeout(function () { note.remove(); }, 3000);
+    }, 2600);
   }
 
   window.addEventListener('message', function (ev) {
-    const d = ev.data, s = vidSrcQualitySessionV3251;
-    if (!s || !d || d.type !== 'SUBHUB_VIDSRC_QUALITY_V3251' || d.requestId !== s.id) return;
-    if (!s.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== s.frame) { endVidSrcQualityV3251(); return; }
-    if (d.open) {
-      clearTimeout(s.timer);
-      s.box.classList.add('sh-v3251-quality');
-      if (s.button) { s.button.textContent = 'عودة'; s.button.setAttribute('aria-expanded','true'); }
-      s.timer = setTimeout(endVidSrcQualityV3251, 15000);
-    } else endVidSrcQualityV3251();
+    const d = ev.data;
+    const session = vidSrcQualitySessionV3251;
+    if (!session || !d || d.type !== 'SUBHUB_VIDSRC_QUALITY_V3251' || d.requestId !== session.id) return;
+    if (!session.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== session.frame) {
+      endVidSrcQualityV3251();
+      return;
+    }
+    if (!d.open) {
+      endVidSrcQualityV3251();
+      return;
+    }
+
+    const options = Array.isArray(d.options) ? d.options : [];
+    if (!options.length) return;
+    clearTimeout(session.timer);
+    if (session.button) session.button.setAttribute('aria-expanded','true');
+    if (renderVidSrcQualityListV3259(session, options, String(d.selected || ''))) {
+      session.timer = setTimeout(function () {
+        if (vidSrcQualitySessionV3251 === session) endVidSrcQualityV3251();
+      }, 15000);
+    }
   });
 
   function fmtVidSrcTimeV3222(v) {
