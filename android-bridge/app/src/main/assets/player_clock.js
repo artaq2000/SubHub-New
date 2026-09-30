@@ -577,10 +577,11 @@
     const protectedNodes = vidSrcMediaAncestorsV3250();
 
     /*
-     * 322.3.35:
-     * Hide only the provider's bottom control bars and its rewind/forward
-     * shortcuts. Never hide play/pause or the central play target: doing that
-     * made a reopened VidSrc player look normal but ignore taps.
+     * 322.3.57:
+     * While SubHub takeover is active, provider controls must be fully hidden,
+     * including the large play/pause feedback icon. The Android wake path now
+     * temporarily disables takeover before forwarding a real center tap, so
+     * hiding the provider play target here no longer blocks recovery.
      */
     const selector = [
       '.controls',
@@ -599,6 +600,17 @@
       '.shaka-controls-container',
       '.vds-controls',
       'media-control-bar',
+      'button[aria-label*="play" i]',
+      '[role="button"][aria-label*="play" i]',
+      'button[aria-label*="pause" i]',
+      '[role="button"][aria-label*="pause" i]',
+      '[title*="play" i]',
+      '[title*="pause" i]',
+      '[class*="big-play" i]',
+      '[class*="center-play" i]',
+      '[class*="center-pause" i]',
+      '[class*="play-button" i]',
+      '[class*="pause-button" i]',
       'media-seek-backward-button',
       'media-seek-forward-button',
       '[aria-label*="rewind" i]',
@@ -623,6 +635,47 @@
         root.querySelectorAll(selector).forEach(function (el) {
           try {
             if (!el || protectedNodes.has(el)) return;
+            if (!vidSrcProviderUiHiddenV3234.has(el)) {
+              vidSrcProviderUiHiddenV3234.set(el, {
+                display: el.style.getPropertyValue('display') || '',
+                displayPriority: el.style.getPropertyPriority('display') || '',
+                visibility: el.style.getPropertyValue('visibility') || '',
+                visibilityPriority: el.style.getPropertyPriority('visibility') || '',
+                opacity: el.style.getPropertyValue('opacity') || '',
+                opacityPriority: el.style.getPropertyPriority('opacity') || '',
+                pointerEvents: el.style.getPropertyValue('pointer-events') || '',
+                pointerEventsPriority: el.style.getPropertyPriority('pointer-events') || ''
+              });
+            }
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+            el.style.setProperty('pointer-events', 'none', 'important');
+            el.setAttribute('data-subhub-provider-ui-hidden-v3234', '1');
+          } catch (_) {}
+        });
+
+        // Some provider skins render only a bare SVG inside an anonymous
+        // centered button. Hide compact button-like nodes sitting directly on
+        // the video center as playback feedback, while leaving edge controls
+        // untouched. They are restored whenever takeover is disabled for a
+        // forwarded real Android tap.
+        const vr = media.getBoundingClientRect();
+        const cx = vr.left + vr.width / 2;
+        const cy = vr.top + vr.height / 2;
+        root.querySelectorAll('button,[role="button"]').forEach(function (el) {
+          try {
+            if (!el || protectedNodes.has(el) || el.hasAttribute('data-subhub-provider-ui-hidden-v3234')) return;
+            const r = el.getBoundingClientRect();
+            if (r.width < 18 || r.height < 18 || r.width > 150 || r.height > 150) return;
+            const ex = r.left + r.width / 2;
+            const ey = r.top + r.height / 2;
+            if (Math.abs(ex - cx) > vr.width * 0.13 || Math.abs(ey - cy) > vr.height * 0.16) return;
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return;
+            const hasGlyph = !!el.querySelector('svg,i,[class*="icon" i]') ||
+              /^(?:▶|❚❚|Ⅱ|\|\||►|⏸|⏵)$/.test(String(el.textContent || '').trim());
+            if (!hasGlyph) return;
             if (!vidSrcProviderUiHiddenV3234.has(el)) {
               vidSrcProviderUiHiddenV3234.set(el, {
                 display: el.style.getPropertyValue('display') || '',
