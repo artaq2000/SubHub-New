@@ -10,6 +10,7 @@ final class PlaybackMailbox {
         String source;
         long deadline;
         boolean delivered;
+        double resumeAt = -1;
 
         Request(String id, String source, long deadline) {
             this.id = id;
@@ -30,6 +31,15 @@ final class PlaybackMailbox {
         pending = new Request(id, source, now + CONNECT_TIMEOUT_MS);
         return true;
     }
+
+    synchronized boolean beginResume(String id, String source, double resumeAt, long now) {
+        if (!begin(id, source, now)) return false;
+        pending.resumeAt = Math.max(0, resumeAt);
+        pending.deadline = now + 12000L;
+        return true;
+    }
+
+    synchronized boolean isResuming() { return pending != null && pending.resumeAt >= 0; }
 
     synchronized Request take(String source, String currentSource, long now) {
         expire(now);

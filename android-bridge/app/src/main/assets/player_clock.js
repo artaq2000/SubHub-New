@@ -16,6 +16,11 @@
           if (/(?:^|\.)vidsrc\.to$/i.test(h)) return true;
         } catch (_) {}
       }
+      // Redirected/restored providers may no longer have a vidsrc.to ancestor.
+      // Limit this fallback to descendants of SubHub's active native session.
+      const native = window.SubHubAndroidBridge;
+      if (Array.from(ancestors).some(function (origin) { return origin === 'https://subhub-at7.pages.dev'; })
+          && native && typeof native.isVidSrcGuardActive === 'function' && native.isVidSrcGuardActive()) return true;
     } catch (_) {}
     return false;
   }
@@ -744,7 +749,7 @@
         (document.head || document.documentElement).appendChild(style);
       }
 
-      document.querySelectorAll('video').forEach(function (video) {
+      vidSrcDeepQueryAllV3226('video').forEach(function (video) {
         try {
           if (active) {
             if (!vidSrcTakeoverControlsV3222.has(video)) {
@@ -1144,10 +1149,15 @@
     }
     if (!video || !video.isConnected) return;
     // Decide once from the real element, never from the page's cached pause icon.
-    const op = {id:d.requestId, video, playing:!!(video.paused || video.ended),
+    const op = {id:d.requestId, video, playing:typeof d.playing === 'boolean' ? d.playing : !!(video.paused || video.ended),
       startedTime:Number(video.currentTime || 0), deadline:Date.now()+Math.min(14700, Number(d.timeoutMs) || 14700)};
     vidSrcOperationV3253 = op;
     try {
+      if (Number.isFinite(d.resumeAt) && d.resumeAt >= 0) {
+        const duration = Number(video.duration);
+        video.currentTime = Number.isFinite(duration) && duration > 0 ? Math.min(d.resumeAt,Math.max(0,duration-1)) : d.resumeAt;
+        op.startedTime = Number(video.currentTime || 0);
+      }
       const result = mediaActionV3253(video, op.playing);
       if (!op.playing) {
         reportVidSrcPlaybackV3253(op, video.paused ? 'complete' : 'error', video.paused ? '' : 'pause-failed');
@@ -1192,6 +1202,44 @@
       abortVidSrcPlaybackV3253(op,'buffer-timeout',true);
     }
   }
+
+  const vidSrcChannelV3254 = window.SubHubPlayerChannel || null;
+  let vidSrcChannelReadyV3254 = false;
+  let vidSrcChannelSentAtV3254 = 0;
+  function registerVidSrcChannelV3254(force) {
+    if (!vidSrcChannelV3254 || !isVidSrcChainV3216() || !activeVideo || !activeVideo.isConnected) return;
+    if (!force && Date.now()-vidSrcChannelSentAtV3254 < 1000) return;
+    vidSrcChannelSentAtV3254 = Date.now();
+    const p = payload(activeVideo,'channel');
+    p.token = vidSrcPlaybackTokenV3253;
+    try { vidSrcChannelV3254.postMessage(JSON.stringify(p)); } catch (_) {}
+  }
+  function receiveVidSrcChannelV3254(event) {
+    let d; try { d=JSON.parse(event.data); } catch (_) { return; }
+    if (d.command === 'cancel' || String(d.command || '').startsWith('cancel:')) {
+      const op = vidSrcOperationV3253;
+      if (op && (d.command === 'cancel' || d.command === 'cancel:'+op.id)) abortVidSrcPlaybackV3253(op,'cancelled',false);
+      return;
+    }
+    if (d.command === 'ready') {
+      if (!vidSrcChannelReadyV3254) { vidSrcChannelReadyV3254=true; applyVidSrcTakeoverV3222(true); }
+      return;
+    }
+    chooseBest(activeVideo);
+    if (activeVideo) attach(activeVideo);
+    if (d.command === 'refresh') { registerVidSrcChannelV3254(true); return; }
+    if (d.requestId) {
+      if (activeVideo) activeVideo.controls=false;
+      startVidSrcPlaybackV3253(d,activeVideo);
+    }
+  }
+  if (vidSrcChannelV3254) vidSrcChannelV3254.onmessage = receiveVidSrcChannelV3254;
+  ['pageshow','focus'].forEach(function (event) {
+    window.addEventListener(event,function(){chooseBest(activeVideo);registerVidSrcChannelV3254(true);},true);
+  });
+  document.addEventListener('visibilitychange',function(){
+    if (!document.hidden) { chooseBest(activeVideo);registerVidSrcChannelV3254(true); }
+  },true);
 
   const vidSrcPlaybackCommandsV3252 = new Map();
   function applyVidSrcPlaybackV3252(d, video) {
@@ -1465,7 +1513,7 @@
 
   function chooseBest(prefer) {
     try {
-      const list = Array.from(document.querySelectorAll('video'));
+      const list = isVidSrcChainV3216() ? vidSrcDeepQueryAllV3226('video') : Array.from(document.querySelectorAll('video'));
       if (!list.length) { activeVideo = null; return null; }
       let best = null;
       let bestScore = -100000;
@@ -1553,7 +1601,7 @@
 
     if (name === 'seeking' || name === 'seeked' || name === 'play' || name === 'playing') {
       chooseBest(video);
-    } else if (!activeVideo || !document.contains(activeVideo)) {
+    } else if (!activeVideo || !activeVideo.isConnected) {
       chooseBest(video);
     }
 
@@ -1561,6 +1609,7 @@
 
     const urgent = name === 'seeking' || name === 'seeked' || name === 'pause' || name === 'playing' || name === 'waiting';
     send(video, urgent, name);
+    try { registerVidSrcChannelV3254(urgent); } catch (_) {}
   }
 
   function startVideoFrameLoop(video) {
@@ -1786,7 +1835,7 @@
 
   function disableVidSrcTextTracksV3221() {
     try {
-      document.querySelectorAll('video').forEach(function (video) {
+      vidSrcDeepQueryAllV3226('video').forEach(function (video) {
         try {
           video.querySelectorAll('track').forEach(function (tr) {
             try {
@@ -1886,7 +1935,7 @@
     if (!isVidSrcChainV3216()) return;
 
     try {
-      document.querySelectorAll('video').forEach(function (video) {
+      vidSrcDeepQueryAllV3226('video').forEach(function (video) {
         try {
           const tracks = video.textTracks;
           if (!tracks) return;
@@ -1932,7 +1981,7 @@
       }
       if (isPlayerHost()) detectDeepPlayerUi();
 
-      document.querySelectorAll('video').forEach(attach);
+      (isVidSrcChainV3216() ? vidSrcDeepQueryAllV3226('video') : document.querySelectorAll('video')).forEach(attach);
       installVidSrcInteractionGuardV3217();
       suppressVidSrcCaptionsV3215();
       chooseBest(activeVideo);
@@ -1956,9 +2005,10 @@
   setInterval(function () {
     try {
       scan();
-      if (activeVideo && document.contains(activeVideo)) {
+      if (activeVideo && activeVideo.isConnected) {
         maybeSignalReady(activeVideo, false);
         send(activeVideo, false, 'poll');
+        registerVidSrcChannelV3254(false);
       }
     } catch (_) {}
     try { pollVidSrcPlaybackV3253(); } catch (_) {}

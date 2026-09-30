@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.53';
+  const BRIDGE_BUILD = '322.3.54';
 
   let lastSig = '';
   let clockSource = '';
@@ -573,7 +573,64 @@
   }
   window.addEventListener('message', receiveVidSrcPlaybackV3252);
 
+  let vidSrcSessionV3254 = null;
+  let vidSrcControlsDeadlineV3254 = 0;
+  function syncVidSrcSessionV3254() {
+    const frame = document.querySelector('#embedFrameContainer iframe');
+    if (!frame || !isVidSrcFrameActiveV328()) { vidSrcSessionV3254=null; return null; }
+    if (vidSrcSessionV3254 && vidSrcSessionV3254.frame===frame && vidSrcSessionV3254.src===frame.src) return vidSrcSessionV3254;
+    cancelVidSrcPlaybackV3252();
+    const session={frame,src:frame.src,resumeAt:0};
+    vidSrcSessionV3254=session;
+    try { const b=window.SubHubAndroidBridge;if(b&&typeof b.vidSrcSession==='function')session.resumeAt=Number(b.vidSrcSession(VIDSRC_GUARD_TOKEN,frame.src))||0; } catch (_) {}
+    clockSource='';lastSeq=-1;clockPaused=true;clockEnded=false;clockReadyState=0;
+    window.__subhubVidSrcTimeV3222=session.resumeAt;
+    window.__subhubVidSrcPlayingV3222=false;
+    window.__subhubVidSrcDurationV3211=0;
+    vidSrcControlsDeadlineV3254=Date.now()+2600;
+    return session;
+  }
+
+  function recoverVidSrcPlaybackV3254(p) {
+    const b=window.SubHubAndroidBridge;
+    if (!b || typeof b.recoverVidSrcPlayback!=='function' || !p.frame.isConnected || p.frame.src!==p.src
+        || document.querySelector('#embedFrameContainer iframe')!==p.frame || !isVidSrcFrameActiveV328()
+        || (p.recovery && p.resumeAt===0)) return false;
+    const session=syncVidSrcSessionV3254();
+    const point=p.recovery ? 0 : Math.max(0,Number(window.__subhubVidSrcTimeV3222)||Number(session&&session.resumeAt)||0);
+    cancelVidSrcPlaybackV3252();
+    const q={frame:p.frame,src:p.src,native:true,source:'',timer:0,recovery:true,resumeAt:point,
+      id:Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')};
+    vidSrcPlaybackPendingV3252=q;
+    let accepted=false;
+    try {accepted=b.recoverVidSrcPlayback(VIDSRC_GUARD_TOKEN,q.id,point);} catch (_) {}
+    if (!accepted) {cancelVidSrcPlaybackV3252();return false;}
+    // Reload only a failed playback session, never for fullscreen/layout changes.
+    q.frame.src=q.src;
+    clockSource='';lastSeq=-1;clockPaused=true;clockWaiting=true;
+    vidSrcPlaybackStatusV3252(point>0?'جارٍ إعادة فتح الفيديو واستعادة موضع التوقف…':'جارٍ إعادة تشغيل الفيديو من البداية…');
+    updateVidSrcTakeoverV3222(point,window.__subhubVidSrcDurationV3211||0,false);
+    armVidSrcPlaybackTimeoutV3253(q,12500);
+    return true;
+  }
+
+  function tickVidSrcControlsV3254() {
+    const root=document.getElementById('subhub-vidsrc-takeover-v3222');
+    if(!root)return;
+    const hidden=!!window.__subhubVidSrcPlayingV3222 && !vidSrcPlaybackPendingV3252
+      && !vidSrcTakeoverDraggingV3222 && Date.now()>=vidSrcControlsDeadlineV3254;
+    root.setAttribute('data-sh-controls-hidden',hidden?'1':'0');
+  }
+
+  window.SubHubNativeResumeV3254=function(){
+    cancelVidSrcPlaybackV3252();
+    syncVidSrcGuardV328(true);
+    syncVidSrcSessionV3254();
+    vidSrcControlsDeadlineV3254=Date.now()+2600;
+  };
+
   function nativeVidSrcPlaybackV3253(frame) {
+    if (typeof syncVidSrcSessionV3254 === 'function') syncVidSrcSessionV3254();
     const p = {frame, src:frame.src, native:true, source:'', timer:0,
       id:Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')};
     vidSrcPlaybackPendingV3252 = p;
@@ -597,8 +654,10 @@
     clearTimeout(p.timer);
     p.timer = setTimeout(function () {
       if (vidSrcPlaybackPendingV3252 !== p) return;
+      if (typeof recoverVidSrcPlaybackV3254 === 'function' && recoverVidSrcPlaybackV3254(p)) return;
       cancelVidSrcPlaybackV3252();
       if (!p.frame.isConnected || p.frame.src !== p.src) return;
+      clockPaused=true;clockWaiting=false;
       vidSrcPlaybackStatusV3252(p.started ? 'توقف تحميل الفيديو. اضغط التشغيل لإعادة المحاولة.' : 'تعذّر الاتصال بالمشغّل. اضغط التشغيل لإعادة المحاولة.');
       updateVidSrcTakeoverV3222(window.__subhubVidSrcTimeV3222 || 0, window.__subhubVidSrcDurationV3211 || 0, !clockPaused && !clockEnded);
       vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},6000);
@@ -623,6 +682,7 @@
         armVidSrcPlaybackTimeoutV3253(p, 16000);
       }
     } else {
+      if (d.phase === 'error' && typeof recoverVidSrcPlaybackV3254 === 'function' && recoverVidSrcPlaybackV3254(p)) return;
       cancelVidSrcPlaybackV3252();
       if (d.phase === 'error') {
         vidSrcPlaybackStatusV3252(d.error === 'buffer-timeout' ? 'توقف تحميل الفيديو. اضغط التشغيل لإعادة المحاولة.' : 'تعذّر تشغيل الفيديو. اضغط التشغيل لإعادة المحاولة.');
@@ -634,6 +694,7 @@
   window.SubHubNativePlayback = receiveVidSrcPlaybackV3253;
 
   function wakeVidSrcControlsV3251(box) {
+    if (typeof vidSrcControlsDeadlineV3254 !== 'undefined') vidSrcControlsDeadlineV3254=Date.now()+2600;
     box.classList.remove('sh-v374-idle');
     box.classList.add('sh-v374-awake');
     try {
@@ -687,6 +748,7 @@
       #embedPlayerModal .sh-v3252-status{position:absolute;left:8px;right:8px;top:62px;color:#fff;background:rgba(0,0,0,.7);text-align:center;border-radius:8px;padding:4px;font:12px system-ui;pointer-events:none;z-index:4}
       #embedPlayerModal .sh-v3252-status:empty{display:none}
       #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-center[aria-busy="true"]{opacity:.75!important}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222.sh-v3251-ready[data-sh-controls-hidden="1"] .sh-v3222-center{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       #embedPlayerModal .sh-v3251-quality-note{position:absolute;left:12px;right:12px;top:62px;padding:8px;border-radius:10px;background:rgba(8,12,18,.9);color:white;z-index:2147483645;text-align:center;font-size:13px;pointer-events:none}
     `;
     if (!document.getElementById(style.id)) (document.head || document.documentElement).appendChild(style);
@@ -1381,6 +1443,7 @@
   function updateVidSrcTakeoverV3222(t, d, playing) {
     try {
       window.__subhubVidSrcTimeV3222 = Number(t || 0);
+      if (playing && !window.__subhubVidSrcPlayingV3222 && typeof vidSrcControlsDeadlineV3254 !== 'undefined') vidSrcControlsDeadlineV3254=Date.now()+2600;
       window.__subhubVidSrcPlayingV3222 = !!playing;
       if (Number.isFinite(Number(d)) && Number(d) > 0) {
         window.__subhubVidSrcDurationV3211 = Number(d);
@@ -2507,6 +2570,8 @@
 
   setInterval(function () {
     syncVidSrcGuardV328(false);
+    syncVidSrcSessionV3254();
+    tickVidSrcControlsV3254();
     if (vidSrcPlaybackPendingV3252 && (!vidSrcPlaybackPendingV3252.frame.isConnected || (vidSrcPlaybackPendingV3252.native && vidSrcPlaybackPendingV3252.frame.src !== vidSrcPlaybackPendingV3252.src) || document.querySelector('#embedFrameContainer iframe') !== vidSrcPlaybackPendingV3252.frame)) cancelVidSrcPlaybackV3252();
     if (vidSrcQualitySessionV3251) wakeVidSrcControlsV3251(vidSrcQualitySessionV3251.box);
     if (vidSrcQualitySessionV3251 && (!vidSrcQualitySessionV3251.frame.isConnected || document.querySelector('#embedFrameContainer iframe') !== vidSrcQualitySessionV3251.frame)) endVidSrcQualityV3251();

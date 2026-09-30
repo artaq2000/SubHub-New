@@ -8,7 +8,7 @@ const block=clock.slice(clock.indexOf('  // Commands and results use Android IPC
    play(){playCalls++;this.paused=false;return new Promise((r,j)=>{resolvePlay=r;rejectPlay=j})},
    pause(){pauseCalls++;this.paused=true}};
  const b={pollVidSrcPlayback(){const d={activeRequest:live,...next};next=null;return JSON.stringify(d)},vidSrcPlaybackResult(token,raw){results.push(JSON.parse(raw))}};
- const c={activeVideo:v,sourceId:'real-leaf',bridge:()=>b,payload:video=>({source:'real-leaf',paused:video.paused,ended:video.ended,seq:results.length+1}),isVidSrcChainV3216:()=>true,Date:{now:()=>now},Set,JSON,Number,Math};
+ const c={window:{addEventListener(){}},document:{addEventListener(){}},activeVideo:v,sourceId:'real-leaf',bridge:()=>b,payload:video=>({source:'real-leaf',paused:video.paused,ended:video.ended,seq:results.length+1}),isVidSrcChainV3216:()=>true,Date:{now:()=>now},Set,JSON,Number,Math};
  vm.createContext(c);vm.runInContext(block,c);
  const request=id=>{live=id;next={requestId:id,targetSource:'real-leaf',timeoutMs:14700};c.pollVidSrcPlaybackV3253()};
  request('pause');assert.equal(v.paused,true);assert.equal(results.at(-1).phase,'complete');assert.equal(pauseCalls,1);

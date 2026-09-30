@@ -42,6 +42,9 @@ import android.widget.Toast;
 import android.provider.MediaStore;
 
 import androidx.webkit.WebViewCompat;
+import androidx.webkit.JavaScriptReplyProxy;
+import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import androidx.webkit.WebViewFeature;
 
 import org.json.JSONObject;
@@ -64,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.53";
-    private static final int NATIVE_VERSION_CODE = 62;
+    private static final String NATIVE_VERSION = "322.3.54";
+    private static final int NATIVE_VERSION_CODE = 63;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -94,6 +97,12 @@ public class MainActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final Object clockLock = new Object();
     private final PlaybackMailbox playbackMailbox = new PlaybackMailbox();
+    // Access reply proxies only on the UI thread; each proxy belongs to one frame.
+    private final LinkedHashMap<String, JavaScriptReplyProxy> playbackReplies = new LinkedHashMap<>();
+    private String vidSrcResumeKey = "";
+    private long lastResumeSaveAt = 0;
+    private double lastResumeTime = 0;
+
 
     private FrameLayout root;
     private WebView webView;
@@ -120,6 +129,7 @@ public class MainActivity extends Activity {
     private boolean clockDispatchScheduled = false;
     private String activeClockSource = "";
     private long activeClockSeq = -1L;
+    private int activeClockReadyState = 0;
     private long activeClockSeenAt = 0L;
     private double activeClockScore = -100000.0;
 
@@ -244,6 +254,7 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new NativeBridge(), "SubHubAndroidBridge");
         installDownloadSupport();
+        installVidSrcMessageChannel();
         clockScript = readAsset("player_clock.js").replace("__VIDSRC_GUARD_TOKEN__", vidSrcGuardToken);
         siteBridgeScript = readAsset("site_bridge.js") + "\n" + readAsset("direct_stream.js") + "\n" + readAsset("r2_upload.js");
 
@@ -1199,6 +1210,64 @@ public class MainActivity extends Activity {
         return lp;
     }
 
+    private void installVidSrcMessageChannel() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return;
+        WebViewCompat.addWebMessageListener(webView, "SubHubPlayerChannel", Collections.singleton("*"),
+                (view, message, origin, isMainFrame, reply) -> {
+            try {
+                String raw = message.getData();
+                if (isMainFrame || raw == null || raw.length() > 8192) return;
+                JSONObject p = new JSONObject(raw);
+                if (!vidSrcGuardToken.equals(p.optString("token"))) return;
+                String source = p.optString("source", "");
+                if (source.isEmpty() || source.length() > 300) return;
+                playbackReplies.put(source, reply);
+                if (playbackReplies.size() > 16) playbackReplies.remove(playbackReplies.keySet().iterator().next());
+                if (!vidSrcGuardActive || p.optInt("readyState", 0) < 1) return;
+                queueClock(raw, p);
+                reply.postMessage("{\"command\":\"ready\"}");
+                dispatchVidSrcPlayback();
+            } catch (Exception ignored) {}
+        });
+    }
+
+    private void dispatchVidSrcPlayback() {
+        if (!vidSrcGuardActive) return;
+        final String source;
+        synchronized (clockLock) { if (activeClockReadyState < 1) return; source = activeClockSource; }
+        JavaScriptReplyProxy reply = playbackReplies.get(source);
+        if (reply == null) return;
+        PlaybackMailbox.Request request = playbackMailbox.take(source, source, SystemClock.elapsedRealtime());
+        if (request == null) return;
+        try { reply.postMessage(playbackCommand(request, source).toString()); } catch (Exception ignored) {}
+    }
+
+    private JSONObject playbackCommand(PlaybackMailbox.Request request, String source) throws Exception {
+        JSONObject p = new JSONObject();
+        p.put("requestId", request.id);
+        p.put("targetSource", source);
+        p.put("activeRequest", request.id);
+        p.put("timeoutMs", PlaybackMailbox.PLAY_TIMEOUT_MS - 300L);
+        if (request.resumeAt >= 0) { p.put("playing", true); p.put("resumeAt", request.resumeAt); }
+        return p;
+    }
+
+    private void refreshVidSrcChannels(String command) {
+        for (JavaScriptReplyProxy reply : new ArrayList<>(playbackReplies.values())) {
+            try { reply.postMessage("{\"command\":\"" + command + "\"}"); } catch (Exception ignored) {}
+        }
+    }
+
+    private void resetVidSrcClock() {
+        synchronized (clockLock) {
+            activeClockSource = "";
+            activeClockSeq = -1L;
+            activeClockSeenAt = 0L;
+            activeClockScore = -100000;
+            pendingClockRaw = null;
+        }
+    }
+
     private void pushClockToTopNow(String raw) {
         if (webView == null) return;
         final String quoted = JSONObject.quote(raw == null ? "{}" : raw);
@@ -1270,7 +1339,16 @@ public class MainActivity extends Activity {
             if (seq >= 0) activeClockSeq = seq;
             activeClockSeenAt = now;
             activeClockScore = score;
+            activeClockReadyState = p.optInt("readyState", 0);
             pendingClockRaw = raw;
+            double current = p.optDouble("currentTime", -1);
+            double duration = p.optDouble("duration", 0);
+            if (vidSrcGuardActive && !vidSrcResumeKey.isEmpty() && !playbackMailbox.isResuming()
+                    && current >= 0 && duration > 60 && (urgent || now - lastResumeSaveAt >= 5000)) {
+                lastResumeSaveAt = now;
+                lastResumeTime = current >= duration - 3 ? 0 : current;
+                nativePrefs.edit().putFloat(vidSrcResumeKey, (float) lastResumeTime).apply();
+            }
 
             if (urgent) {
                 ui.removeCallbacks(clockDispatchRunnable);
@@ -1517,6 +1595,15 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (webView != null) {
+            webView.onResume();
+            webView.resumeTimers();
+            ui.post(() -> {
+                if (webView == null || !isTrustedHomePage()) return;
+                refreshVidSrcChannels("refresh");
+                webView.evaluateJavascript("window.SubHubNativeResumeV3254 && window.SubHubNativeResumeV3254();", null);
+            });
+        }
         if (directStreamPlayer != null) {
             ui.postDelayed(() -> {
                 if (directStreamPlayer != null) directStreamPlayer.applyImmersive();
@@ -1529,6 +1616,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         if (directStreamPlayer != null) directStreamPlayer.pause();
+        playbackMailbox.clear();
+        refreshVidSrcChannels("cancel");
         super.onPause();
     }
 
@@ -1647,6 +1736,8 @@ public class MainActivity extends Activity {
                 vidSrcGuardActive = active;
                 if (!active) {
                     playbackMailbox.clear();
+                    refreshVidSrcChannels("cancel");
+                    playbackReplies.clear();
                     lastVidSrcBlockedAt = 0L;
                     if (vidSrcPseudoFullscreenActive) {
                         applyVidSrcImmersiveUi(false);
@@ -1750,17 +1841,53 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public double vidSrcSession(String token, String url) {
+            if (!vidSrcGuardToken.equals(token) || url == null || url.length() > 2000) return 0;
+            try {
+                Uri u = Uri.parse(url);
+                String host = u.getHost();
+                if (!"https".equals(u.getScheme()) || host == null
+                        || !(host.equals("vidsrc.to") || host.endsWith(".vidsrc.to"))) return 0;
+                synchronized (clockLock) {
+                    String key = "vidsrcResume54:" + Base64.encodeToString((host + u.getPath()).getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP | Base64.URL_SAFE);
+                    if (!key.equals(vidSrcResumeKey)) {
+                        vidSrcResumeKey = key;
+                        lastResumeTime = nativePrefs.getFloat(key, 0);
+                        lastResumeSaveAt = 0;
+                    }
+                    return lastResumeTime;
+                }
+            } catch (Exception ignored) { return 0; }
+        }
+
+        @JavascriptInterface
+        public boolean recoverVidSrcPlayback(String token, String requestId, double time) {
+            if (!vidSrcGuardToken.equals(token) || !vidSrcGuardActive || requestId == null
+                    || requestId.length() > 160 || !Double.isFinite(time) || time < 0 || time > 50000) return false;
+            playbackMailbox.clear();
+            resetVidSrcClock();
+            boolean accepted = playbackMailbox.beginResume(requestId, "", time, SystemClock.elapsedRealtime());
+            ui.post(() -> { refreshVidSrcChannels("cancel"); playbackReplies.clear(); });
+            return accepted;
+        }
+
+        @JavascriptInterface
         public boolean requestVidSrcPlayback(String token, String requestId) {
             if (!vidSrcGuardToken.equals(token) || !vidSrcGuardActive
                     || requestId == null || requestId.length() > 160) return false;
             synchronized (clockLock) {
-                return playbackMailbox.begin(requestId, activeClockSource, SystemClock.elapsedRealtime());
+                boolean accepted = playbackMailbox.begin(requestId, activeClockSource, SystemClock.elapsedRealtime());
+                if (accepted) ui.post(() -> { refreshVidSrcChannels("refresh"); dispatchVidSrcPlayback(); });
+                return accepted;
             }
         }
 
         @JavascriptInterface
         public void cancelVidSrcPlayback(String token, String requestId) {
-            if (vidSrcGuardToken.equals(token) && requestId != null) playbackMailbox.cancel(requestId);
+            if (vidSrcGuardToken.equals(token) && requestId != null) {
+                playbackMailbox.cancel(requestId);
+                ui.post(() -> refreshVidSrcChannels("cancel:" + requestId));
+            }
         }
 
         @JavascriptInterface
@@ -1771,14 +1898,12 @@ public class MainActivity extends Activity {
                 final long now = SystemClock.elapsedRealtime();
                 final PlaybackMailbox.Request request;
                 synchronized (clockLock) {
-                    request = playbackMailbox.take(source, activeClockSource, now);
+                    request = activeClockReadyState >= 1 ? playbackMailbox.take(source, activeClockSource, now) : null;
                 }
                 JSONObject reply = new JSONObject();
                 reply.put("activeRequest", playbackMailbox.liveRequest(source, now));
                 if (request != null) {
-                    reply.put("requestId", request.id);
-                    reply.put("targetSource", source);
-                    reply.put("timeoutMs", PlaybackMailbox.PLAY_TIMEOUT_MS - 300L);
+                    return playbackCommand(request, source).toString();
                 }
                 return reply.toString();
             } catch (Exception ignored) { return "{}"; }
