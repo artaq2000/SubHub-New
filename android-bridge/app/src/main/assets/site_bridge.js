@@ -3,7 +3,7 @@
   if (window.__subHubSiteBridgeV223) return true;
   window.__subHubSiteBridgeV223 = true;
 
-  const BRIDGE_BUILD = '322.3.55';
+  const BRIDGE_BUILD = '322.3.56';
 
   let lastSig = '';
   let clockSource = '';
@@ -138,16 +138,30 @@
       const ny = Math.max(0.02, Math.min(0.98, cy / vh));
 
       const shield = document.getElementById('vidfastSafeV294');
+      const root = document.getElementById('subhub-vidsrc-takeover-v3222');
       if (shield) shield.style.setProperty('pointer-events', 'none', 'important');
+      if (root) root.style.setProperty('display', 'none', 'important');
 
-      b.tapVidSrc(VIDSRC_GUARD_TOKEN, nx, ny);
+      // A reopened Android WebView can require a real user-style tap before
+      // HTMLMediaElement.play() is accepted again. Temporarily restore the
+      // provider play surface, forward one native tap through SubHub's overlay,
+      // then immediately return to the protected SubHub controls.
+      sendVidSrcSafeCommandV3211('takeover', {active:false});
+
+      setTimeout(function () {
+        try { b.tapVidSrc(VIDSRC_GUARD_TOKEN, nx, ny); } catch (_) {}
+      }, 90);
 
       setTimeout(function () {
         try {
           const s = document.getElementById('vidfastSafeV294');
+          const r = document.getElementById('subhub-vidsrc-takeover-v3222');
           if (s) s.style.removeProperty('pointer-events');
+          if (r) r.style.removeProperty('display');
+          sendVidSrcSafeCommandV3211('takeover', {active:true});
+          requestVidSrcCaptionOffV3227(true);
         } catch (_) {}
-      }, 420);
+      }, 620);
 
       return true;
     } catch (_) {
@@ -514,6 +528,8 @@
 
   let vidSrcPlaybackPendingV3252 = null;
   let vidSrcPlaybackStatusTimerV3252 = 0;
+  let vidSrcResumeTargetV3256 = 0;
+  let vidSrcWakeTimerV3256 = 0;
   function vidSrcPlaybackStatusV3252(text) {
     clearTimeout(vidSrcPlaybackStatusTimerV3252);
     const status = document.querySelector('#subhub-vidsrc-takeover-v3222 .sh-v3252-status');
@@ -530,11 +546,62 @@
     vidSrcPlaybackStatusV3252('');
   }
 
+  function wakeVidSrcPlaybackV3256(frame) {
+    if (!frame || !frame.isConnected || !isVidSrcFrameActiveV328()) return false;
+    const session = syncVidSrcSessionV3254();
+    const point = Math.max(
+      0,
+      Number(window.__subhubVidSrcTimeV3222) || 0,
+      Number(session && session.resumeAt) || 0
+    );
+
+    cancelVidSrcPlaybackV3252();
+    clearTimeout(vidSrcWakeTimerV3256);
+    vidSrcResumeTargetV3256 = point;
+    clockSource = '';
+    lastSeq = -1;
+    clockReadyState = 0;
+    clockLinked = false;
+    clockPaused = true;
+    clockWaiting = true;
+    clockEnded = false;
+
+    updateVidSrcTakeoverV3222(point, window.__subhubVidSrcDurationV3211 || 0, false);
+    vidSrcPlaybackStatusV3252('جارٍ تهيئة المشغّل…');
+
+    if (!nativeTapVidSrcV3213()) {
+      clockWaiting = false;
+      vidSrcPlaybackStatusV3252('تعذّر تهيئة المشغّل. اضغط التشغيل مرة أخرى.');
+      return false;
+    }
+
+    vidSrcWakeTimerV3256 = setTimeout(function () {
+      if (clockReadyState >= 1) {
+        vidSrcPlaybackStatusV3252('');
+        return;
+      }
+      clockWaiting = false;
+      vidSrcPlaybackStatusV3252('لم يستجب المشغّل. اضغط التشغيل مرة أخرى.');
+      updateVidSrcTakeoverV3222(
+        Number(window.__subhubVidSrcTimeV3222) || point,
+        window.__subhubVidSrcDurationV3211 || 0,
+        false
+      );
+    }, 3200);
+    return true;
+  }
+
   function requestVidSrcPlaybackV3252() {
     if (vidSrcPlaybackPendingV3252) return false;
     const frame = document.querySelector('#embedFrameContainer iframe');
     if (!frame || !isVidSrcFrameActiveV328()) return false;
-    if (window.SubHubAndroidBridge && typeof window.SubHubAndroidBridge.requestVidSrcPlayback === 'function') return nativeVidSrcPlaybackV3253(frame);
+    if (window.SubHubAndroidBridge && typeof window.SubHubAndroidBridge.requestVidSrcPlayback === 'function') {
+      // A live clock means Android still owns the real media element. If the
+      // clock was lost after leaving the app, use one real forwarded tap first
+      // instead of entering the reload/recovery loop.
+      if (clockReadyState >= 1 && clockSource) return nativeVidSrcPlaybackV3253(frame);
+      return wakeVidSrcPlaybackV3256(frame);
+    }
     if (!clockSource) return false;
     const playing = !(window.__subhubVidSrcPlayingV3222 === true);
     const p = {frame, source:clockSource, playing, timer:0,
@@ -622,8 +689,9 @@
     root.setAttribute('data-sh-controls-hidden',hidden?'1':'0');
   }
 
-  window.SubHubNativeResumeV3255=function(){
+  window.SubHubNativeResumeV3256=function(){
     cancelVidSrcPlaybackV3252();
+    clearTimeout(vidSrcWakeTimerV3256);
     syncVidSrcGuardV328(true);
     const session=syncVidSrcSessionV3254();
     vidSrcControlsDeadlineV3254=Date.now()+2600;
@@ -631,23 +699,42 @@
     const box=document.querySelector('#embedPlayerModal .video-modal-box');
     if(box)wakeVidSrcControlsV3251(box);
     if(!session||!frame||session.frame!==frame||!frame.isConnected||!isVidSrcFrameActiveV328())return;
-    const p={frame:frame,src:frame.src,recovery:false,resumeAt:Math.max(0,Number(session.resumeAt)||0)};
-    if(!recoverVidSrcPlaybackV3254(p)){
-      clockPaused=true;clockWaiting=false;
-      updateVidSrcTakeoverV3222(Number(session.resumeAt)||0,window.__subhubVidSrcDurationV3211||0,false);
-    }
+
+    try {
+      const b=window.SubHubAndroidBridge;
+      if(b&&typeof b.vidSrcSession==='function') {
+        session.resumeAt=Number(b.vidSrcSession(VIDSRC_GUARD_TOKEN,frame.src))||0;
+      }
+    } catch (_) {}
+
+    const point=Math.max(0,Number(session.resumeAt)||Number(window.__subhubVidSrcTimeV3222)||0);
+    vidSrcResumeTargetV3256=point;
+    clockSource='';
+    lastSeq=-1;
+    clockReadyState=0;
+    clockLinked=false;
+    clockPaused=true;
+    clockWaiting=false;
+    clockEnded=false;
+    window.__subhubVidSrcTimeV3222=point;
+    window.__subhubVidSrcPlayingV3222=false;
+    vidSrcPlaybackStatusV3252('');
+    updateVidSrcTakeoverV3222(point,window.__subhubVidSrcDurationV3211||0,false);
   };
-  window.SubHubNativeResumeV3254=window.SubHubNativeResumeV3255;
+  window.SubHubNativeResumeV3255=window.SubHubNativeResumeV3256;
+  window.SubHubNativeResumeV3254=window.SubHubNativeResumeV3256;
 
   function nativeVidSrcPlaybackV3253(frame) {
     if (typeof syncVidSrcSessionV3254 === 'function') syncVidSrcSessionV3254();
-    const p = {frame, src:frame.src, native:true, source:'', timer:0,
+    const wantsPlay = !(window.__subhubVidSrcPlayingV3222 === true);
+    const p = {frame, src:frame.src, native:true, source:'', timer:0, playing:wantsPlay,
       id:Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-')};
     vidSrcPlaybackPendingV3252 = p;
     let accepted = false;
     try { accepted = window.SubHubAndroidBridge.requestVidSrcPlayback(VIDSRC_GUARD_TOKEN, p.id); } catch (_) {}
     if (!accepted) {
       cancelVidSrcPlaybackV3252();
+      if (p.playing) return wakeVidSrcPlaybackV3256(frame);
       vidSrcPlaybackStatusV3252('لم يجهز المشغّل بعد. حاول التشغيل مجدداً.');
       vidSrcPlaybackStatusTimerV3252 = setTimeout(function(){vidSrcPlaybackStatusV3252('');},4000);
       return false;
@@ -664,7 +751,10 @@
     clearTimeout(p.timer);
     p.timer = setTimeout(function () {
       if (vidSrcPlaybackPendingV3252 !== p) return;
-      if (typeof recoverVidSrcPlaybackV3254 === 'function' && recoverVidSrcPlaybackV3254(p)) return;
+      if (p.native && p.playing && p.frame && p.frame.isConnected) {
+        cancelVidSrcPlaybackV3252();
+        if (wakeVidSrcPlaybackV3256(p.frame)) return;
+      }
       cancelVidSrcPlaybackV3252();
       if (!p.frame.isConnected || p.frame.src !== p.src) return;
       clockPaused=true;clockWaiting=false;
@@ -692,7 +782,10 @@
         armVidSrcPlaybackTimeoutV3253(p, 16000);
       }
     } else {
-      if (d.phase === 'error' && typeof recoverVidSrcPlaybackV3254 === 'function' && recoverVidSrcPlaybackV3254(p)) return;
+      if (d.phase === 'error' && p.playing && p.frame && p.frame.isConnected) {
+        cancelVidSrcPlaybackV3252();
+        if (wakeVidSrcPlaybackV3256(p.frame)) return;
+      }
       cancelVidSrcPlaybackV3252();
       if (d.phase === 'error') {
         vidSrcPlaybackStatusV3252(d.error === 'buffer-timeout' ? 'توقف تحميل الفيديو. اضغط التشغيل لإعادة المحاولة.' : 'تعذّر تشغيل الفيديو. اضغط التشغيل لإعادة المحاولة.');
@@ -739,8 +832,8 @@
     style.textContent = `
       #subhub-vidsrc-takeover-v3222 .sh-v3251-surface{position:absolute;inset:0;pointer-events:none;touch-action:manipulation}
       #subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3251-surface{pointer-events:auto}
-      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-center{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
-      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-play{display:inline-flex!important;align-items:center;justify-content:center!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222.sh-v3251-ready .sh-v3222-center{display:flex!important;align-items:center;justify-content:center;visibility:visible!important;opacity:1!important;pointer-events:auto!important;z-index:2;touch-action:manipulation}
+      #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-play{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}
       #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{bottom:8px!important;z-index:3;direction:rtl}
       #embedPlayerModal #subhub-vidsrc-takeover-v3222 .sh-v3222-time{white-space:nowrap;min-width:0;font-size:12px}
       #embedPlayerModal .video-modal-box:not(.pseudo-fullscreen) #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{display:flex!important;visibility:visible!important;opacity:1!important;pointer-events:auto!important;flex-wrap:wrap}
@@ -1962,6 +2055,21 @@
       const d = Number(payload.duration || 0);
       if (Number.isFinite(d) && d > 0) {
         window.__subhubVidSrcDurationV3211 = d;
+      }
+      if (clockReadyState >= 1) {
+        clearTimeout(vidSrcWakeTimerV3256);
+        vidSrcPlaybackStatusV3252('');
+      }
+      if (clockReadyState >= 2 && vidSrcResumeTargetV3256 > 2) {
+        const target = vidSrcResumeTargetV3256;
+        vidSrcResumeTargetV3256 = 0;
+        if (t < target - 2.5) {
+          setTimeout(function () {
+            if (isVidSrcFrameActiveV328()) {
+              sendVidSrcSafeCommandV3211('seek', {time:target});
+            }
+          }, 180);
+        }
       }
       if (clockReadyState >= 1 && source !== window.__subhubTakeoverSourceV3251) {
         window.__subhubTakeoverSourceV3251 = source;
