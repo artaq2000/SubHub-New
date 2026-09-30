@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.57";
-    private static final int NATIVE_VERSION_CODE = 66;
+    private static final String NATIVE_VERSION = "322.3.61";
+    private static final int NATIVE_VERSION_CODE = 70;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -256,7 +256,10 @@ public class MainActivity extends Activity {
         installDownloadSupport();
         installVidSrcMessageChannel();
         clockScript = readAsset("player_clock.js").replace("__VIDSRC_GUARD_TOKEN__", vidSrcGuardToken);
-        siteBridgeScript = readAsset("site_bridge.js") + "\n" + readAsset("direct_stream.js") + "\n" + readAsset("r2_upload.js");
+        siteBridgeScript = readAsset("site_bridge.js") + "\n"
+                + readAsset("direct_stream.js") + "\n"
+                + readAsset("moviesmod_stream.js") + "\n"
+                + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(
@@ -1676,13 +1679,35 @@ public class MainActivity extends Activity {
                     JSONObject config = new JSONObject(raw);
                     String id = config.optString("movieId");
                     String session = config.optString("session");
-                    if (!id.matches("[A-Za-z0-9_-]{1,80}") || !session.matches("[A-Za-z0-9_-]{1,100}")) return;
+                    String mode = config.optString("mode", "vidsrc");
+                    if (!session.matches("[A-Za-z0-9_-]{1,100}")) return;
+
+                    final String sourceUrl;
+                    final String allowedHost;
+                    final String resumeKey;
+                    if ("moviesmod".equals(mode)) {
+                        String tmdbId = config.optString("tmdbId");
+                        String kind = config.optString("kind", "movie");
+                        String stableKey = config.optString("resumeKey", id);
+                        if (!tmdbId.matches("[0-9]{1,12}")
+                                || !("movie".equals(kind) || "tv".equals(kind))
+                                || !stableKey.matches("[A-Za-z0-9_.-]{1,100}")) return;
+                        sourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId);
+                        allowedHost = "moviesmod.gd";
+                        resumeKey = "moviesmod_" + stableKey;
+                    } else {
+                        if (!id.matches("[A-Za-z0-9_-]{1,80}")) return;
+                        sourceUrl = "https://vidsrc.to/embed/movie/" + Uri.encode(id);
+                        allowedHost = "vidsrc.to";
+                        resumeKey = "";
+                    }
+
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     org.json.JSONArray catalog = config.optJSONArray("catalog");
                     if (catalog == null) catalog = new org.json.JSONArray();
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
-                            "https://vidsrc.to/embed/movie/" + Uri.encode(id), catalog,
+                            sourceUrl, catalog, resumeKey, allowedHost,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
