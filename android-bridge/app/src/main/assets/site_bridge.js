@@ -1485,7 +1485,12 @@
         center.setAttribute('aria-busy', String(!!vidSrcPlaybackPendingV3252));
         center.setAttribute('aria-label', vidSrcPlaybackPendingV3252 ? 'بانتظار استجابة الفيديو' : (playing ? 'إيقاف مؤقت' : 'تشغيل'));
       }
-      if (play) play.textContent = icon;
+      if (play) {
+        play.textContent = vidSrcPlaybackPendingV3252 ? '…' : icon;
+        play.disabled = !!vidSrcPlaybackPendingV3252;
+        play.setAttribute('aria-busy', String(!!vidSrcPlaybackPendingV3252));
+        play.setAttribute('aria-label', vidSrcPlaybackPendingV3252 ? 'بانتظار استجابة الفيديو' : (playing ? 'إيقاف مؤقت' : 'تشغيل'));
+      }
       root.classList.toggle('sh-v3251-ready', clockReadyState >= 1);
     } catch (_) {}
   }
