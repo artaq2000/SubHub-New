@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.LineBackgroundSpan;
@@ -87,6 +88,8 @@ public final class DirectStreamPlayer {
     private final TextView panelTitle;
     private final JSONArray catalog;
     private final String source;
+    private final String allowedHost;
+    private final String resumeKey;
     private final SharedPreferences prefs;
 
     private WebView probe;
@@ -111,14 +114,21 @@ public final class DirectStreamPlayer {
     private boolean colorStripOpen;
     private String currentSubtitleText = "";
     private Runnable valueToastHideTask;
+    private long pendingResumeMs;
+    private long lastResumePersistAt;
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
-                              JSONArray catalog, Listener listener) {
+                              JSONArray catalog, String resumeKey, String allowedHost,
+                              Listener listener) {
         this.activity = activity;
         this.listener = listener;
         this.source = source;
         this.catalog = catalog;
+        this.resumeKey = resumeKey == null ? "" : resumeKey.trim();
+        this.allowedHost = allowedHost == null ? "" : allowedHost.trim().toLowerCase(Locale.ROOT);
         this.prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
+        String resumePref = resumePrefKey();
+        pendingResumeMs = resumePref.isEmpty() ? 0L : Math.max(0L, prefs.getLong(resumePref, 0L));
 
         subtitleOffsetMs = prefs.getLong("offset_ms", 0L);
         subtitlePosition = prefs.getInt("position", 12);
@@ -393,6 +403,41 @@ public final class DirectStreamPlayer {
         }
     }
 
+    private String resumePrefKey() {
+        if (resumeKey.isEmpty()) return "";
+        return "resume_" + resumeKey.replaceAll("[^A-Za-z0-9_.-]", "_");
+    }
+
+    private void clearResumePosition() {
+        String key = resumePrefKey();
+        if (!key.isEmpty()) prefs.edit().remove(key).apply();
+        pendingResumeMs = 0L;
+    }
+
+    private void persistResume(boolean force) {
+        if (resumeKey.isEmpty() || player == null) return;
+        long now = SystemClock.elapsedRealtime();
+        if (!force && now - lastResumePersistAt < 5000L) return;
+        lastResumePersistAt = now;
+
+        long position = Math.max(0L, player.getCurrentPosition());
+        long duration = player.getDuration();
+        if (player.getPlaybackState() == Player.STATE_ENDED
+                || (duration > 0L && position >= Math.max(0L, duration - 45000L))) {
+            clearResumePosition();
+            return;
+        }
+        if (position < 5000L) return;
+        String key = resumePrefKey();
+        if (!key.isEmpty()) prefs.edit().putLong(key, position).apply();
+    }
+
+    private boolean isAllowedMainHost(String host) {
+        if (host == null || allowedHost.isEmpty()) return false;
+        String h = host.toLowerCase(Locale.ROOT);
+        return h.equals(allowedHost) || h.endsWith("." + allowedHost);
+    }
+
     private void beginCapture() {
         message("جارٍ التقاط البث… اضغط تشغيل المصدر إذا احتاج ذلك.");
         probe = new WebView(activity);
@@ -405,23 +450,30 @@ public final class DirectStreamPlayer {
         s.setSupportMultipleWindows(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         CookieManager.getInstance().setAcceptThirdPartyCookies(probe, true);
-        probe.setWebChromeClient(new WebChromeClient());
+        probe.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onCreateWindow(
+                    WebView view, boolean isDialog, boolean isUserGesture,
+                    android.os.Message resultMsg) {
+                // Provider popups/ads never get a second WebView or external window.
+                return false;
+            }
+        });
         probe.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 String host = u.getHost();
-                return !"https".equals(u.getScheme()) || (r.isForMainFrame()
-                        && !("vidsrc.to".equals(host)
-                        || (host != null && host.endsWith(".vidsrc.to"))));
+                if (!"https".equals(u.getScheme())) return true;
+                if (!r.isForMainFrame()) return false;
+                // Keep the provider page in place. Server iframes/resources are still
+                // allowed, but ad clicks cannot replace the top capture page.
+                return !isAllowedMainHost(host);
             }
 
             @Override public WebResourceResponse shouldInterceptRequest(
                     WebView v, WebResourceRequest r) {
-                String path = r.getUrl().getPath();
+                String url = r.getUrl().toString();
                 if ("https".equals(r.getUrl().getScheme())
-                        && path != null
-                        && path.toLowerCase(Locale.ROOT).endsWith(".m3u8")) {
-                    String url = r.getUrl().toString();
+                        && url.toLowerCase(Locale.ROOT).contains(".m3u8")) {
                     Map<String,String> headers = new HashMap<>(r.getRequestHeaders());
                     handler.post(() -> capture(url, headers));
                 }
@@ -529,9 +581,17 @@ public final class DirectStreamPlayer {
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
+                    long duration = player == null ? 0L : player.getDuration();
+                    if (pendingResumeMs > 0L && duration > 0L
+                            && pendingResumeMs >= Math.max(0L, duration - 45000L)) {
+                        if (player != null) player.seekTo(0L);
+                        clearResumePosition();
+                    }
                     status.setVisibility(View.GONE);
                 } else if (state == Player.STATE_BUFFERING) {
                     message("جارٍ تحميل البث…");
+                } else if (state == Player.STATE_ENDED) {
+                    clearResumePosition();
                 }
             }
 
@@ -547,6 +607,7 @@ public final class DirectStreamPlayer {
 
         player.setMediaSource(new HlsMediaSource.Factory(data).createMediaSource(item));
         player.prepare();
+        if (pendingResumeMs >= 5000L) player.seekTo(pendingResumeMs);
         player.play();
         message("جارٍ تشغيل البث المباشر…");
         enterImmersive();
@@ -1000,6 +1061,7 @@ public final class DirectStreamPlayer {
 
             applySubtitleText(text);
             subtitle.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+            persistResume(false);
             handler.postDelayed(this, 100);
         }
     };
@@ -1009,6 +1071,7 @@ public final class DirectStreamPlayer {
     }
 
     public void pause() {
+        persistResume(true);
         if (player != null) player.pause();
     }
 
@@ -1032,6 +1095,7 @@ public final class DirectStreamPlayer {
         hidePanel();
         destroyProbe();
 
+        persistResume(true);
         if (playerView != null) playerView.setPlayer(null);
         if (player != null) {
             player.release();
