@@ -142,7 +142,7 @@
 
   async function ensureServerConfig(selected, force) {
     const movieId = String(selected && selected.id || '').trim();
-    if (!movieId) return { enabled: false, key: '', label: '' };
+    if (!movieId) return { enabled: false, key: '', label: '', pageUrl: '' };
 
     if (!force && serverState.movieId === movieId && serverState.loaded) {
       return savedServer();
@@ -250,8 +250,8 @@
       }
 
       const saved = await ensureServerConfig(selected, true);
-      if (subscriber && (!saved.enabled || !saved.label)) {
-        notify('هذا المصدر لم يُعتمد بعد لهذا الفيلم.');
+      if (subscriber && (!saved.enabled || !saved.label || !saved.pageUrl)) {
+        notify('هذا المصدر يحتاج إعادة اعتماد من المالك مرة واحدة.');
         return;
       }
 
@@ -273,7 +273,7 @@
       const stableKey = stableRaw.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 100)
         || ('tmdb_' + resolved.kind + '_' + resolved.id);
       const session = 'moviesmod_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-      const useSaved = !forceManual && !!saved.enabled && !!saved.label;
+      const useSaved = !forceManual && !!saved.enabled && !!saved.label && !!saved.pageUrl;
 
       active = {
         session,
@@ -548,9 +548,12 @@
     detail.style.cssText = 'display:block;color:#a9b7cb;font-size:.62rem;font-weight:700;margin-top:2px';
     if (pending) {
       detail.innerHTML = 'تم اختباره: <b style="color:#7dd3fc">' + escapeHtmlLite(pending.label) +
-        '</b><br>هل تريد حفظه؟';
+        '</b><br>سيتم حفظ صفحة السيرفرات معه';
+    } else if (saved.enabled && saved.label && saved.pageUrl) {
+      detail.innerHTML = 'المحفوظ: <b style="color:#86efac">' + escapeHtmlLite(saved.label) +
+        '</b><br>الدخول المباشر لصفحة السيرفرات';
     } else if (saved.enabled && saved.label) {
-      detail.innerHTML = 'المحفوظ: <b style="color:#86efac">' + escapeHtmlLite(saved.label) + '</b>';
+      detail.innerHTML = 'السيرفر محفوظ قديماً — اضغط تعديل ثم احفظه مرة واحدة';
     } else if (saved.invalid) {
       detail.textContent = 'الإعداد المحفوظ السابق غير صالح — عدّله أو احذفه';
     } else if (serverState.loading) {
@@ -560,7 +563,7 @@
     }
     title.appendChild(detail);
     title.addEventListener('click', function () {
-      openMoviesmod(!(saved.enabled && saved.label));
+      openMoviesmod(!(saved.enabled && saved.label && saved.pageUrl));
     });
     card.appendChild(title);
 
@@ -639,7 +642,7 @@
       return;
     }
 
-    if (!subscriber || !serverState.loaded || !saved.enabled || !saved.label) {
+    if (!subscriber || !serverState.loaded || !saved.enabled || !saved.label || !saved.pageUrl) {
       removeCard();
       return;
     }
