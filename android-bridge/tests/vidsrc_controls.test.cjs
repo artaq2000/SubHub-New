@@ -45,7 +45,7 @@ console.log('Opening subtitle settings does not extend video control bounds: PAS
    setVidSrcProviderUiScrubV3234:()=>scrubbed++,
    vidSrcTakeoverActiveV3224:true,
    vidSrcDeepQueryAllV3226:()=>[q360,q720,q1080],
-   setTimeout:f=>(f(),1),
+   setTimeout:(f,ms)=>(ms<1000&&f(),1),
    clearTimeout(){}
  };
  vm.createContext(q);
