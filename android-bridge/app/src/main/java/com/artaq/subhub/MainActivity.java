@@ -1694,7 +1694,22 @@ public class MainActivity extends Activity {
                         if (!tmdbId.matches("[0-9]{1,12}")
                                 || !("movie".equals(kind) || "tv".equals(kind))
                                 || !stableKey.matches("[A-Za-z0-9_.-]{1,100}")) return;
-                        sourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId);
+                        String fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId);
+                        String savedServerPageUrl = config.optString("serverPageUrl", "").trim();
+                        String resolvedSourceUrl = fallbackSourceUrl;
+                        if (!savedServerPageUrl.isEmpty() && savedServerPageUrl.length() <= 2200) {
+                            try {
+                                Uri savedUri = Uri.parse(savedServerPageUrl);
+                                String savedHost = savedUri.getHost();
+                                if ("https".equalsIgnoreCase(savedUri.getScheme())
+                                        && savedHost != null
+                                        && ("moviesmod.gd".equalsIgnoreCase(savedHost)
+                                        || savedHost.toLowerCase(Locale.ROOT).endsWith(".moviesmod.gd"))) {
+                                    resolvedSourceUrl = savedUri.toString();
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        sourceUrl = resolvedSourceUrl;
                         allowedHost = "moviesmod.gd";
                         resumeKey = "moviesmod_" + stableKey;
                         preferredServerKey = config.optString("serverKey", "").trim();
@@ -1725,12 +1740,13 @@ public class MainActivity extends Activity {
                         public void subtitleRequested(int index) {
                             webView.evaluateJavascript("window.__subhubDirectSubtitle && window.__subhubDirectSubtitle(" + JSONObject.quote(session) + "," + index + ")", null);
                         }
-                        public void serverSelected(String key, String label) {
+                        public void serverSelected(String key, String label, String serverPageUrl) {
                             if (!"moviesmod".equals(mode) || webView == null) return;
                             String js = "window.__subhubMoviesmodServerSelected && window.__subhubMoviesmodServerSelected("
                                     + JSONObject.quote(session) + ","
                                     + JSONObject.quote(key) + ","
-                                    + JSONObject.quote(label) + ")";
+                                    + JSONObject.quote(label) + ","
+                                    + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ")";
                             webView.evaluateJavascript(js, null);
                         }
                     });
