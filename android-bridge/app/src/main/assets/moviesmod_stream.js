@@ -612,10 +612,11 @@
     button.style.cssText =
       'min-height:56px;border:1px solid #7b68ee;border-radius:12px;' +
       'background:#171d36;color:#fff;padding:10px;font:inherit;cursor:pointer';
-    button.innerHTML =
-      '🎬 مشاهدة بالتطبيق<small style="display:block;margin-top:4px;opacity:.78">' +
-      'يتم جلب رابط جديد عند كل تشغيل</small>';
-    button.title = 'يستخدم السيرفر الذي اعتمده المالك ويجلب بثاً جديداً لهذا الجهاز';
+    button.textContent = 'مشاهدة بالتطبيق — تجريبي';
+    button.style.fontSize = '1.08rem';
+    button.style.fontWeight = '850';
+    button.style.lineHeight = '1.45';
+    button.title = 'مشاهدة بالتطبيق — تجريبي';
     button.addEventListener('click', function () { openMoviesmod(false); });
     return button;
   }
