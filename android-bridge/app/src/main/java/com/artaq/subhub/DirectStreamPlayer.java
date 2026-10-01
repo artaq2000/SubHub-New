@@ -143,6 +143,7 @@ public final class DirectStreamPlayer {
     private int subscriberStartupPhase = 0;
     private long subscriberStartupDeadlineMs = 0L;
     private boolean playbackReady = false;
+    private boolean subscriberProviderVisible = false;
     private String subscriberStageBase = "";
     private int subscriberStageDots = 0;
     private int subscriberStageAnimationGeneration = 0;
@@ -541,6 +542,7 @@ public final class DirectStreamPlayer {
         }
         playing = false;
         playbackReady = false;
+        subscriberProviderVisible = false;
         candidate = null;
         candidateHeaders = null;
         resolvedMainHost = "";
@@ -756,8 +758,12 @@ public final class DirectStreamPlayer {
             } else {
                 startSubscriberStartupTimer(4);
             }
-            probe.setAlpha(interactiveSource ? 0.02f : 1.0f);
-            if (!interactiveSource) root.post(this::applySubscriberProbePreviewLayout);
+            if (!interactiveSource) {
+                subscriberProviderVisible = false;
+                probe.setAlpha(0.0f);
+            } else {
+                probe.setAlpha(0.02f);
+            }
             Map<String,String> headers = new HashMap<>();
             headers.put("Referer", source);
             probe.loadUrl(u.toString(), headers);
@@ -846,6 +852,26 @@ public final class DirectStreamPlayer {
                 + "}catch(_){}})();";
     }
 
+    private String providerFocusScript() {
+        return "(function(){try{"
+                + "function vis(e){if(!e)return false;var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>140&&r.height>80&&s.display!=='none'&&s.visibility!=='hidden';}"
+                + "function score(e){try{var r=e.getBoundingClientRect();return Math.max(0,r.width)*Math.max(0,r.height);}catch(_){return 0;}}"
+                + "function focus(){try{var list=[].slice.call(document.querySelectorAll('video,iframe,[id*=player],[class*=player],[class*=video]')).filter(vis);"
+                + "if(!list.length)return false;list.sort(function(a,b){return score(b)-score(a);});var e=list[0];"
+                + "var bg=document.getElementById('__subhub_focus_bg');if(!bg){bg=document.createElement('div');bg.id='__subhub_focus_bg';document.documentElement.appendChild(bg);}"
+                + "bg.style.cssText='position:fixed!important;inset:0!important;background:#000!important;z-index:2147483645!important;margin:0!important;padding:0!important;';"
+                + "e.style.setProperty('position','fixed','important');e.style.setProperty('inset','0','important');"
+                + "e.style.setProperty('width','100vw','important');e.style.setProperty('height','100vh','important');"
+                + "e.style.setProperty('max-width','none','important');e.style.setProperty('max-height','none','important');"
+                + "e.style.setProperty('margin','0','important');e.style.setProperty('padding','0','important');"
+                + "e.style.setProperty('z-index','2147483646','important');e.style.setProperty('background','#000','important');"
+                + "e.style.setProperty('pointer-events','auto','important');"
+                + "try{document.documentElement.style.background='#000';document.body.style.background='#000';document.body.style.overflow='hidden';window.scrollTo(0,0);}catch(_){}"
+                + "return true;}catch(_){return false;}}"
+                + "focus();var n=0,t=setInterval(function(){n++;if(focus()||n>=30)clearInterval(t);},180);"
+                + "}catch(_){}})();";
+    }
+
     private String providerPlayScript() {
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
         return "(function(){try{"
@@ -859,7 +885,8 @@ public final class DirectStreamPlayer {
                 + "if(!b){var frames=[].slice.call(document.querySelectorAll('iframe,[class*=player],[id*=player]')).filter(function(e){if(!vis(e))return false;var r=e.getBoundingClientRect();return r.width>160&&r.height>90;});b=frames[0];}"
                 + "if(b&&window.SubHubSourceChoice&&window.SubHubSourceChoice.playTarget){var p=point(b);window.SubHubSourceChoice.playTarget(bridgeToken,p[0],p[1]);}"
                 + "}catch(_){}}"
-                + "kick();var n=0,t=setInterval(function(){n++;kick();if(n>=14)clearInterval(t);},850);"
+                + "kick();setTimeout(kick,120);setTimeout(kick,320);setTimeout(kick,650);"
+                + "var n=0,t=setInterval(function(){n++;kick();if(n>=18)clearInterval(t);},420);"
                 + "}catch(_){}})();";
     }
 
@@ -934,7 +961,7 @@ public final class DirectStreamPlayer {
                 Gravity.CENTER
         );
         probe.setLayoutParams(lp);
-        probe.setAlpha(1.0f);
+        probe.setAlpha(subscriberProviderVisible ? 1.0f : 0.0f);
         probe.setVisibility(View.VISIBLE);
         probe.setBackgroundColor(Color.BLACK);
         probe.bringToFront();
@@ -990,9 +1017,19 @@ public final class DirectStreamPlayer {
                 if (host != null && !resolvedMainHost.isEmpty()
                         && (host.equalsIgnoreCase(resolvedMainHost)
                         || host.toLowerCase(Locale.ROOT).endsWith("." + resolvedMainHost))) {
-                    if (interactiveSource) showStage("جارٍ تشغيل السيرفر…");
-                    else startSubscriberStartupTimer(4);
-                    try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
+                    if (interactiveSource) {
+                        showStage("جارٍ تشغيل السيرفر…");
+                        try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
+                    } else {
+                        startSubscriberStartupTimer(4);
+                        try { v.evaluateJavascript(providerFocusScript(), null); } catch (Exception ignored) {}
+                        handler.postDelayed(() -> {
+                            if (closed || probe == null || v != probe) return;
+                            subscriberProviderVisible = true;
+                            applySubscriberProbePreviewLayout();
+                            try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
+                        }, 180L);
+                    }
                 } else {
                     if (interactiveSource) {
                         showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
@@ -1040,9 +1077,10 @@ public final class DirectStreamPlayer {
         // During this test phase the subscriber can see and touch only the
         // embedded provider/player rectangle. SubHub controls, subtitles, and
         // settings stay in their own overlay layer and are not replaced.
-        probe.setAlpha(1.0f);
+        probe.setAlpha(interactiveSource ? 1.0f : 0.0f);
         probe.setBackgroundColor(Color.BLACK);
         if (!interactiveSource) {
+            subscriberProviderVisible = false;
             probe.bringToFront();
             status.bringToFront();
             menuButton.bringToFront();
