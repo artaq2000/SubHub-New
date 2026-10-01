@@ -730,9 +730,8 @@
     button.id = 'subhub-moviesmod-stream-card';
     button.type = 'button';
     button.className = 'watch-pill';
-    button.style.cssText =
-      'min-height:72px;border-radius:14px;padding:10px 14px;font:inherit;' +
-      'font-size:1.02rem;font-weight:900;line-height:1.45;cursor:pointer';
+    // 322.3.81: same size as the site's small watch pills (no custom enlargement).
+    button.style.cssText = 'cursor:pointer';
     button.textContent = '🎬 مشاهدة بالتطبيق تجريبي';
     button.title = 'مشاهدة بالتطبيق تجريبي';
     button.addEventListener('click', function () { openMoviesmod(false); });

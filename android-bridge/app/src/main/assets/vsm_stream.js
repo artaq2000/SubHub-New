@@ -743,10 +743,8 @@
     button.id = 'subhub-vsm-stream-card';
     button.type = 'button';
     button.className = 'watch-pill';
-    button.style.cssText =
-      'min-height:72px;border:1px solid #e8b544;border-radius:14px;background:#132536;' +
-      'color:#fff;padding:10px 14px;font:inherit;' +
-      'font-size:1.02rem;font-weight:900;line-height:1.45;cursor:pointer';
+    // 322.3.81: same size as the site's small watch pills; only the gold border stays.
+    button.style.cssText = 'border-color:#e8b544;cursor:pointer';
     button.textContent = '▶ مشاهدة مباشرة — تجريبي';
     button.title = 'مشاهدة مباشرة — تجريبي';
     button.addEventListener('click', function () { openVsm(false); });

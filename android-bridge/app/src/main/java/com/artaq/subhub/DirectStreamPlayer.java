@@ -112,6 +112,8 @@ public final class DirectStreamPlayer {
     private int directKickRounds = 0;
     // 322.3.80: clean SubHub cover over the hidden provider page (direct mode only).
     private FrameLayout directCover;
+    private TextView directCoverStage;
+    private final ArrayList<android.animation.Animator> coverAnimators = new ArrayList<>();
     private int directRevealGeneration = 0;
     private boolean chooserAutoRequested = false;
     private boolean decisionShown = false;
@@ -574,6 +576,14 @@ public final class DirectStreamPlayer {
         return v;
     }
 
+    // 322.3.81: list rows grow with long names (two lines) instead of clipping them.
+    private TextView listRow(TextView v) {
+        v.setPadding(dp(12), dp(8), dp(12), dp(8));
+        v.setMinHeight(dp(40));
+        v.setLineSpacing(0, 1.12f);
+        return v;
+    }
+
     // 322.3.80: the current choice in the quality / subtitle lists is coloured.
     private void markSelected(TextView v) {
         v.setBackground(round(0xff1d4d33, 0xff4ade80, 2, 14));
@@ -633,6 +643,13 @@ public final class DirectStreamPlayer {
 
     private void showSubscriberStage(String base) {
         if (closed || interactiveSource || base == null || base.trim().isEmpty()) return;
+        if (directCover != null) {
+            subscriberStageAnimationGeneration++;
+            subscriberStageBase = base.trim();
+            status.setVisibility(View.GONE);
+            setDirectCoverStage(subscriberStageBase);
+            return;
+        }
         subscriberStageBase = base.trim();
         subscriberStageDots = 0;
         subscriberStageAnimationGeneration++;
@@ -724,6 +741,7 @@ public final class DirectStreamPlayer {
         if (subscriberStartupAttempt >= 2) {
             cleanupPlayerForRetry();
             destroyProbe();
+            removeDirectCover();
             subscriberStartupPhase = 0;
             showStage("تعذّر الاتصال. حاول مرة أخرى.");
             if (ownerMode) showDecisionBar(false);
@@ -1313,6 +1331,9 @@ public final class DirectStreamPlayer {
         }, 7000L);
     }
 
+    // 322.3.81: animated SubHub loading screen. Letters rise in one by one,
+    // the name then pulses softly, three gold dots bounce, and the real stage
+    // text sits under them (no separate box) until the video starts.
     private void showDirectCover() {
         if (directEmbedUrl.isEmpty() || interactiveSource || closed) return;
         removeDirectCover();
@@ -1321,26 +1342,123 @@ public final class DirectStreamPlayer {
         // The cover only hides the provider page; touches we dispatch go to the
         // probe directly, and the cover itself swallows stray taps on ads.
         directCover.setClickable(true);
-        TextView brand = new TextView(activity);
-        brand.setText("SubHub");
-        brand.setTextColor(GOLD);
-        brand.setTextSize(26);
-        brand.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+
+        LinearLayout column = new LinearLayout(activity);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        LinearLayout brand = new LinearLayout(activity);
+        brand.setOrientation(LinearLayout.HORIZONTAL);
+        brand.setLayoutDirection(View.LAYOUT_DIRECTION_LTR);
         brand.setGravity(Gravity.CENTER);
-        directCover.addView(brand, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        String name = "SubHub";
+        for (int i = 0; i < name.length(); i++) {
+            TextView letter = new TextView(activity);
+            letter.setText(String.valueOf(name.charAt(i)));
+            letter.setTextColor(GOLD);
+            letter.setTextSize(34);
+            letter.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            letter.setShadowLayer(dp(10), 0, 0, 0x99F7BC3D);
+            letter.setAlpha(0f);
+            letter.setTranslationY(dp(18));
+            brand.addView(letter, new LinearLayout.LayoutParams(-2, -2));
+            letter.animate().alpha(1f).translationY(0f)
+                    .setStartDelay(90L * i).setDuration(420L)
+                    .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                    .start();
+        }
+        column.addView(brand, new LinearLayout.LayoutParams(-2, -2));
+        android.animation.ObjectAnimator pulse =
+                android.animation.ObjectAnimator.ofFloat(brand, "alpha", 1f, 0.55f);
+        pulse.setStartDelay(90L * name.length() + 450L);
+        pulse.setDuration(1100L);
+        pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+        pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        pulse.start();
+        coverAnimators.add(pulse);
+
+        LinearLayout dots = new LinearLayout(activity);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER);
+        for (int i = 0; i < 3; i++) {
+            View dot = new View(activity);
+            dot.setBackground(round(GOLD, GOLD, 0, 99));
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(dp(8), dp(8));
+            dl.setMargins(dp(5), 0, dp(5), 0);
+            dots.addView(dot, dl);
+            android.animation.ObjectAnimator hop =
+                    android.animation.ObjectAnimator.ofFloat(dot, "translationY", 0f, -dp(9));
+            hop.setStartDelay(160L * i);
+            hop.setDuration(380L);
+            hop.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+            hop.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            hop.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+            hop.start();
+            coverAnimators.add(hop);
+        }
+        LinearLayout.LayoutParams dotsLp = new LinearLayout.LayoutParams(-2, dp(26));
+        dotsLp.topMargin = dp(18);
+        column.addView(dots, dotsLp);
+
+        directCoverStage = new TextView(activity);
+        directCoverStage.setTextColor(0xCCFFFFFF);
+        directCoverStage.setTextSize(14);
+        directCoverStage.setGravity(Gravity.CENTER);
+        directCoverStage.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
+        LinearLayout.LayoutParams stageLp = new LinearLayout.LayoutParams(-2, -2);
+        stageLp.topMargin = dp(10);
+        column.addView(directCoverStage, stageLp);
+
+        directCover.addView(column, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         root.addView(directCover, new FrameLayout.LayoutParams(-1, -1));
         directCover.bringToFront();
-        status.bringToFront();
+        status.setVisibility(View.GONE);
         menuButton.bringToFront();
+    }
+
+    private void setDirectCoverStage(String text) {
+        if (directCoverStage == null || text == null) return;
+        final String next = text.trim();
+        if (next.equals(String.valueOf(directCoverStage.getText()))) return;
+        directCoverStage.animate().cancel();
+        directCoverStage.animate().alpha(0f).setDuration(140L).withEndAction(() -> {
+            if (directCoverStage == null) return;
+            directCoverStage.setText(next);
+            directCoverStage.animate().alpha(1f).setDuration(200L).start();
+        }).start();
+    }
+
+    private void stopCoverAnimators() {
+        for (android.animation.Animator a : coverAnimators) {
+            try { a.cancel(); } catch (Exception ignored) {}
+        }
+        coverAnimators.clear();
     }
 
     private void removeDirectCover() {
         directRevealGeneration++;
+        stopCoverAnimators();
+        directCoverStage = null;
         if (directCover != null) {
             ViewGroup parent = (ViewGroup) directCover.getParent();
             if (parent != null) parent.removeView(directCover);
             directCover = null;
         }
+    }
+
+    // When the video is ready the cover fades away instead of vanishing.
+    private void fadeOutDirectCover() {
+        final FrameLayout cover = directCover;
+        if (cover == null) return;
+        directCover = null;
+        directCoverStage = null;
+        directRevealGeneration++;
+        cover.setClickable(false);
+        cover.animate().alpha(0f).setDuration(380L).withEndAction(() -> {
+            stopCoverAnimators();
+            ViewGroup parent = (ViewGroup) cover.getParent();
+            if (parent != null) parent.removeView(cover);
+        }).start();
     }
 
     private void capture(String url, Map<String,String> headers) {
@@ -1383,7 +1501,6 @@ public final class DirectStreamPlayer {
     }
 
     private void destroyProbe() {
-        removeDirectCover();
         if (probe != null) {
             probe.stopLoading();
             probe.loadUrl("about:blank");
@@ -1469,6 +1586,7 @@ public final class DirectStreamPlayer {
                         clearResumePosition();
                     }
                     status.setVisibility(View.GONE);
+                    fadeOutDirectCover();
                     if (ownerMode && !decisionShown) {
                         decisionShown = true;
                         showDecisionBar(true);
@@ -1492,6 +1610,7 @@ public final class DirectStreamPlayer {
                     stopSubscriberStageAnimation();
                     cleanupPlayerForRetry();
                     destroyProbe();
+                    removeDirectCover();
                     showStage("تعذّر تشغيل الفيديو. حاول مرة أخرى.");
                     if (ownerMode) showDecisionBar(false);
                 } else {
@@ -1647,7 +1766,7 @@ public final class DirectStreamPlayer {
 
         for (int i = 0; i < labels.size(); i++) {
             final int which = i;
-            TextView item = chip(labels.get(i), 15, () -> {
+            TextView item = listRow(chip(labels.get(i), 15, () -> {
                 if (player == null) return;
                 androidx.media3.common.TrackSelectionParameters.Builder b =
                         player.getTrackSelectionParameters().buildUpon()
@@ -1655,9 +1774,9 @@ public final class DirectStreamPlayer {
                 if (choices.get(which) != null) b.setOverrideForType(choices.get(which));
                 player.setTrackSelectionParameters(b.build());
                 hidePanel();
-            });
+            }));
             if (isQualityChoiceActive(choices.get(i))) markSelected(item);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
         }
@@ -1676,7 +1795,7 @@ public final class DirectStreamPlayer {
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(dp(4), dp(4), dp(4), dp(12));
 
-        TextView off = chip("بدون ترجمة", 15, () -> {
+        TextView off = listRow(chip("بدون ترجمة", 15, () -> {
             selectedSubtitle = -1;
             captions = false;
             cues = new JSONArray();
@@ -1684,9 +1803,9 @@ public final class DirectStreamPlayer {
             applySubtitleText("");
             subtitle.setVisibility(View.GONE);
             hidePanel();
-        });
+        }));
         if (selectedSubtitle < 0 || !captions) markSelected(off);
-        LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, dp(40));
+        LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, -2);
         offLp.setMargins(0, dp(2), 0, dp(2));
         list.addView(off, offLp);
 
@@ -1696,7 +1815,7 @@ public final class DirectStreamPlayer {
                     ? "ترجمة SubHub"
                     : o.optString("name", "ترجمة SubHub");
             final int index = i;
-            TextView item = chip(name, 15, () -> {
+            TextView item = listRow(chip(name, 15, () -> {
                 selectedSubtitle = index;
                 captions = true;
                 cues = new JSONArray();
@@ -1704,9 +1823,9 @@ public final class DirectStreamPlayer {
                 applySubtitleText("");
                 listener.subtitleRequested(index);
                 hidePanel();
-            });
+            }));
             if (captions && selectedSubtitle == index) markSelected(item);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
             lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
         }
@@ -2020,6 +2139,7 @@ public final class DirectStreamPlayer {
         handler.removeCallbacksAndMessages(null);
         hidePanel();
         destroyProbe();
+        removeDirectCover();
 
         persistResume(true);
         if (playerView != null) playerView.setPlayer(null);

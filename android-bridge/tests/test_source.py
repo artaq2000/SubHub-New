@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 89" in gradle
-assert "versionName '322.3.80'" in gradle
+assert "versionCode 90" in gradle
+assert "versionName '322.3.81'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -514,7 +514,7 @@ assert 'playbackReady = true' in direct
 
 # 322.3.71: compact stable startup panel with readable real stages.
 assert "button.textContent = '🎬 مشاهدة بالتطبيق تجريبي'" in moviesmod
-assert 'font-size:1.02rem' in moviesmod
+assert "button.style.cssText = 'cursor:pointer';" in moviesmod  # 322.3.81: compact pill size
 assert 'new FrameLayout.LayoutParams(dp(310), dp(68)' in direct
 assert 'subscriberStageBase' in direct
 assert 'renderSubscriberStage' in direct
@@ -622,3 +622,12 @@ assert 'private void markSelected(TextView v)' in direct
 assert 'if (isQualityChoiceActive(choices.get(i))) markSelected(item);' in direct
 assert 'if (captions && selectedSubtitle == index) markSelected(item);' in direct
 print('322.3.80 checks OK')
+
+# 322.3.81: animated cover, wrapping list rows, compact subscriber buttons.
+assert 'private void setDirectCoverStage(String text)' in direct
+assert 'private void fadeOutDirectCover()' in direct
+assert 'private TextView listRow(TextView v)' in direct
+assert 'stopCoverAnimators();' in direct
+assert "button.style.cssText = 'border-color:#e8b544;cursor:pointer';" in vsm
+assert 'min-height:72px' not in moviesmod
+print('322.3.81 checks OK')
