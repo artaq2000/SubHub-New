@@ -1,0 +1,26 @@
+const {fn,site,clock}=require('./vidsrc_controls.test.cjs');
+const assert=require('assert'),vm=require('vm');
+(async()=>{
+ const replies=[],events=[];let played=0,paused=0,resolvePlay;
+ const video={isConnected:true,paused:false,ended:false,pause(){paused++;this.paused=true},play(){played++;return new Promise(r=>resolvePlay=()=>{this.paused=false;r()})}};
+ const c={sourceId:'leaf',seq:10,window:{top:{postMessage:m=>replies.push(m)}},send:(v,force,event)=>events.push(event),Date,Promise,Map};
+ vm.createContext(c);vm.runInContext('const vidSrcPlaybackCommandsV3252=new Map();'+fn(clock,'applyVidSrcPlaybackV3252'),c);
+ const command=(id,playing)=>({requestId:id,targetSource:'leaf',playing,expiresAt:Date.now()+4000});
+ assert.equal(c.applyVidSrcPlaybackV3252({...command('other',false),targetSource:'other'},video),false);assert.equal(paused,0);
+ c.applyVidSrcPlaybackV3252(command('pause1',false),video);assert.equal(paused,1);assert.equal(video.paused,true);assert.equal(replies.at(-1).ok,true);
+ c.applyVidSrcPlaybackV3252(command('pause1',false),video);assert.equal(paused,1);
+ c.applyVidSrcPlaybackV3252(command('play1',true),video);c.applyVidSrcPlaybackV3252(command('play1',true),video);assert.equal(played,1);assert.equal(replies.at(-1).requestId,'pause1');
+ resolvePlay();await Promise.resolve();await Promise.resolve();assert.equal(replies.at(-1).requestId,'play1');assert.equal(replies.at(-1).playing,true);
+ c.applyVidSrcPlaybackV3252({...command('expired',false),expiresAt:0},video);assert.equal(paused,1);assert.equal(replies.at(-1).ok,false);
+ video.paused=true;video.play=()=>Promise.reject(new Error('blocked'));
+ c.applyVidSrcPlaybackV3252(command('blocked',true),video);await Promise.resolve();await Promise.resolve();assert.equal(replies.at(-1).ok,false);
+ console.log('Targeted playback: no wrapper action, deduplication, promise acknowledgement, expiry and rejection: PASS');
+ const sent=[];let frame={isConnected:true};const box={};const callbacks=[];
+ const ui={window:{__subhubVidSrcPlayingV3222:true},document:{querySelector:s=>s.includes('iframe')?frame:s.includes('video-modal-box')?box:null},crypto:{getRandomValues:a=>a.fill(3)},isVidSrcFrameActiveV328:()=>true,wakeVidSrcControlsV3251(){},updateVidSrcTakeoverV3222(){},sendVidSrcSafeCommandV3211:(command,data)=>sent.push({command,...data}),setTimeout:f=>(callbacks.push(f),callbacks.length),clearTimeout(){},Date};
+ vm.createContext(ui);vm.runInContext("let clockSource='leaf',clockPaused=false,clockEnded=false,lastSeq=1;let vidSrcPlaybackPendingV3252=null,vidSrcPlaybackStatusTimerV3252=0,vidSrcWakeRetryTimerV3257=0;"+['vidSrcPlaybackStatusV3252','cancelVidSrcPlaybackV3252','requestVidSrcPlaybackV3252','receiveVidSrcPlaybackV3252'].map(n=>fn(site,n)).join('\n'),ui);
+ for(let i=0;i<5;i++)ui.requestVidSrcPlaybackV3252();assert.equal(sent.length,1);assert.equal(sent[0].command,'setplayback');assert.equal(sent[0].playing,false);
+ ui.receiveVidSrcPlaybackV3252({data:{type:'SUBHUB_PLAYBACK_ACK_V3252',requestId:'wrong',source:'leaf',playing:false,ok:true}});ui.requestVidSrcPlaybackV3252();assert.equal(sent.length,1);
+ ui.receiveVidSrcPlaybackV3252({data:{type:'SUBHUB_PLAYBACK_ACK_V3252',requestId:sent[0].requestId,source:'leaf',playing:false,ok:true,seq:12}});assert.equal(vm.runInContext('vidSrcPlaybackPendingV3252',ui),null);assert.equal(vm.runInContext('clockPaused',ui),true);
+ ui.requestVidSrcPlaybackV3252();frame={isConnected:true};callbacks.at(-1)();assert.equal(vm.runInContext('vidSrcPlaybackPendingV3252',ui),null);
+ console.log('Repeated taps coalesce while pending; unrelated replies and changed-player timeouts are ignored: PASS');
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -1,0 +1,152 @@
+name: Build TEST SubHub 322.3.77 Moviesmod Save Sync
+
+on:
+  push:
+    branches:
+      - 'test/moviesmod-save-sync-322.3.77'
+    paths:
+      - 'android-bridge/**'
+      - '.github/workflows/build-subhub-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      SUBHUB_KEYSTORE_B64: ${{ secrets.SUBHUB_KEYSTORE_B64 }}
+      SUBHUB_KEYSTORE_PASSWORD: ${{ secrets.SUBHUB_KEYSTORE_PASSWORD }}
+      SUBHUB_KEYSTORE_PATH: ${{ github.workspace }}/android-bridge/subhub-release.keystore
+
+    defaults:
+      run:
+        working-directory: android-bridge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Prepare Android SDK
+        run: |
+          SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore permanent SubHub signing key
+        run: |
+          test -n "$SUBHUB_KEYSTORE_B64" || (echo "Missing SUBHUB_KEYSTORE_B64" && exit 1)
+          test -n "$SUBHUB_KEYSTORE_PASSWORD" || (echo "Missing SUBHUB_KEYSTORE_PASSWORD" && exit 1)
+          printf '%s' "$SUBHUB_KEYSTORE_B64" | base64 --decode > "$SUBHUB_KEYSTORE_PATH"
+          chmod 600 "$SUBHUB_KEYSTORE_PATH"
+
+      - name: Verify SubHub source
+        run: python3 tests/test_source.py
+
+      - name: Test VidSrc media visibility and subscriber setup
+        run: node tests/vidsrc_visibility.test.cjs
+
+      - name: Test VidSrc playback commands and toolbar bounds
+        run: |
+          node tests/vidsrc_controls.test.cjs
+          node tests/vidsrc_playback52.test.cjs
+          node tests/vidsrc_playback53.test.cjs
+          node tests/vidsrc_session54.test.cjs
+
+      - name: Test VidSrc controls in Chromium
+        run: |
+          npm install --prefix /tmp/subhub-ui-tests playwright@1.62.1
+          /tmp/subhub-ui-tests/node_modules/.bin/playwright install --with-deps chromium
+          NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/vidsrc_controls.browser.cjs
+          NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/vidsrc_hit52.browser.cjs
+          NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/vidsrc_native53.browser.cjs
+
+      - name: Test independent stream sessions
+        run: node tests/direct_stream.test.cjs
+
+      - name: Validate resumable R2 upload JavaScript
+        run: node --check app/src/main/assets/r2_upload.js
+
+      - name: Test native playback mailbox
+        run: |
+          mkdir -p /tmp/subhub-playback-tests
+          javac -d /tmp/subhub-playback-tests app/src/main/java/com/artaq/subhub/PlaybackMailbox.java tests/PlaybackMailboxTest.java
+          java -cp /tmp/subhub-playback-tests com.artaq.subhub.PlaybackMailboxTest
+
+      - name: Test daily update policy
+        run: |
+          mkdir -p /tmp/subhub-update-tests
+          javac -d /tmp/subhub-update-tests app/src/main/java/com/artaq/subhub/UpdatePolicy.java tests/UpdatePolicyTest.java
+          java -cp /tmp/subhub-update-tests UpdatePolicyTest
+
+      - name: Build signed TEST APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Prepare Android WebView lifecycle fixture
+        run: node tests/generate_session54.cjs
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test native WebView playback after returning and reconnecting
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disable-animations: true
+          working-directory: android-bridge
+          script: gradle connectedDebugAndroidTest --no-daemon --stacktrace
+
+      - name: Report native playback assertion details
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for report in Path('app/build/outputs/androidTest-results').rglob('*.xml'):
+              print(report.read_text())
+          PY
+
+      - name: Verify package, version and permanent signing certificate
+        run: |
+          APK="app/build/outputs/apk/release/app-release.apk"
+          AAPT="$ANDROID_SDK_ROOT/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
+          test -f "$APK"
+          "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='85'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.77'"
+          EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
+          ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
+          echo "Expected signing SHA-256: $EXPECTED"
+          echo "Actual signing SHA-256:   $ACTUAL"
+          test "$ACTUAL" = "$EXPECTED"
+
+      - name: Prepare Moviesmod save-sync test APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.77-moviesmod-save-sync.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SubHub-322.3.77-moviesmod-save-sync
+          path: SubHub-322.3.77-moviesmod-save-sync.apk
+          retention-days: 7
+
+      - name: Remove signing key from runner
+        if: always()
+        run: rm -f "$SUBHUB_KEYSTORE_PATH"

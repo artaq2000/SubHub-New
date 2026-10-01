@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تصميم مقترح للتطبيق</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #0b1120; color: white; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+    </style>
+</head>
+<body class="pb-10">
+
+    <!-- القسم العلوي (Hero Section) -->
+    <div class="relative w-full h-72 bg-slate-800 overflow-hidden">
+        <!-- خلفية ضبابية -->
+        <img src="https://image.tmdb.org/t/p/original/lcTuggU70y6ptLyWNLrFB6etNJF.jpg" class="absolute inset-0 w-full h-full object-cover opacity-20 blur-sm" alt="bg">
+        <div class="absolute inset-0 bg-gradient-to-t from-[#0b1120] to-transparent"></div>
+        
+        <div class="absolute bottom-0 w-full p-5 flex gap-4 items-end">
+            <!-- صورة الغلاف -->
+            <img src="https://image.tmdb.org/t/p/w500/lcTuggU70y6ptLyWNLrFB6etNJF.jpg" class="w-28 h-40 rounded-xl shadow-lg border border-slate-700 object-cover z-10" alt="poster">
+            <!-- المعلومات -->
+            <div class="z-10 pb-1">
+                <h1 class="text-2xl font-bold mb-1">Neuromancer</h1>
+                <div class="flex gap-2 text-xs mb-2">
+                    <span class="bg-slate-800 px-2 py-1 rounded-md border border-slate-600">2027</span>
+                    <span class="bg-slate-800 px-2 py-1 rounded-md border border-slate-600">خيال علمي</span>
+                    <span class="bg-slate-800 px-2 py-1 rounded-md border border-slate-600">غموض</span>
+                </div>
+                <p class="text-xs text-slate-400 line-clamp-2">يُجند مخترق عبقرية تلطخت سمعته وقاتلة مأجورة لتنفيذ عملية خطيرة تستهدف شركة عريقة.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="px-4 mt-6 space-y-6">
+        
+        <!-- قسم المواسم -->
+        <div>
+            <h2 class="text-sm font-bold text-slate-400 mb-2"><i class="fa-solid fa-layer-group ml-1"></i> المواسم</h2>
+            <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                <button class="bg-amber-500 text-slate-900 px-5 py-2 rounded-lg font-bold text-sm whitespace-nowrap shadow-lg shadow-amber-500/20">الموسم 1</button>
+                <button class="glass text-slate-300 px-5 py-2 rounded-lg font-bold text-sm whitespace-nowrap hover:bg-slate-700 transition">الموسم 2</button>
+            </div>
+        </div>
+
+        <!-- قسم الحلقات -->
+        <div>
+            <h2 class="text-sm font-bold text-slate-400 mb-2"><i class="fa-solid fa-list-ol ml-1"></i> الحلقات</h2>
+            <div class="grid grid-cols-5 gap-2">
+                <button class="bg-amber-500 text-slate-900 aspect-square rounded-lg font-bold flex items-center justify-center">1</button>
+                <button class="glass text-slate-300 aspect-square rounded-lg font-bold flex items-center justify-center hover:bg-slate-700 transition">2</button>
+                <button class="glass text-slate-300 aspect-square rounded-lg font-bold flex items-center justify-center hover:bg-slate-700 transition">3</button>
+                <button class="glass text-slate-300 aspect-square rounded-lg font-bold flex items-center justify-center hover:bg-slate-700 transition">4</button>
+                <button class="glass text-slate-300 aspect-square rounded-lg font-bold flex items-center justify-center hover:bg-slate-700 transition"><i class="fa-solid fa-ellipsis"></i></button>
+            </div>
+        </div>
+
+        <!-- قسم روابط التحميل والمشاهدة -->
+        <div class="glass p-4 rounded-2xl">
+            <h2 class="text-sm font-bold text-slate-300 mb-3 border-b border-slate-700 pb-2"><i class="fa-solid fa-link ml-1 text-amber-500"></i> روابط الحلقة 1</h2>
+            
+            <div class="space-y-3">
+                <!-- سيرفر 1 -->
+                <div class="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-server text-slate-400"></i>
+                        <span class="font-bold text-sm">R2 | 1080p</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="bg-amber-500 text-slate-900 px-3 py-1.5 rounded-md text-xs font-bold hover:bg-amber-400 transition"><i class="fa-solid fa-play"></i> مشاهدة</button>
+                        <button class="bg-slate-700 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-slate-600 transition"><i class="fa-solid fa-download"></i> تحميل</button>
+                    </div>
+                </div>
+                <!-- سيرفر 2 -->
+                <div class="flex justify-between items-center bg-slate-800/50 p-3 rounded-xl border border-slate-700">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-server text-slate-400"></i>
+                        <span class="font-bold text-sm">VIP | 720p</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="bg-amber-500 text-slate-900 px-3 py-1.5 rounded-md text-xs font-bold hover:bg-amber-400 transition"><i class="fa-solid fa-play"></i> مشاهدة</button>
+                        <button class="bg-slate-700 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-slate-600 transition"><i class="fa-solid fa-download"></i> تحميل</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- قسم الترجمة -->
+        <div class="glass p-4 rounded-2xl flex justify-between items-center">
+            <div>
+                <h3 class="font-bold text-sm text-slate-300"><i class="fa-solid fa-closed-captioning ml-1 text-amber-500"></i> الترجمة</h3>
+                <p class="text-xs text-slate-500 mt-1">لا توجد ترجمة مضافة لهذه الحلقة</p>
+            </div>
+            <button class="border border-slate-600 text-slate-300 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-700 transition">
+                <i class="fa-solid fa-magnifying-glass ml-1"></i> طلب ترجمة
+            </button>
+        </div>
+
+    </div>
+</body>
+</html>

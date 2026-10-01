@@ -1,0 +1,36 @@
+const fs=require('fs'),path=require('path'),vm=require('vm'),assert=require('assert');
+const dir=path.join(__dirname,'../app/src/main/assets');
+const site=fs.readFileSync(path.join(dir,'site_bridge.js'),'utf8');
+const clock=fs.readFileSync(path.join(dir,'player_clock.js'),'utf8');
+function fn(src,name){const a=src.indexOf('  function '+name+'(');assert(a>=0,name);return src.slice(a,src.indexOf('\n  }',a)+4);}
+// A rapid play/pause must not queue play again, including after changing movies.
+const sent=[],timers=[];let frame={contentWindow:{postMessage:m=>sent.push(m)}};
+const c={document:{querySelector:()=>frame},isVidSrcFrameActiveV328:()=>true,setTimeout:f=>timers.push(f)};
+vm.createContext(c);vm.runInContext(fn(site,'sendVidSrcSafeCommandV3211'),c);
+c.sendVidSrcSafeCommandV3211('play');c.sendVidSrcSafeCommandV3211('pause');
+frame={contentWindow:{postMessage:m=>sent.push(m)}};timers.forEach(f=>f());
+assert.deepEqual(sent.map(m=>m.command),['play','pause']);assert.equal(timers.length,0);
+// Toggle reads media.paused at command receipt, not a stale UI clock.
+const video={isConnected:true,paused:false,ended:false,pause(){this.paused=true},play(){this.paused=false;return Promise.resolve()}};
+const k={activeVideo:video,activeVidSrcVideoV3227:()=>video,send(){},relaySafeCommandDownV3211(){},bootstrapSafePlayV3212(){throw Error('must use connected media')},document:{contains:()=>false}};
+vm.createContext(k);vm.runInContext(fn(clock,'handleSafeCommandV3211'),k);
+k.handleSafeCommandV3211({command:'toggle'});assert.equal(video.paused,true);
+k.handleSafeCommandV3211({command:'toggle'});assert.equal(video.paused,false);
+console.log('Single-send play/pause, immediate media-state toggle, shadow media: PASS');
+// Expanding the panel changes the outer box height only; toolbar bounds stay at frame.
+const values={};let height=640;
+const box={offsetWidth:360,get offsetHeight(){return height},scrollLeft:0,scrollTop:0,clientLeft:0,clientTop:0,getBoundingClientRect:()=>({left:10,top:100,width:360,height})};
+const viewport={getBoundingClientRect:()=>({left:10,top:100,width:360,height:202.5})};
+const root={parentElement:box,style:{setProperty:(k,v)=>values[k]=v,getPropertyValue:k=>values[k]}};
+const g={document:{getElementById:()=>viewport}};vm.createContext(g);vm.runInContext(fn(site,'syncVidSrcViewportControlsV3251'),g);
+g.syncVidSrcViewportControlsV3251(root);const first={...values};height=1100;g.syncVidSrcViewportControlsV3251(root);assert.deepEqual(values,first);assert.equal(values.height,'202.5px');
+console.log('Opening subtitle settings does not extend video control bounds: PASS');
+// Quality entry restores hidden source controls, opens once, then cleans up.
+const classes=new Set(),listeners=new Map();let clicks=0,restored=0,scrubbed=0;
+const button={getAttribute:()=>null,click(){clicks++}};
+const q={document:{documentElement:{classList:{add:c=>classes.add(c),remove:c=>classes.delete(c)}},getElementById:()=>({}),addEventListener:(n,f)=>listeners.set(n,f),removeEventListener:n=>listeners.delete(n)},window:{top:{postMessage(){}}},activeVidSrcVideoV3227:()=>video,findVidSrcProviderButtonV3231:()=>button,restoreVidSrcProviderUiV3234:()=>restored++,setVidSrcProviderUiScrubV3234:()=>scrubbed++,vidSrcTakeoverActiveV3224:true,setTimeout:()=>1,clearTimeout(){}};
+vm.createContext(q);vm.runInContext('let vidSrcQualityMenuV3251=null;'+['reportVidSrcQualityV3251','closeVidSrcQualityV3251','openVidSrcProviderQualityV3231'].map(n=>fn(clock,n)).join('\n'),q);
+assert.equal(q.openVidSrcProviderQualityV3231({requestId:'session'}),true);assert.equal(clicks,1);assert.equal(restored,1);assert(classes.has('subhub-provider-menu-v3251'));
+q.closeVidSrcQualityV3251();assert.equal(scrubbed,1);assert.equal(classes.size,0);assert.equal(listeners.size,0);
+console.log('Quality opens source settings and restores SubHub controls on close: PASS');
+module.exports={fn,site,clock};

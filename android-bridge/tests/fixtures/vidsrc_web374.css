@@ -1,0 +1,42 @@
+
+/* Keep the iframe in its existing document. Never reload it to repair layout. */
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedFrameContainer > .screen-frame-stage-v342{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  display:block!important;visibility:visible!important;opacity:1!important;
+  will-change:auto!important;filter:none!important;perspective:none!important;
+}
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedFrameContainer > .screen-frame-stage-v342 > iframe{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;
+  display:block!important;visibility:visible!important;opacity:1!important;border:0!important;
+}
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen{
+  position:fixed!important;inset:0!important;width:100%!important;height:100%!important;
+  max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;
+  border-radius:0!important;background:#000!important;overflow:hidden!important;box-sizing:border-box!important;
+}
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen #embedFrameContainer{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  max-width:none!important;max-height:none!important;aspect-ratio:auto!important;
+  margin:0!important;padding:0!important;overflow:hidden!important;box-sizing:border-box!important;
+}
+/* Preserve the existing subtitle settings area while it is open. */
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].pseudo-fullscreen.subhub-subpanel-open-v3230 #embedFrameContainer{
+  inset:0 0 auto 0!important;height:62vh!important;max-height:62vh!important;
+}
+#vidsrcWakeV374{display:none;position:absolute;inset:0;z-index:60;background:transparent;touch-action:manipulation}
+#embedPlayerModal .video-modal-box.sh-v374-fullscreen #vidsrcWakeV374{display:block}
+/* Hide the parents as well as children: older Android CSS forces child pointer-events. */
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-idle #embedUiTrigger,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-idle #embedTopBar,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-idle .video-top-controls,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-idle #subhub-vidsrc-takeover-v3222 .sh-v3222-bar,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-idle #subhub-vidsrc-takeover-v3222 .sh-v3222-bar *,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-idle #subhub-vidsrc-takeover-v3222 .sh-v3227-menu{
+  opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+}
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-awake #embedUiTrigger,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-awake #embedTopBar,
+#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"].sh-v374-awake #subhub-vidsrc-takeover-v3222 .sh-v3222-bar{
+  opacity:1!important;visibility:visible!important;pointer-events:auto!important;
+}
