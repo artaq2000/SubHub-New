@@ -2664,7 +2664,129 @@
     } catch (_) {}
   }
 
+  /*
+   * 322.3.78 — Android search/movie-page race guard.
+   *
+   * The web page can still be finishing an async render for the movie that was
+   * open before the user searched. On Android the injected bridges can trigger
+   * extra redraws, so that old render may finish after selectMovie() starts and
+   * paint the previous movie over the newly selected result.
+   *
+   * Keep renderMovie() single-file and latest-current-movie only. While an
+   * external search result is being selected, redraw requests for the previous
+   * movie are ignored. This changes no movie data and no Moviesmod logic; it
+   * only prevents stale page paint from winning the race.
+   */
+  function installMovieSearchRaceGuardV3278() {
+    try {
+      if (window.__subhubMovieSearchRaceGuardV3278) return true;
+
+      const originalRender = window.renderMovie;
+      const originalSelect = window.selectMovie;
+      if (typeof originalRender !== 'function' || typeof originalSelect !== 'function') {
+        return false;
+      }
+
+      let renderRunning = false;
+      const renderQueue = [];
+      let searchSerial = 0;
+      let blockedPreviousMovieId = '';
+
+      function currentMovieIdV3278() {
+        try {
+          return (typeof currentMovie !== 'undefined' && currentMovie && currentMovie.id != null)
+            ? String(currentMovie.id)
+            : '';
+        } catch (_) {
+          return '';
+        }
+      }
+
+      function movieIdV3278(movie) {
+        try {
+          return movie && movie.id != null ? String(movie.id) : '';
+        } catch (_) {
+          return '';
+        }
+      }
+
+      async function pumpMovieRendersV3278() {
+        if (renderRunning) return;
+        renderRunning = true;
+        try {
+          while (renderQueue.length) {
+            const job = renderQueue.shift();
+            const id = movieIdV3278(job.args[0]);
+            const currentId = currentMovieIdV3278();
+
+            if (
+              (blockedPreviousMovieId && id && id === blockedPreviousMovieId) ||
+              (currentId && id && id !== currentId)
+            ) {
+              job.resolve();
+              continue;
+            }
+
+            try {
+              job.resolve(await originalRender.apply(job.thisArg, job.args));
+            } catch (err) {
+              job.reject(err);
+            }
+          }
+        } finally {
+          renderRunning = false;
+          if (renderQueue.length) {
+            Promise.resolve().then(pumpMovieRendersV3278);
+          }
+        }
+      }
+
+      const guardedRender = function () {
+        const args = Array.prototype.slice.call(arguments);
+        const id = movieIdV3278(args[0]);
+
+        if (blockedPreviousMovieId && id && id === blockedPreviousMovieId) {
+          return Promise.resolve();
+        }
+
+        return new Promise(function (resolve, reject) {
+          renderQueue.push({
+            thisArg: this,
+            args: args,
+            resolve: resolve,
+            reject: reject
+          });
+          pumpMovieRendersV3278();
+        }.bind(this));
+      };
+      guardedRender.__subhubSearchRaceGuardV3278 = true;
+      window.renderMovie = guardedRender;
+
+      const guardedSelect = async function () {
+        const serial = ++searchSerial;
+        const previousId = currentMovieIdV3278();
+        if (previousId) blockedPreviousMovieId = previousId;
+
+        try {
+          return await originalSelect.apply(this, arguments);
+        } finally {
+          if (serial === searchSerial) {
+            blockedPreviousMovieId = '';
+          }
+        }
+      };
+      guardedSelect.__subhubSearchRaceGuardV3278 = true;
+      window.selectMovie = guardedSelect;
+
+      window.__subhubMovieSearchRaceGuardV3278 = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   stampBuild();
+  installMovieSearchRaceGuardV3278();
   installUiPolishV324();
   installImdbExternalOpenV3249();
   installOpeningFeedback();
@@ -2688,6 +2810,7 @@
 
   setTimeout(function () {
     stampBuild();
+    installMovieSearchRaceGuardV3278();
     installUiPolishV324();
     installImdbExternalOpenV3249();
     installOpeningFeedback();
