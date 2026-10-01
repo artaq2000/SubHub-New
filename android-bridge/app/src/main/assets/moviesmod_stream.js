@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  if (window.__subhubMoviesmodInstalledV3268) return;
-  window.__subhubMoviesmodInstalledV3268 = true;
+  if (window.__subhubMoviesmodInstalledV3271) return;
+  window.__subhubMoviesmodInstalledV3271 = true;
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   let active = null;
@@ -610,11 +610,10 @@
     button.type = 'button';
     button.className = 'watch-pill';
     button.style.cssText =
-      'min-height:56px;border:1px solid #7b68ee;border-radius:12px;' +
-      'background:#171d36;color:#fff;padding:10px;font:inherit;cursor:pointer';
-    button.innerHTML =
-      '🎬 مشاهدة بالتطبيق<small style="display:block;margin-top:4px;opacity:.78">' +
-      'يتم جلب رابط جديد عند كل تشغيل</small>';
+      'min-height:58px;border:1px solid #7b68ee;border-radius:12px;' +
+      'background:#171d36;color:#fff;padding:10px;font:inherit;font-weight:850;' +
+      'font-size:1.02rem;cursor:pointer';
+    button.textContent = 'مشاهدة بالتطبيق — تجريبي';
     button.title = 'يستخدم السيرفر الذي اعتمده المالك ويجلب بثاً جديداً لهذا الجهاز';
     button.addEventListener('click', function () { openMoviesmod(false); });
     return button;
