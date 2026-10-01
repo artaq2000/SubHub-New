@@ -449,7 +449,7 @@ assert 'manualServerButton' in direct
 assert 'جلب السيرفرات' in direct
 assert 'requestServerList' in direct
 assert 'window.__subhubRequestServerList' in direct
-assert 'probe.setAlpha(1.0f)' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'view details' in direct
 assert 'peachify' in direct
 assert '((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())' in direct
@@ -458,7 +458,7 @@ assert 'resolvedMainHost = host;' in direct
 
 
 # 322.3.67: saved-server mode stays visible through ads/verification and waits until the target button is actually clickable.
-assert 'probe.setAlpha(1.0f)' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
 assert 'جارٍ الاتصال بالسيرفر' in direct
 assert 'function uncovered(e)' in direct
@@ -495,7 +495,7 @@ assert 'this.interactiveSource = interactiveSource' in direct
 assert 'this.autoServer = !this.interactiveSource && !this.preferredServerLabel.isEmpty()' in direct
 assert 'serverListRequested = true' in direct
 assert '!serverListRequested' in direct
-assert 'probe.setAlpha(1.0f)' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
 assert 'subscriberStartupAttempt' in direct
 
@@ -532,7 +532,7 @@ assert 'تعذّر الاتصال. حاول مرة أخرى.' in direct
 # 322.3.72: keep the provider/player visible inside a touchable video-sized preview.
 assert 'applySubscriberProbePreviewLayout' in direct
 assert 'new FrameLayout.LayoutParams(dp(320), dp(180), Gravity.CENTER)' in direct
-assert 'probe.setAlpha(1.0f)' in direct
+assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'probe.setBackgroundColor(Color.BLACK)' in direct
 assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
 assert 'subscriberStartupPhase <= 4 && probe != null' in direct
