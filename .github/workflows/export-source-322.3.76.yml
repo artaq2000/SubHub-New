@@ -1,0 +1,31 @@
+name: Export SubHub 322.3.76 Full Source
+
+on:
+  push:
+    branches:
+      - 'export/source-322.3.76'
+    paths:
+      - '.github/workflows/export-source-322.3.76.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 8fc2c2c7d87f3e39b6a12f0a3cc822cf71587e90
+          fetch-depth: 1
+
+      - name: Create full source archive
+        run: |
+          rm -f SubHub-322.3.76-source-full.zip
+          zip -qr SubHub-322.3.76-source-full.zip . -x '.git/*' -x 'SubHub-322.3.76-source-full.zip'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SubHub-322.3.76-source-full
+          path: SubHub-322.3.76-source-full.zip
+          retention-days: 7
