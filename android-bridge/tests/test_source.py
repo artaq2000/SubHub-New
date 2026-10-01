@@ -27,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.70'" in site
+assert "BRIDGE_BUILD = '322.3.71'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 79" in gradle
-assert "versionName '322.3.70'" in gradle
+assert "versionCode 80" in gradle
+assert "versionName '322.3.71'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -510,3 +510,22 @@ assert 'arabicDigits' in direct
 assert 'subscriberStartupAttempt >= 2' in direct
 assert 'interactiveSource ? 1200L : 300L' in direct
 assert 'playbackReady = true' in direct
+
+
+# 322.3.71: clean subscriber button and stable staged loading card.
+assert "button.textContent = 'مشاهدة بالتطبيق — تجريبي'" in moviesmod
+assert 'يتم جلب رابط جديد عند كل تشغيل' not in moviesmod
+assert 'showSubscriberStage' in direct
+assert 'renderSubscriberStage' in direct
+assert 'showSubscriberFailure' in direct
+assert 'الخطوة ' in direct
+assert 'من ٤' in direct
+assert '{"●  ·  ·", "·  ●  ·", "·  ·  ●"}' in direct
+assert 'new FrameLayout.LayoutParams(dp(286), -2, Gravity.CENTER)' in direct
+assert 'جارٍ فتح المصدر' in direct
+assert 'جارٍ الاتصال بالسيرفر' in direct
+assert 'جارٍ تجهيز البث' in direct
+assert 'جارٍ تجهيز الفيديو' in direct
+assert 'جارٍ تشغيل الفيديو' in direct
+assert 'subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + 10000L' in direct
+assert 'جارٍ الاتصال بالسيرفر… " + arabicDigits' not in direct
