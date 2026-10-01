@@ -20,6 +20,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
@@ -520,7 +521,7 @@ public final class DirectStreamPlayer {
         if (subscriberStartupPhase <= 4 && probe != null) {
             subscriberStartupGeneration++;
             stopSubscriberStageAnimation();
-            showStage("اضغط زر التشغيل داخل الشاشة إذا ظهر.");
+            showStage("اضغط داخل شاشة الفيديو للتشغيل.");
             return;
         }
 
@@ -936,6 +937,12 @@ public final class DirectStreamPlayer {
         probe.setAlpha(1.0f);
         probe.setVisibility(View.VISIBLE);
         probe.setBackgroundColor(Color.BLACK);
+        probe.bringToFront();
+        status.bringToFront();
+        menuButton.bringToFront();
+        if (toolbar.getVisibility() == View.VISIBLE) toolbar.bringToFront();
+        if (quickStrip.getVisibility() == View.VISIBLE) quickStrip.bringToFront();
+        if (panel.getVisibility() == View.VISIBLE) panel.bringToFront();
     }
 
     private void beginCapture() {
@@ -946,6 +953,17 @@ public final class DirectStreamPlayer {
             if (subscriberStartupAttempt > 1) showSubscriberStage("جارٍ إعادة المحاولة");
         }
         probe = new WebView(activity);
+        probe.setClickable(true);
+        probe.setFocusable(true);
+        probe.setFocusableInTouchMode(true);
+        probe.setOnTouchListener((v, ev) -> {
+            ViewParent vp = v.getParent();
+            if (vp != null) vp.requestDisallowInterceptTouchEvent(true);
+            if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                v.requestFocusFromTouch();
+            }
+            return false;
+        });
         WebSettings s = probe.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -1017,13 +1035,18 @@ public final class DirectStreamPlayer {
         } else {
             p = new FrameLayout.LayoutParams(dp(320), dp(180), Gravity.CENTER);
         }
-        root.addView(probe, 0, p);
+        root.addView(probe, p);
 
         // During this test phase the subscriber can see and touch only the
         // embedded provider/player rectangle. SubHub controls, subtitles, and
         // settings stay in their own overlay layer and are not replaced.
         probe.setAlpha(1.0f);
         probe.setBackgroundColor(Color.BLACK);
+        if (!interactiveSource) {
+            probe.bringToFront();
+            status.bringToFront();
+            menuButton.bringToFront();
+        }
         probe.loadUrl(source);
         if (interactiveSource) {
             showManualServerButton();
