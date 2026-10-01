@@ -610,12 +610,10 @@
     button.type = 'button';
     button.className = 'watch-pill';
     button.style.cssText =
-      'min-height:56px;border:1px solid #7b68ee;border-radius:12px;' +
-      'background:#171d36;color:#fff;padding:10px;font:inherit;cursor:pointer';
-    button.innerHTML =
-      '🎬 مشاهدة بالتطبيق<small style="display:block;margin-top:4px;opacity:.78">' +
-      'يتم جلب رابط جديد عند كل تشغيل</small>';
-    button.title = 'يستخدم السيرفر الذي اعتمده المالك ويجلب بثاً جديداً لهذا الجهاز';
+      'min-height:72px;border-radius:14px;padding:10px 14px;font:inherit;' +
+      'font-size:1.02rem;font-weight:900;line-height:1.45;cursor:pointer';
+    button.textContent = '🎬 مشاهدة بالتطبيق تجريبي';
+    button.title = 'مشاهدة بالتطبيق تجريبي';
     button.addEventListener('click', function () { openMoviesmod(false); });
     return button;
   }
