@@ -71,6 +71,7 @@ public final class DirectStreamPlayer {
         void closed();
         void subtitleRequested(int index);
         void serverSelected(String key, String label, String serverPageUrl);
+        void saveRequested(long subtitleOffsetMs);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -167,7 +168,9 @@ public final class DirectStreamPlayer {
         String resumePref = resumePrefKey();
         pendingResumeMs = resumePref.isEmpty() ? 0L : Math.max(0L, prefs.getLong(resumePref, 0L));
 
-        subtitleOffsetMs = prefs.getLong("offset_ms", 0L);
+        // Subtitle sync belongs to the selected movie/server, not to every video
+        // ever opened in this player. The saved value is injected from SubHub.
+        subtitleOffsetMs = 0L;
         subtitlePosition = prefs.getInt("position", 12);
         subtitleSizeSp = prefs.getInt("size_sp", 26);
         int savedBgOpacity = prefs.getInt("background_opacity", -1);
@@ -258,6 +261,7 @@ public final class DirectStreamPlayer {
         tool("✕", 20, this::close);
         tool("HD", 12, this::quality);
         tool("CC", 13, this::chooseSubtitle);
+        if (interactiveSource) tool("حفظ", 12, this::requestSave);
         toolbar.setVisibility(View.GONE);
         FrameLayout.LayoutParams toolsLp =
                 new FrameLayout.LayoutParams(-2, dp(50), Gravity.TOP | Gravity.START);
@@ -273,6 +277,7 @@ public final class DirectStreamPlayer {
         addCompactQuick("✕", this::close);
         addCompactQuick("HD", this::quality);
         addCompactQuick("CC", this::chooseSubtitle);
+        if (interactiveSource) addCompactQuick("حفظ", this::requestSave);
         addCompactQuick("A−", () -> adjustSubtitleSize(-2));
         addCompactQuick("A+", () -> adjustSubtitleSize(2));
         addCompactQuick("↑", () -> adjustSubtitlePosition(4));
@@ -907,7 +912,7 @@ public final class DirectStreamPlayer {
         if (!force && now - lastResumePersistAt < 5000L) return;
         lastResumePersistAt = now;
 
-        long position = Math.max(0L, player.getCurrentPosition());
+        long position = Math.max(0L, player.getContentPosition());
         long duration = player.getDuration();
         if (player.getPlaybackState() == Player.STATE_ENDED
                 || (duration > 0L && position >= Math.max(0L, duration - 45000L))) {
@@ -1514,8 +1519,27 @@ public final class DirectStreamPlayer {
     }
 
     private void adjustSync(long deltaMs) {
-        subtitleOffsetMs += deltaMs;
-        prefs.edit().putLong("offset_ms", subtitleOffsetMs).apply();
+        subtitleOffsetMs = Math.max(-600000L, Math.min(600000L, subtitleOffsetMs + deltaMs));
+        double seconds = subtitleOffsetMs / 1000.0;
+        String sign = seconds > 0 ? "+" : "";
+        showTransientValue("مزامنة " + sign + String.format(Locale.US, "%.1f", seconds) + " ث", 850);
+    }
+
+    private void requestSave() {
+        if (!interactiveSource) return;
+        listener.saveRequested(subtitleOffsetMs);
+        showTransientValue("جارٍ الحفظ…", 900);
+    }
+
+    public void showSaveResult(boolean ok, String text) {
+        if (closed) return;
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty()) value = ok ? "تم الحفظ" : "تعذّر الحفظ";
+        showTransientValue(value, ok ? 1200 : 1900);
+    }
+
+    public void setSubtitleOffsetMs(long value) {
+        subtitleOffsetMs = Math.max(-600000L, Math.min(600000L, value));
     }
 
     private void adjustSubtitleBackground(int delta) {
@@ -1692,7 +1716,9 @@ public final class DirectStreamPlayer {
 
             String text = "";
             if (player != null && captions) {
-                double time = (player.getCurrentPosition() - subtitleOffsetMs) / 1000.0;
+                // Use ExoPlayer's content clock so subtitle time stays tied to the
+                // movie itself even if the stream exposes ad/timeline periods.
+                double time = (player.getContentPosition() - subtitleOffsetMs) / 1000.0;
                 for (int i = 0; i < cues.length(); i++) {
                     JSONObject c = cues.optJSONObject(i);
                     if (c != null
