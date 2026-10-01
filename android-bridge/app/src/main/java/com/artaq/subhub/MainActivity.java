@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.73";
-    private static final int NATIVE_VERSION_CODE = 82;
+    private static final String NATIVE_VERSION = "322.3.76";
+    private static final int NATIVE_VERSION_CODE = 85;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1752,7 +1752,15 @@ public class MainActivity extends Activity {
                                     + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ")";
                             webView.evaluateJavascript(js, null);
                         }
+                        public void saveRequested(long subtitleOffsetMs) {
+                            if (!"moviesmod".equals(mode) || webView == null) return;
+                            String js = "window.__subhubMoviesmodSaveNow && window.__subhubMoviesmodSaveNow("
+                                    + JSONObject.quote(session) + ","
+                                    + subtitleOffsetMs + ")";
+                            webView.evaluateJavascript(js, null);
+                        }
                     });
+                    directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.selectDefault(config.optInt("defaultIndex", -1));
                 } catch (Exception ignored) {
                     Toast.makeText(MainActivity.this, "تعذّر فتح المشغّل المباشر", Toast.LENGTH_LONG).show();
@@ -1770,6 +1778,17 @@ public class MainActivity extends Activity {
                         directStreamPlayer.setCues(index, cues, error);
                 });
             } catch (Exception ignored) {}
+        }
+
+        @JavascriptInterface
+        public void directStreamSaveResult(String token, String session, boolean ok, String message) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            final String safe = message == null ? "" : message.substring(0, Math.min(160, message.length()));
+            ui.post(() -> {
+                if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session)) {
+                    directStreamPlayer.showSaveResult(ok, safe);
+                }
+            });
         }
 
         @JavascriptInterface
