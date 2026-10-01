@@ -27,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.71'" in site
+assert "BRIDGE_BUILD = '322.3.72'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 80" in gradle
-assert "versionName '322.3.71'" in gradle
+assert "versionCode 81" in gradle
+assert "versionName '322.3.72'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -449,7 +449,7 @@ assert 'manualServerButton' in direct
 assert 'جلب السيرفرات' in direct
 assert 'requestServerList' in direct
 assert 'window.__subhubRequestServerList' in direct
-assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
+assert 'probe.setAlpha(1.0f)' in direct
 assert 'view details' in direct
 assert 'peachify' in direct
 assert '((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())' in direct
@@ -458,7 +458,7 @@ assert 'resolvedMainHost = host;' in direct
 
 
 # 322.3.67: saved-server mode stays visible through ads/verification and waits until the target button is actually clickable.
-assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
+assert 'probe.setAlpha(1.0f)' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
 assert 'جارٍ الاتصال بالسيرفر' in direct
 assert 'function uncovered(e)' in direct
@@ -495,7 +495,7 @@ assert 'this.interactiveSource = interactiveSource' in direct
 assert 'this.autoServer = !this.interactiveSource && !this.preferredServerLabel.isEmpty()' in direct
 assert 'serverListRequested = true' in direct
 assert '!serverListRequested' in direct
-assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
+assert 'probe.setAlpha(1.0f)' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
 assert 'subscriberStartupAttempt' in direct
 
@@ -505,7 +505,7 @@ assert 'subscriberStartupAttempt' in direct
 assert 'startSubscriberStartupTimer' in direct
 assert 'subscriberStartupTick' in direct
 assert 'retrySubscriberStartup' in direct
-assert 'phase >= 5 ? 12000L : 15000L' in direct
+assert 'if (phase == 4) timeoutMs = 30000L' in direct
 assert 'startupStageText' in direct
 assert 'subscriberStartupAttempt >= 2' in direct
 assert 'interactiveSource ? 1200L : 300L' in direct
@@ -527,3 +527,15 @@ assert 'جارٍ تجهيز الفيديو' in direct
 assert 'جارٍ تشغيل الفيديو' in direct
 assert 'جارٍ إعادة المحاولة' in direct
 assert 'تعذّر الاتصال. حاول مرة أخرى.' in direct
+
+
+# 322.3.72: keep the provider/player visible inside a touchable video-sized preview.
+assert 'applySubscriberProbePreviewLayout' in direct
+assert 'new FrameLayout.LayoutParams(dp(320), dp(180), Gravity.CENTER)' in direct
+assert 'probe.setAlpha(1.0f)' in direct
+assert 'probe.setBackgroundColor(Color.BLACK)' in direct
+assert 'اضغط زر التشغيل داخل الشاشة إذا ظهر.' in direct
+assert 'subscriberStartupPhase <= 4 && probe != null' in direct
+assert 'if (phase == 4) timeoutMs = 30000L' in direct
+assert 'root.post(this::applySubscriberProbePreviewLayout)' in direct
+assert 'probe.setAlpha(interactiveSource ? 0.02f : 1.0f)' in direct
