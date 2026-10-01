@@ -1,7 +1,7 @@
 (function () {
   'use strict';
-  if (window.__subhubMoviesmodInstalledV3268) return;
-  window.__subhubMoviesmodInstalledV3268 = true;
+  if (window.__subhubMoviesmodInstalledV3276) return;
+  window.__subhubMoviesmodInstalledV3276 = true;
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   let active = null;
@@ -17,7 +17,8 @@
     invalid: false,
     key: '',
     label: '',
-    pageUrl: ''
+    pageUrl: '',
+    subtitleOffsetMs: 0
   };
 
   function current() {
@@ -48,10 +49,16 @@
       .slice(0, 80);
   }
 
+  function supportedServerLabel(raw) {
+    const compact = cleanServerLabel(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
+    return compact.startsWith('vidup') || compact.startsWith('vidfast');
+  }
+
   function validServerLabel(raw) {
     const v = cleanServerLabel(raw).toLowerCase();
     if (!v || v.length > 48) return false;
-    return !/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(v);
+    if (/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(v)) return false;
+    return supportedServerLabel(v);
   }
 
   function normalizeServerPageUrl(raw) {
@@ -73,12 +80,17 @@
     const key = String(d.moviesmodServerKey || '').trim().slice(0, 80);
     const pageUrl = normalizeServerPageUrl(d.moviesmodServerPageUrl || '');
     const valid = d.moviesmodEnabled === true && validServerLabel(label);
+    const rawOffset = Number(d.moviesmodSubtitleOffsetMs || 0);
+    const subtitleOffsetMs = Number.isFinite(rawOffset)
+      ? Math.max(-600000, Math.min(600000, Math.round(rawOffset)))
+      : 0;
     return {
       enabled: valid,
       invalid: d.moviesmodEnabled === true && !!label && !valid,
       key: valid ? key : '',
       label: valid ? label : '',
-      pageUrl: pageUrl
+      pageUrl: pageUrl,
+      subtitleOffsetMs
     };
   }
 
@@ -95,7 +107,8 @@
         invalid: serverState.invalid,
         key: serverState.key,
         label: serverState.label,
-        pageUrl: serverState.pageUrl
+        pageUrl: serverState.pageUrl,
+        subtitleOffsetMs: serverState.subtitleOffsetMs
       };
     }
     return fallbackSaved();
@@ -119,6 +132,7 @@
         moviesmodServerKey: next.key || '',
         moviesmodServerLabel: next.label || '',
         moviesmodServerPageUrl: next.pageUrl || '',
+        moviesmodSubtitleOffsetMs: Number(next.subtitleOffsetMs || 0),
         moviesmodUpdatedAt: Date.now()
       });
       window._lastRenderedMovieDoc = merged;
@@ -135,14 +149,17 @@
       invalid: !!saved.invalid,
       key: String(saved.key || ''),
       label: String(saved.label || ''),
-      pageUrl: normalizeServerPageUrl(saved.pageUrl || '')
+      pageUrl: normalizeServerPageUrl(saved.pageUrl || ''),
+      subtitleOffsetMs: Number.isFinite(Number(saved.subtitleOffsetMs))
+        ? Math.max(-600000, Math.min(600000, Math.round(Number(saved.subtitleOffsetMs))))
+        : 0
     };
     syncMovieDocCache(movieId, saved);
   }
 
   async function ensureServerConfig(selected, force) {
     const movieId = String(selected && selected.id || '').trim();
-    if (!movieId) return { enabled: false, key: '', label: '', pageUrl: '' };
+    if (!movieId) return { enabled: false, key: '', label: '', pageUrl: '', subtitleOffsetMs: 0 };
 
     if (!force && serverState.movieId === movieId && serverState.loaded) {
       return savedServer();
@@ -160,7 +177,8 @@
       invalid: false,
       key: '',
       label: '',
-      pageUrl: ''
+      pageUrl: '',
+      subtitleOffsetMs: 0
     };
 
     loadPromise = (async function () {
@@ -290,8 +308,14 @@
         usedSavedServer: useSaved,
         serverKey: useSaved ? saved.key : '',
         serverLabel: useSaved ? saved.label : '',
-        serverPageUrl: startPageUrl
+        serverPageUrl: startPageUrl,
+        subtitleOffsetMs: Number(saved.subtitleOffsetMs || 0)
       };
+
+      const explicitDefaultIndex = catalog.findIndex(x => x.isDefault === true);
+      const startupSubtitleIndex = explicitDefaultIndex >= 0
+        ? explicitDefaultIndex
+        : (catalog.length ? 0 : -1);
 
       bridge.openDirectStream(token, JSON.stringify({
         mode: 'moviesmod',
@@ -304,8 +328,9 @@
         serverKey: useSaved ? saved.key : '',
         serverLabel: useSaved ? saved.label : '',
         serverPageUrl: startPageUrl,
+        subtitleOffsetMs: Number(saved.subtitleOffsetMs || 0),
         catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub') })),
-        defaultIndex: catalog.findIndex(x => x.isDefault === true)
+        defaultIndex: startupSubtitleIndex
       }));
     } catch (_) {
       active = null;
@@ -315,7 +340,7 @@
     }
   }
 
-  async function savePendingServer() {
+  async function savePendingServer(rawOffsetMs) {
     const selected = current();
     if (!selected || !isOwner() || !pendingChoice
         || pendingChoice.movieId !== String(selected.id || '')) {
@@ -326,11 +351,19 @@
     try {
       if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
       const movieId = String(selected.id || '');
+      const requestedOffset = Number(rawOffsetMs);
+      const fallbackOffset = Number(pendingChoice.subtitleOffsetMs || 0);
+      const subtitleOffsetMs = Number.isFinite(requestedOffset)
+        ? Math.max(-600000, Math.min(600000, Math.round(requestedOffset)))
+        : (Number.isFinite(fallbackOffset)
+          ? Math.max(-600000, Math.min(600000, Math.round(fallbackOffset)))
+          : 0);
       const next = {
         enabled: true,
         key: pendingChoice.key,
         label: pendingChoice.label,
-        pageUrl: normalizeServerPageUrl(pendingChoice.pageUrl || '')
+        pageUrl: normalizeServerPageUrl(pendingChoice.pageUrl || ''),
+        subtitleOffsetMs
       };
 
       await db.collection('subtitles').doc(movieId).set({
@@ -338,6 +371,7 @@
         moviesmodServerKey: next.key,
         moviesmodServerLabel: next.label,
         moviesmodServerPageUrl: next.pageUrl,
+        moviesmodSubtitleOffsetMs: next.subtitleOffsetMs,
         moviesmodUpdatedAt: Date.now()
       }, { merge: true });
 
@@ -345,8 +379,10 @@
       pendingChoice = null;
       refreshCard();
       notify('تم حفظ السيرفر للمشتركين: ' + next.label, 'success');
+      return true;
     } catch (_) {
       notify('تعذّر حفظ السيرفر. لم يتم تغيير الإعداد السابق.');
+      return false;
     }
   }
 
@@ -429,12 +465,13 @@
         moviesmodServerKey: '',
         moviesmodServerLabel: '',
         moviesmodServerPageUrl: '',
+        moviesmodSubtitleOffsetMs: 0,
         moviesmodUpdatedAt: Date.now()
       }, { merge: true });
 
       pendingChoice = null;
       removeSavePrompt();
-      applyLoadedState(movieId, { enabled: false, key: '', label: '', pageUrl: '' });
+      applyLoadedState(movieId, { enabled: false, key: '', label: '', pageUrl: '', subtitleOffsetMs: 0 });
       refreshCard();
       notify('تم حذف سيرفر Moviesmod لهذا الفيلم.', 'success');
     } catch (_) {
@@ -448,7 +485,11 @@
 
     const key = String(rawKey || '').trim().slice(0, 80);
     const label = cleanServerLabel(rawLabel);
-    if (!key || !label || !validServerLabel(label)) return;
+    if (!key || !label) return;
+    if (!validServerLabel(label)) {
+      notify('حالياً تجربة Moviesmod تعتمد VidUp وVidFast فقط.');
+      return;
+    }
 
     const pageUrl = normalizeServerPageUrl(rawPageUrl || state.serverPageUrl || '');
     state.serverKey = key;
@@ -461,10 +502,39 @@
         movieId: state.movieId,
         key,
         label,
-        pageUrl
+        pageUrl,
+        subtitleOffsetMs: Number(state.subtitleOffsetMs || 0)
       };
       notify('السيرفر يعمل: ' + label + ' — اضغط حفظ لاعتماده.', 'success');
     }
+  };
+
+  window.__subhubMoviesmodSaveNow = async function (session, rawOffsetMs) {
+    const state = active;
+    const bridge = window.SubHubAndroidBridge;
+    if (!state || state.session !== session || !state.owner || !state.manualChoice
+        || !pendingChoice || pendingChoice.movieId !== state.movieId) {
+      if (bridge && typeof bridge.directStreamSaveResult === 'function') {
+        bridge.directStreamSaveResult(token, session, false, 'اختر VidUp أو VidFast أولاً');
+      }
+      return false;
+    }
+
+    const offset = Number(rawOffsetMs);
+    if (Number.isFinite(offset)) {
+      pendingChoice.subtitleOffsetMs = Math.max(-600000, Math.min(600000, Math.round(offset)));
+      state.subtitleOffsetMs = pendingChoice.subtitleOffsetMs;
+    }
+    const ok = await savePendingServer(pendingChoice.subtitleOffsetMs);
+    if (bridge && typeof bridge.directStreamSaveResult === 'function') {
+      bridge.directStreamSaveResult(
+        token,
+        session,
+        !!ok,
+        ok ? 'تم حفظ السيرفر ومزامنة الترجمة' : 'تعذّر الحفظ'
+      );
+    }
+    return !!ok;
   };
 
   const previousClosed = window.__subhubDirectClosed;
@@ -472,10 +542,8 @@
     const closing = active && active.session === session ? active : null;
     if (closing) active = null;
     refreshCard();
-    if (closing && closing.owner && closing.manualChoice && pendingChoice
-        && pendingChoice.movieId === closing.movieId) {
-      setTimeout(function () { showSavePrompt(pendingChoice); }, 180);
-    }
+    // 322.3.76: do not interrupt the owner with a save prompt on exit.
+    // Saving is explicit from the player while the video and subtitle are visible.
     if (typeof previousClosed === 'function') {
       try { return previousClosed(session); } catch (_) {}
     }
