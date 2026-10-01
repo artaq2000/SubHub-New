@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 82" in gradle
-assert "versionName '322.3.73'" in gradle
+assert "versionCode 85" in gradle
+assert "versionName '322.3.76'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -440,7 +440,7 @@ assert 'openResolvedProvider' in direct
 assert 'providerPlayScript' in direct
 assert 'resolvedMainHost' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
-assert 'window.__subhubMoviesmodInstalledV3268' in moviesmod
+assert 'window.__subhubMoviesmodInstalledV3276' in moviesmod
 assert 'validServerLabel' in moviesmod
 
 
@@ -549,10 +549,25 @@ assert 'requestDisallowInterceptTouchEvent(true)' in direct
 assert 'root.addView(probe, p)' in direct
 assert 'subscriberProviderVisible' in direct
 assert 'providerFocusScript' in direct
-assert "__subhub_focus_bg" in direct
-assert "e.style.setProperty('position','fixed','important')" in direct
-assert "e.style.setProperty('width','100vw','important')" in direct
-assert "e.style.setProperty('height','100vh','important')" in direct
+assert "__subhub_player_host" in direct
+assert "document.querySelectorAll('iframe[src],video')" in direct
+assert "e.style.cssText+=" in direct
+assert "if(e.parentNode!==h)h.appendChild(e)" in direct
 assert 'probe.setAlpha(subscriberProviderVisible ? 1.0f : 0.0f)' in direct
 assert 'setTimeout(kick,120)' in direct
 assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
+
+
+# 322.3.76: keep subtitle timing on ExoPlayer content time and save the
+# working VidUp/VidFast server + subtitle correction while the movie is visible.
+assert 'player.getContentPosition()' in direct
+assert 'void saveRequested(long subtitleOffsetMs)' in direct
+assert 'addCompactQuick("حفظ", this::requestSave)' in direct
+assert 'public void setSubtitleOffsetMs(long value)' in direct
+assert 'public void showSaveResult' in direct
+assert '__subhubMoviesmodSaveNow' in moviesmod
+assert 'moviesmodSubtitleOffsetMs' in moviesmod
+assert 'directStreamSaveResult' in main
+assert 'subtitleOffsetMs: Number(saved.subtitleOffsetMs || 0)' in moviesmod
+assert 'supportedServerLabel' in moviesmod
+assert "compact.startsWith('vidup') || compact.startsWith('vidfast')" in moviesmod
