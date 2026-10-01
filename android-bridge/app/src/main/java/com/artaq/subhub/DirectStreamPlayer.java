@@ -110,6 +110,9 @@ public final class DirectStreamPlayer {
     // playback opens it directly instead of the Moviesmod server list.
     private final String directEmbedUrl;
     private int directKickRounds = 0;
+    // 322.3.80: clean SubHub cover over the hidden provider page (direct mode only).
+    private FrameLayout directCover;
+    private int directRevealGeneration = 0;
     private boolean chooserAutoRequested = false;
     private boolean decisionShown = false;
     private boolean reopening = false;
@@ -571,6 +574,27 @@ public final class DirectStreamPlayer {
         return v;
     }
 
+    // 322.3.80: the current choice in the quality / subtitle lists is coloured.
+    private void markSelected(TextView v) {
+        v.setBackground(round(0xff1d4d33, 0xff4ade80, 2, 14));
+        v.setTextColor(Color.WHITE);
+        v.setText("✓  " + v.getText());
+    }
+
+    private boolean isQualityChoiceActive(TrackSelectionOverride choice) {
+        if (player == null) return false;
+        java.util.Map<androidx.media3.common.TrackGroup, TrackSelectionOverride> active =
+                player.getTrackSelectionParameters().overrides;
+        boolean anyVideoOverride = false;
+        for (TrackSelectionOverride o : active.values()) {
+            if (o.getType() != C.TRACK_TYPE_VIDEO) continue;
+            anyVideoOverride = true;
+            if (choice != null && o.mediaTrackGroup.equals(choice.mediaTrackGroup)
+                    && o.trackIndices.equals(choice.trackIndices)) return true;
+        }
+        return choice == null && !anyVideoOverride;
+    }
+
     private void message(String text) {
         status.setVisibility(View.GONE);
         if (text == null) return;
@@ -587,6 +611,15 @@ public final class DirectStreamPlayer {
     }
 
     private String startupStageText(int phase) {
+        if (!directEmbedUrl.isEmpty()) {
+            switch (phase) {
+                case 3: return "جارٍ الاتصال بالسيرفر";
+                case 4: return "جارٍ تحضير الفيديو";
+                case 5: return "تم العثور على الفيديو";
+                case 6: return "جارٍ تشغيل الفيديو";
+                default: break;
+            }
+        }
         switch (phase) {
             case 1: return "جارٍ فتح صفحة السيرفرات";
             case 2: return "جارٍ اختيار السيرفر";
@@ -651,6 +684,7 @@ public final class DirectStreamPlayer {
         if (subscriberStartupPhase <= 4 && probe != null) {
             subscriberStartupGeneration++;
             stopSubscriberStageAnimation();
+            removeDirectCover();
             showStage("اضغط داخل شاشة الفيديو للتشغيل.");
             return;
         }
@@ -1092,6 +1126,7 @@ public final class DirectStreamPlayer {
         probe.setVisibility(View.VISIBLE);
         probe.setBackgroundColor(Color.BLACK);
         probe.bringToFront();
+        if (directCover != null) directCover.bringToFront();
         status.bringToFront();
         menuButton.bringToFront();
         if (toolbar.getVisibility() == View.VISIBLE) toolbar.bringToFront();
@@ -1222,6 +1257,7 @@ public final class DirectStreamPlayer {
         if (!interactiveSource && !directEmbedUrl.isEmpty()) {
             // Skip the Moviesmod server list: open the saved player URL with the
             // Moviesmod page as Referer, exactly as after a successful server click.
+            showDirectCover();
             root.post(this::applySubscriberProbePreviewLayout);
             startSubscriberStartupTimer(3);
             directKickRounds = 0;
@@ -1257,7 +1293,54 @@ public final class DirectStreamPlayer {
                 v.evaluateJavascript("window.__subhubProviderKickV3265=false;" + providerPlayScript(), null);
             } catch (Exception ignored) {}
             scheduleDirectKick(v);
-        }, 8500L);
+        }, 2000L);
+        if (directKickRounds == 0) scheduleDirectReveal(v);
+    }
+
+    // If the automatic taps did not start the video within a few seconds, show
+    // the provider player so the viewer can tap it once by hand.
+    private void scheduleDirectReveal(WebView v) {
+        directRevealGeneration++;
+        final int generation = directRevealGeneration;
+        handler.postDelayed(() -> {
+            if (generation != directRevealGeneration || closed || playing
+                    || candidate != null || probe == null || v != probe) return;
+            if (directCover == null) return;
+            subscriberStartupGeneration++;
+            stopSubscriberStageAnimation();
+            removeDirectCover();
+            showStage("اضغط داخل الفيديو للتشغيل.");
+        }, 7000L);
+    }
+
+    private void showDirectCover() {
+        if (directEmbedUrl.isEmpty() || interactiveSource || closed) return;
+        removeDirectCover();
+        directCover = new FrameLayout(activity);
+        directCover.setBackgroundColor(Color.BLACK);
+        // The cover only hides the provider page; touches we dispatch go to the
+        // probe directly, and the cover itself swallows stray taps on ads.
+        directCover.setClickable(true);
+        TextView brand = new TextView(activity);
+        brand.setText("SubHub");
+        brand.setTextColor(GOLD);
+        brand.setTextSize(26);
+        brand.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        brand.setGravity(Gravity.CENTER);
+        directCover.addView(brand, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        root.addView(directCover, new FrameLayout.LayoutParams(-1, -1));
+        directCover.bringToFront();
+        status.bringToFront();
+        menuButton.bringToFront();
+    }
+
+    private void removeDirectCover() {
+        directRevealGeneration++;
+        if (directCover != null) {
+            ViewGroup parent = (ViewGroup) directCover.getParent();
+            if (parent != null) parent.removeView(directCover);
+            directCover = null;
+        }
     }
 
     private void capture(String url, Map<String,String> headers) {
@@ -1300,6 +1383,7 @@ public final class DirectStreamPlayer {
     }
 
     private void destroyProbe() {
+        removeDirectCover();
         if (probe != null) {
             probe.stopLoading();
             probe.loadUrl("about:blank");
@@ -1572,6 +1656,7 @@ public final class DirectStreamPlayer {
                 player.setTrackSelectionParameters(b.build());
                 hidePanel();
             });
+            if (isQualityChoiceActive(choices.get(i))) markSelected(item);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
             lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);
@@ -1600,6 +1685,7 @@ public final class DirectStreamPlayer {
             subtitle.setVisibility(View.GONE);
             hidePanel();
         });
+        if (selectedSubtitle < 0 || !captions) markSelected(off);
         LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, dp(40));
         offLp.setMargins(0, dp(2), 0, dp(2));
         list.addView(off, offLp);
@@ -1619,6 +1705,7 @@ public final class DirectStreamPlayer {
                 listener.subtitleRequested(index);
                 hidePanel();
             });
+            if (captions && selectedSubtitle == index) markSelected(item);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(40));
             lp.setMargins(0, dp(2), 0, dp(2));
             list.addView(item, lp);

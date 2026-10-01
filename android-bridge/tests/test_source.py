@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 88" in gradle
-assert "versionName '322.3.79'" in gradle
+assert "versionCode 89" in gradle
+assert "versionName '322.3.80'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -612,3 +612,13 @@ assert 'ownerMode, openChooser, directEmbedUrl,' in main
 assert 'openResolvedProvider(preferredServerLabel, directEmbedUrl);' in direct
 assert 'private void scheduleDirectKick(WebView v)' in direct
 print('322.3.79 checks OK')
+
+# 322.3.80: clean cover while the hidden provider loads, real stage text, highlighted choices.
+assert 'private void showDirectCover()' in direct
+assert 'removeDirectCover();' in direct
+assert '"جارٍ الاتصال بالسيرفر"' in direct and '"جارٍ تحضير الفيديو"' in direct
+assert 'private void scheduleDirectReveal(WebView v)' in direct
+assert 'private void markSelected(TextView v)' in direct
+assert 'if (isQualityChoiceActive(choices.get(i))) markSelected(item);' in direct
+assert 'if (captions && selectedSubtitle == index) markSelected(item);' in direct
+print('322.3.80 checks OK')
