@@ -1180,8 +1180,10 @@ public class MainActivity extends Activity {
 
             String h = host.toLowerCase(Locale.US);
             boolean imdbHost = h.equals("imdb.com") || h.endsWith(".imdb.com");
+            // 322.3.78: trailer search opens YouTube results outside the app.
+            boolean youtubeHost = h.equals("youtube.com") || h.endsWith(".youtube.com") || h.equals("youtu.be");
             boolean webScheme = "https".equalsIgnoreCase(scheme) || "http".equalsIgnoreCase(scheme);
-            if (!imdbHost || !webScheme) return "";
+            if (!(imdbHost || youtubeHost) || !webScheme) return "";
 
             if ("http".equalsIgnoreCase(scheme)) {
                 return u.buildUpon().scheme("https").build().toString();
@@ -1750,13 +1752,14 @@ public class MainActivity extends Activity {
                         public void subtitleRequested(int index) {
                             webView.evaluateJavascript("window.__subhubDirectSubtitle && window.__subhubDirectSubtitle(" + JSONObject.quote(session) + "," + index + ")", null);
                         }
-                        public void serverSelected(String key, String label, String serverPageUrl) {
+                        public void serverSelected(String key, String label, String serverPageUrl, String embedUrl) {
                             if (!"moviesmod".equals(mode) || webView == null) return;
                             String js = "window.__subhubMoviesmodServerSelected && window.__subhubMoviesmodServerSelected("
                                     + JSONObject.quote(session) + ","
                                     + JSONObject.quote(key) + ","
                                     + JSONObject.quote(label) + ","
-                                    + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ")";
+                                    + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ","
+                                    + JSONObject.quote(embedUrl == null ? "" : embedUrl) + ")";
                             webView.evaluateJavascript(js, null);
                         }
                         public void reopenManual(String serverPageUrl) {

@@ -70,7 +70,7 @@ public final class DirectStreamPlayer {
     public interface Listener {
         void closed();
         void subtitleRequested(int index);
-        void serverSelected(String key, String label, String serverPageUrl);
+        void serverSelected(String key, String label, String serverPageUrl, String embedUrl);
         void saveRequested(long subtitleOffsetMs);
         void reopenManual(String serverPageUrl);
     }
@@ -147,6 +147,9 @@ public final class DirectStreamPlayer {
     private String discoveredServerPageUrl = "";
     private TextView manualServerButton;
     private String resolvedMainHost = "";
+    // 322.3.78: the provider player URL itself (e.g. the server's embed page),
+    // saved with the owner's choice so the website can play it without the app.
+    private String resolvedProviderUrl = "";
     private String selectedProviderLabel = "";
     private int subscriberStartupAttempt = 0;
     private int subscriberStartupGeneration = 0;
@@ -657,6 +660,7 @@ public final class DirectStreamPlayer {
         candidate = null;
         candidateHeaders = null;
         resolvedMainHost = "";
+        resolvedProviderUrl = "";
         selectedProviderLabel = "";
         pendingServerKey = "";
         pendingServerLabel = "";
@@ -864,6 +868,7 @@ public final class DirectStreamPlayer {
             String host = u.getHost().toLowerCase(Locale.ROOT);
             if (host.equals(allowedHost) || host.endsWith("." + allowedHost)) return;
             resolvedMainHost = host;
+            resolvedProviderUrl = u.toString();
             if (interactiveSource) {
                 showStage("جارٍ الاتصال بالسيرفر " +
                         (selectedProviderLabel.isEmpty() ? "" : selectedProviderLabel) + "…");
@@ -1244,7 +1249,7 @@ public final class DirectStreamPlayer {
                 }
                 if (!key.isEmpty() && !label.isEmpty()) {
                     serverChoiceReported = true;
-                    listener.serverSelected(key, label, discoveredServerPageUrl);
+                    listener.serverSelected(key, label, discoveredServerPageUrl, resolvedProviderUrl);
                 }
             }
             handler.postDelayed(() -> {

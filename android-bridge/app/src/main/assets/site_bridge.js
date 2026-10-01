@@ -2514,6 +2514,32 @@
     }
   }
 
+  function normalizeYoutubeTargetV3278(raw) {
+    try {
+      const u = new URL(String(raw || '').trim(), location.href);
+      const h = String(u.hostname || '').toLowerCase();
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return '';
+      if (!(h === 'youtube.com' || h.endsWith('.youtube.com') || h === 'youtu.be')) return '';
+      u.protocol = 'https:';
+      return u.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function openYoutubeExternalV3278(raw) {
+    const url = normalizeYoutubeTargetV3278(raw);
+    if (!url) return false;
+    try {
+      const b = window.SubHubAndroidBridge;
+      if (!b || typeof b.openImdb !== 'function') return false;
+      b.openImdb(VIDSRC_GUARD_TOKEN, url);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function installImdbExternalOpenV3249() {
     try {
       if (window.__subhubImdbExternalV3249) return;
@@ -2540,6 +2566,10 @@
       if (typeof oldOpen === 'function' && !oldOpen.__subhubImdbExternalV3249) {
         const wrappedOpen = function (url) {
           if (openImdbExternalV3249(url)) return null;
+          // 322.3.78: the trailer card's «بحث YouTube» uses window.open, which
+          // the app WebView rejects (no new windows). Hand YouTube to the
+          // system (YouTube app / browser) through the same native bridge.
+          if (openYoutubeExternalV3278(url)) return null;
           return oldOpen.apply(this, arguments);
         };
         wrappedOpen.__subhubImdbExternalV3249 = true;

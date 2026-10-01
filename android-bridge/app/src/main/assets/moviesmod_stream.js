@@ -20,6 +20,7 @@
     key: '',
     label: '',
     pageUrl: '',
+    embedUrl: '',
     subtitleOffsetMs: 0
   };
 
@@ -79,6 +80,21 @@
     }
   }
 
+  // 322.3.78: the server's own player URL (not the temporary m3u8). The
+  // website plays it for everyone; it must not point back to Moviesmod.
+  function normalizeEmbedUrl(raw) {
+    const v = String(raw || '').trim();
+    if (!v || v.length > 2200) return '';
+    try {
+      const u = new URL(v);
+      const h = String(u.hostname || '').toLowerCase();
+      if (u.protocol !== 'https:' || h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd')) return '';
+      return u.href;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function normalizeSaved(raw) {
     const d = raw || {};
     const label = cleanServerLabel(d.moviesmodServerLabel || '');
@@ -95,6 +111,7 @@
       key: valid ? key : '',
       label: valid ? label : '',
       pageUrl: pageUrl,
+      embedUrl: valid ? normalizeEmbedUrl(d.moviesmodEmbedUrl || '') : '',
       subtitleOffsetMs
     };
   }
@@ -113,6 +130,7 @@
         key: serverState.key,
         label: serverState.label,
         pageUrl: serverState.pageUrl,
+        embedUrl: serverState.embedUrl,
         subtitleOffsetMs: serverState.subtitleOffsetMs
       };
     }
@@ -137,6 +155,7 @@
         moviesmodServerKey: next.key || '',
         moviesmodServerLabel: next.label || '',
         moviesmodServerPageUrl: next.pageUrl || '',
+        moviesmodEmbedUrl: next.embedUrl || '',
         moviesmodSubtitleOffsetMs: Number(next.subtitleOffsetMs || 0),
         moviesmodUpdatedAt: Date.now()
       });
@@ -155,6 +174,7 @@
       key: String(saved.key || ''),
       label: String(saved.label || ''),
       pageUrl: normalizeServerPageUrl(saved.pageUrl || ''),
+      embedUrl: normalizeEmbedUrl(saved.embedUrl || ''),
       subtitleOffsetMs: Number.isFinite(Number(saved.subtitleOffsetMs))
         ? Math.max(-600000, Math.min(600000, Math.round(Number(saved.subtitleOffsetMs))))
         : 0
@@ -164,7 +184,7 @@
 
   async function ensureServerConfig(selected, force) {
     const movieId = String(selected && selected.id || '').trim();
-    if (!movieId) return { enabled: false, key: '', label: '', pageUrl: '', subtitleOffsetMs: 0 };
+    if (!movieId) return { enabled: false, key: '', label: '', pageUrl: '', embedUrl: '', subtitleOffsetMs: 0 };
 
     if (!force && serverState.movieId === movieId && serverState.loaded) {
       return savedServer();
@@ -183,6 +203,7 @@
       key: '',
       label: '',
       pageUrl: '',
+      embedUrl: '',
       subtitleOffsetMs: 0
     };
 
@@ -374,11 +395,16 @@
         : (Number.isFinite(fallbackOffset)
           ? Math.max(-600000, Math.min(600000, Math.round(fallbackOffset)))
           : 0);
+      // Keep the previously saved player URL when the same server is saved
+      // again but this session could not see its URL.
+      const previous = savedServer();
+      const freshEmbed = normalizeEmbedUrl(pendingChoice.embedUrl || '');
       const next = {
         enabled: true,
         key: pendingChoice.key,
         label: pendingChoice.label,
         pageUrl: normalizeServerPageUrl(pendingChoice.pageUrl || ''),
+        embedUrl: freshEmbed || (previous.label === pendingChoice.label ? (previous.embedUrl || '') : ''),
         subtitleOffsetMs
       };
 
@@ -387,6 +413,7 @@
         moviesmodServerKey: next.key,
         moviesmodServerLabel: next.label,
         moviesmodServerPageUrl: next.pageUrl,
+        moviesmodEmbedUrl: next.embedUrl,
         moviesmodSubtitleOffsetMs: next.subtitleOffsetMs,
         moviesmodUpdatedAt: Date.now()
       }, { merge: true });
@@ -481,13 +508,14 @@
         moviesmodServerKey: '',
         moviesmodServerLabel: '',
         moviesmodServerPageUrl: '',
+        moviesmodEmbedUrl: '',
         moviesmodSubtitleOffsetMs: 0,
         moviesmodUpdatedAt: Date.now()
       }, { merge: true });
 
       pendingChoice = null;
       removeSavePrompt();
-      applyLoadedState(movieId, { enabled: false, key: '', label: '', pageUrl: '', subtitleOffsetMs: 0 });
+      applyLoadedState(movieId, { enabled: false, key: '', label: '', pageUrl: '', embedUrl: '', subtitleOffsetMs: 0 });
       refreshCard();
       notify('تم حذف سيرفر Moviesmod لهذا الفيلم.', 'success');
     } catch (_) {
@@ -495,7 +523,7 @@
     }
   }
 
-  window.__subhubMoviesmodServerSelected = function (session, rawKey, rawLabel, rawPageUrl) {
+  window.__subhubMoviesmodServerSelected = function (session, rawKey, rawLabel, rawPageUrl, rawEmbedUrl) {
     const state = active;
     if (!state || state.session !== session) return;
 
@@ -511,6 +539,7 @@
     state.serverKey = key;
     state.serverLabel = label;
     state.serverPageUrl = pageUrl;
+    state.embedUrl = normalizeEmbedUrl(rawEmbedUrl || '');
 
     if (state.owner && current()
         && String(current().id || '') === state.movieId) {
@@ -519,6 +548,7 @@
         key,
         label,
         pageUrl,
+        embedUrl: state.embedUrl,
         subtitleOffsetMs: Number(state.subtitleOffsetMs || 0)
       };
     }

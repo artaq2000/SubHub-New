@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 86" in gradle
-assert "versionName '322.3.77'" in gradle
+assert "versionCode 87" in gradle
+assert "versionName '322.3.78'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -384,7 +384,7 @@ assert 'serverKey: useSaved ? saved.key' in moviesmod
 assert 'openMoviesmod(true)' in moviesmod
 assert 'preferredServerKey' in main
 assert 'preferredServerLabel' in main
-assert 'serverSelected(String key, String label, String serverPageUrl)' in direct
+assert 'serverSelected(String key, String label, String serverPageUrl, String embedUrl)' in direct
 assert 'SubHubSourceChoice' in direct
 assert 'providerPickerScript' in direct
 assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات' in direct
@@ -473,7 +473,7 @@ assert 'discoveredServerPageUrl' in direct
 assert 'serverPage(String token, String rawUrl)' in direct
 assert 'window.SubHubSourceChoice.serverPage' in direct
 assert 'location.href' in direct
-assert 'listener.serverSelected(key, label, discoveredServerPageUrl)' in direct
+assert 'listener.serverSelected(key, label, discoveredServerPageUrl, resolvedProviderUrl)' in direct
 assert 'serverPageUrl' in main
 assert 'savedServerPageUrl' in main
 assert 'resolvedSourceUrl = savedUri.toString()' in main
@@ -586,3 +586,11 @@ assert 'age < 30000L' not in direct
 assert 'config.optBoolean("ownerMode", interactiveSource)' in main
 assert 'window.__subhubMoviesmodReopenManual(' in main
 
+
+
+# 322.3.78: the owner's save also stores the server player URL for the website.
+assert 'resolvedProviderUrl = u.toString();' in direct
+assert 'moviesmodEmbedUrl: next.embedUrl' in moviesmod
+assert 'function normalizeEmbedUrl(raw)' in moviesmod
+assert 'rawEmbedUrl' in moviesmod
+assert 'JSONObject.quote(embedUrl == null ? "" : embedUrl)' in main
