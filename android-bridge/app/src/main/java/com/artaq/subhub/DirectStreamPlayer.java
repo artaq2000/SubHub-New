@@ -106,6 +106,10 @@ public final class DirectStreamPlayer {
     private final boolean autoServer;
     private final boolean ownerMode;
     private final boolean openChooser;
+    // 322.3.79: saved server player URL (yellow card). When set, automatic
+    // playback opens it directly instead of the Moviesmod server list.
+    private final String directEmbedUrl;
+    private int directKickRounds = 0;
     private boolean chooserAutoRequested = false;
     private boolean decisionShown = false;
     private boolean reopening = false;
@@ -167,7 +171,18 @@ public final class DirectStreamPlayer {
                               String preferredServerKey, String preferredServerLabel,
                               boolean interactiveSource, boolean ownerMode,
                               boolean openChooser, Listener listener) {
+        this(activity, parent, source, catalog, resumeKey, allowedHost,
+                preferredServerKey, preferredServerLabel, interactiveSource,
+                ownerMode, openChooser, "", listener);
+    }
+
+    public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
+                              JSONArray catalog, String resumeKey, String allowedHost,
+                              String preferredServerKey, String preferredServerLabel,
+                              boolean interactiveSource, boolean ownerMode,
+                              boolean openChooser, String directEmbedUrl, Listener listener) {
         this.activity = activity;
+        this.directEmbedUrl = (directEmbedUrl == null || interactiveSource) ? "" : directEmbedUrl.trim();
         this.listener = listener;
         this.source = source;
         this.catalog = catalog;
@@ -1140,6 +1155,7 @@ public final class DirectStreamPlayer {
                             subscriberProviderVisible = true;
                             applySubscriberProbePreviewLayout();
                             try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
+                            scheduleDirectKick(v);
                         }, 180L);
                     }
                 } else {
@@ -1203,12 +1219,21 @@ public final class DirectStreamPlayer {
             status.bringToFront();
             menuButton.bringToFront();
         }
-        probe.loadUrl(source);
-        if (interactiveSource) {
-            showManualServerButton();
-        } else {
+        if (!interactiveSource && !directEmbedUrl.isEmpty()) {
+            // Skip the Moviesmod server list: open the saved player URL with the
+            // Moviesmod page as Referer, exactly as after a successful server click.
             root.post(this::applySubscriberProbePreviewLayout);
-            startSubscriberStartupTimer(1);
+            startSubscriberStartupTimer(3);
+            directKickRounds = 0;
+            openResolvedProvider(preferredServerLabel, directEmbedUrl);
+        } else {
+            probe.loadUrl(source);
+            if (interactiveSource) {
+                showManualServerButton();
+            } else {
+                root.post(this::applySubscriberProbePreviewLayout);
+                startSubscriberStartupTimer(1);
+            }
         }
 
         handler.postDelayed(() -> {
@@ -1217,6 +1242,22 @@ public final class DirectStreamPlayer {
                 if (!selectedProviderLabel.isEmpty()) showDecisionBar(false);
             }
         }, 45000);
+    }
+
+    // 322.3.79: these players often need the play button pressed two or three
+    // times (the first taps hit an invisible ad layer). Keep tapping the play
+    // target every few seconds until the stream is captured.
+    private void scheduleDirectKick(WebView v) {
+        if (directEmbedUrl.isEmpty()) return;
+        handler.postDelayed(() -> {
+            if (closed || playing || probe == null || v != probe || interactiveSource) return;
+            if (directKickRounds >= 3) return;
+            directKickRounds++;
+            try {
+                v.evaluateJavascript("window.__subhubProviderKickV3265=false;" + providerPlayScript(), null);
+            } catch (Exception ignored) {}
+            scheduleDirectKick(v);
+        }, 8500L);
     }
 
     private void capture(String url, Map<String,String> headers) {

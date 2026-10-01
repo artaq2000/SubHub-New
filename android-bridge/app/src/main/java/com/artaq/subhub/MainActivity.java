@@ -259,6 +259,7 @@ public class MainActivity extends Activity {
         siteBridgeScript = readAsset("site_bridge.js") + "\n"
                 + readAsset("direct_stream.js") + "\n"
                 + readAsset("moviesmod_stream.js") + "\n"
+                + readAsset("vsm_stream.js") + "\n"
                 + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -1692,7 +1693,12 @@ public class MainActivity extends Activity {
                     final boolean interactiveSource;
                     final boolean ownerMode;
                     final boolean openChooser;
-                    if ("moviesmod".equals(mode)) {
+                    // 322.3.79: "vsm" (yellow card: vidsrc.mov / VidSrc.fyi) shares the
+                    // Moviesmod owner flow; its playback opens the saved server player URL.
+                    final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode);
+                    final String jsPrefix = "vsm".equals(mode) ? "window.__subhubVsm" : "window.__subhubMoviesmod";
+                    String directEmbedUrl = "";
+                    if (moviesmodFlow) {
                         String tmdbId = config.optString("tmdbId");
                         String kind = config.optString("kind", "movie");
                         String stableKey = config.optString("resumeKey", id);
@@ -1723,6 +1729,20 @@ public class MainActivity extends Activity {
                         ownerMode = config.optBoolean("ownerMode", interactiveSource);
                         openChooser = config.optBoolean("openChooser", false);
                         if (preferredServerKey.length() > 80 || preferredServerLabel.length() > 80) return;
+                        String rawEmbed = config.optString("embedUrl", "").trim();
+                        if ("vsm".equals(mode) && !interactiveSource
+                                && !rawEmbed.isEmpty() && rawEmbed.length() <= 2200) {
+                            try {
+                                Uri embedUri = Uri.parse(rawEmbed);
+                                String embedHost = embedUri.getHost();
+                                if ("https".equalsIgnoreCase(embedUri.getScheme()) && embedHost != null) {
+                                    String eh = embedHost.toLowerCase(Locale.ROOT);
+                                    if (!eh.equals("moviesmod.gd") && !eh.endsWith(".moviesmod.gd")) {
+                                        directEmbedUrl = embedUri.toString();
+                                    }
+                                }
+                            } catch (Exception ignored) {}
+                        }
                     } else {
                         if (!id.matches("[A-Za-z0-9_-]{1,80}")) return;
                         sourceUrl = "https://vidsrc.to/embed/movie/" + Uri.encode(id);
@@ -1742,7 +1762,7 @@ public class MainActivity extends Activity {
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
                             sourceUrl, catalog, resumeKey, allowedHost,
                             preferredServerKey, preferredServerLabel, interactiveSource,
-                            ownerMode, openChooser,
+                            ownerMode, openChooser, directEmbedUrl,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
@@ -1753,8 +1773,8 @@ public class MainActivity extends Activity {
                             webView.evaluateJavascript("window.__subhubDirectSubtitle && window.__subhubDirectSubtitle(" + JSONObject.quote(session) + "," + index + ")", null);
                         }
                         public void serverSelected(String key, String label, String serverPageUrl, String embedUrl) {
-                            if (!"moviesmod".equals(mode) || webView == null) return;
-                            String js = "window.__subhubMoviesmodServerSelected && window.__subhubMoviesmodServerSelected("
+                            if (!moviesmodFlow || webView == null) return;
+                            String js = jsPrefix + "ServerSelected && " + jsPrefix + "ServerSelected("
                                     + JSONObject.quote(session) + ","
                                     + JSONObject.quote(key) + ","
                                     + JSONObject.quote(label) + ","
@@ -1763,14 +1783,14 @@ public class MainActivity extends Activity {
                             webView.evaluateJavascript(js, null);
                         }
                         public void reopenManual(String serverPageUrl) {
-                            if (!"moviesmod".equals(mode) || webView == null) return;
-                            String js = "window.__subhubMoviesmodReopenManual && window.__subhubMoviesmodReopenManual("
+                            if (!moviesmodFlow || webView == null) return;
+                            String js = jsPrefix + "ReopenManual && " + jsPrefix + "ReopenManual("
                                     + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ")";
                             webView.evaluateJavascript(js, null);
                         }
                         public void saveRequested(long subtitleOffsetMs) {
-                            if (!"moviesmod".equals(mode) || webView == null) return;
-                            String js = "window.__subhubMoviesmodSaveNow && window.__subhubMoviesmodSaveNow("
+                            if (!moviesmodFlow || webView == null) return;
+                            String js = jsPrefix + "SaveNow && " + jsPrefix + "SaveNow("
                                     + JSONObject.quote(session) + ","
                                     + subtitleOffsetMs + ")";
                             webView.evaluateJavascript(js, null);

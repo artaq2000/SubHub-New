@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 87" in gradle
-assert "versionName '322.3.78'" in gradle
+assert "versionCode 88" in gradle
+assert "versionName '322.3.79'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -584,7 +584,7 @@ assert 'تم التقاط رابط الفيديو ✓' in direct
 assert 'chip("سيرفر آخر", 15, this::chooseAnotherServer)' in direct
 assert 'age < 30000L' not in direct
 assert 'config.optBoolean("ownerMode", interactiveSource)' in main
-assert 'window.__subhubMoviesmodReopenManual(' in main
+assert '"window.__subhubMoviesmod"' in main and 'ReopenManual(' in main
 
 
 
@@ -594,3 +594,21 @@ assert 'moviesmodEmbedUrl: next.embedUrl' in moviesmod
 assert 'function normalizeEmbedUrl(raw)' in moviesmod
 assert 'rawEmbedUrl' in moviesmod
 assert 'JSONObject.quote(embedUrl == null ? "" : embedUrl)' in main
+
+
+# 322.3.79: yellow card for vidsrc.mov / VidSrc.fyi replaces the old direct button.
+vsm=(root/'app/src/main/assets/vsm_stream.js').read_text(encoding='utf-8')
+direct_js=(root/'app/src/main/assets/direct_stream.js').read_text(encoding='utf-8')
+assert 'readAsset("vsm_stream.js")' in main
+assert "mode: 'vsm'" in vsm
+assert "return compact === 'vidsrcmov' || compact === 'vidsrcfyi';" in vsm
+assert 'vsmEmbedUrl: next.embedUrl' in vsm
+assert 'moviesmodEnabled' not in vsm
+assert "embedUrl: (useSaved || ownerAuto) ? saved.embedUrl : ''" in vsm
+assert "'▶ مشاهدة مباشرة — تجريبي'" in vsm
+assert 'window.__subhubVsmReplacesDirect' in direct_js
+assert '"vsm".equals(mode)' in main
+assert 'ownerMode, openChooser, directEmbedUrl,' in main
+assert 'openResolvedProvider(preferredServerLabel, directEmbedUrl);' in direct
+assert 'private void scheduleDirectKick(WebView v)' in direct
+print('322.3.79 checks OK')

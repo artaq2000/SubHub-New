@@ -55,6 +55,8 @@
   };
   function install() {
     const old = document.getElementById('subhub-direct-stream-button');
+    // 322.3.79: the yellow vidsrc.mov / VidSrc.fyi card (vsm_stream.js) replaces this button.
+    if (window.__subhubVsmReplacesDirect) { if (old) old.remove(); return; }
     if (typeof isLoggedIn === 'undefined' || !isLoggedIn || !movie()) { if (old) old.remove(); return; }
     if (old) return;
     const reference = document.getElementById('vidsrcOwnerTrialV355');
