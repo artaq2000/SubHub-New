@@ -497,8 +497,11 @@ public final class DirectStreamPlayer {
     private void startSubscriberStartupTimer(int phase) {
         if (interactiveSource || closed) return;
         subscriberStartupPhase = phase;
-        subscriberStartupDeadlineMs = SystemClock.elapsedRealtime()
-                + (phase >= 5 ? 12000L : 15000L);
+        long timeoutMs;
+        if (phase == 4) timeoutMs = 30000L;
+        else if (phase >= 5) timeoutMs = 15000L;
+        else timeoutMs = 18000L;
+        subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + timeoutMs;
         subscriberStartupGeneration++;
         int generation = subscriberStartupGeneration;
         showSubscriberStage(startupStageText(phase));
@@ -511,6 +514,13 @@ public final class DirectStreamPlayer {
 
         if (SystemClock.elapsedRealtime() < subscriberStartupDeadlineMs) {
             handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
+            return;
+        }
+
+        if (subscriberStartupPhase <= 4 && probe != null) {
+            subscriberStartupGeneration++;
+            stopSubscriberStageAnimation();
+            showStage("اضغط زر التشغيل داخل الشاشة إذا ظهر.");
             return;
         }
 
@@ -706,7 +716,7 @@ public final class DirectStreamPlayer {
         if (probe == null || closed || playing || !isProviderServerLabel(label)) return;
         selectedProviderLabel = label;
         if (manualServerButton != null) manualServerButton.setVisibility(View.GONE);
-        probe.setAlpha(0.02f);
+        probe.setAlpha(interactiveSource ? 0.02f : 1.0f);
         recordProviderChoice(label);
         showStage("جارٍ فتح السيرفر " + label + "…");
         String js = "window.__subhubSelectProvider && window.__subhubSelectProvider("
@@ -745,7 +755,8 @@ public final class DirectStreamPlayer {
             } else {
                 startSubscriberStartupTimer(4);
             }
-            probe.setAlpha(0.02f);
+            probe.setAlpha(interactiveSource ? 0.02f : 1.0f);
+            if (!interactiveSource) root.post(this::applySubscriberProbePreviewLayout);
             Map<String,String> headers = new HashMap<>();
             headers.put("Referer", source);
             probe.loadUrl(u.toString(), headers);
@@ -890,6 +901,43 @@ public final class DirectStreamPlayer {
         return providerPage || resolved;
     }
 
+    private void applySubscriberProbePreviewLayout() {
+        if (interactiveSource || probe == null || root == null || closed) return;
+        int rw = root.getWidth();
+        int rh = root.getHeight();
+        if (rw <= 0 || rh <= 0) {
+            root.post(this::applySubscriberProbePreviewLayout);
+            return;
+        }
+
+        int maxW = Math.max(dp(240), rw - dp(24));
+        int maxH = Math.max(dp(150), rh - dp(210));
+        int width;
+        int height;
+
+        if (rw > rh) {
+            height = Math.min(maxH, rh - dp(90));
+            width = Math.min(maxW, Math.max(dp(260), Math.round(height * 16f / 9f)));
+            if (width >= maxW) {
+                width = maxW;
+                height = Math.min(maxH, Math.round(width * 9f / 16f));
+            }
+        } else {
+            width = maxW;
+            height = Math.min(maxH, Math.round(width * 9f / 16f));
+        }
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                Math.max(dp(240), width),
+                Math.max(dp(150), height),
+                Gravity.CENTER
+        );
+        probe.setLayoutParams(lp);
+        probe.setAlpha(1.0f);
+        probe.setVisibility(View.VISIBLE);
+        probe.setBackgroundColor(Color.BLACK);
+    }
+
     private void beginCapture() {
         if (interactiveSource) {
             showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
@@ -962,16 +1010,25 @@ public final class DirectStreamPlayer {
             }
         });
 
-        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
-        p.topMargin = dp(60);
+        FrameLayout.LayoutParams p;
+        if (interactiveSource) {
+            p = new FrameLayout.LayoutParams(-1, -1);
+            p.topMargin = dp(60);
+        } else {
+            p = new FrameLayout.LayoutParams(dp(320), dp(180), Gravity.CENTER);
+        }
         root.addView(probe, 0, p);
-        // Owner setup remains visible and manual. Subscriber capture stays
-        // completely hidden while it reuses the saved server page + server name.
-        probe.setAlpha(interactiveSource ? 1.0f : 0.0f);
+
+        // During this test phase the subscriber can see and touch only the
+        // embedded provider/player rectangle. SubHub controls, subtitles, and
+        // settings stay in their own overlay layer and are not replaced.
+        probe.setAlpha(1.0f);
+        probe.setBackgroundColor(Color.BLACK);
         probe.loadUrl(source);
         if (interactiveSource) {
             showManualServerButton();
         } else {
+            root.post(this::applySubscriberProbePreviewLayout);
             startSubscriberStartupTimer(1);
         }
 
