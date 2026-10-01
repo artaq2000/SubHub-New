@@ -664,7 +664,7 @@ public class MainActivity extends Activity {
             request.setAllowedOverMetered(true);
             request.setAllowedOverRoaming(true);
 
-            if (mimeType != null && !mimeType.trim().isEmpty()) request.setMimeType(mimeType);
+            request.setMimeType(downloadMimeFor(fileName, mimeType));
 
             String ua = userAgent;
             if (ua == null || ua.trim().isEmpty()) {
@@ -694,6 +694,20 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "تعذر بدء تنزيل الترجمة", Toast.LENGTH_LONG).show();
         }
+    }
+
+    // 322.3.82: Android appends ".txt" to "x.srt" when the MIME type is text/plain.
+    // Subtitle files are saved with a type that has no default extension so the
+    // name stays exactly as the site gave it (Movie.srt, not Movie.srt.txt).
+    private String downloadMimeFor(String fileName, String mimeType) {
+        String lower = fileName == null ? "" : fileName.toLowerCase(Locale.US);
+        if (lower.endsWith(".vtt")) return "text/vtt";
+        if (lower.endsWith(".zip")) return "application/zip";
+        if (lower.endsWith(".srt") || lower.endsWith(".ass") || lower.endsWith(".ssa")
+                || lower.endsWith(".sub") || lower.endsWith(".sbv") || lower.endsWith(".ttml")) {
+            return "application/octet-stream";
+        }
+        return mimeType == null || mimeType.trim().isEmpty() ? "application/octet-stream" : mimeType;
     }
 
     private String mimeFromDataUrl(String header) {
@@ -745,8 +759,7 @@ public class MainActivity extends Activity {
             ContentResolver resolver = getContentResolver();
             ContentValues values = new ContentValues();
             values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
-            values.put(MediaStore.MediaColumns.MIME_TYPE,
-                    mimeType == null || mimeType.isEmpty() ? "application/octet-stream" : mimeType);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, downloadMimeFor(fileName, mimeType));
             values.put(
                     MediaStore.MediaColumns.RELATIVE_PATH,
                     Environment.DIRECTORY_DOWNLOADS + "/SubHub"
@@ -1795,6 +1808,12 @@ public class MainActivity extends Activity {
                                     + subtitleOffsetMs + ")";
                             webView.evaluateJavascript(js, null);
                         }
+                        public void pinRequested(int index) {
+                            if (!moviesmodFlow || webView == null) return;
+                            String js = jsPrefix + "PinNow && " + jsPrefix + "PinNow("
+                                    + JSONObject.quote(session) + "," + index + ")";
+                            webView.evaluateJavascript(js, null);
+                        }
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.selectDefault(config.optInt("defaultIndex", -1));
@@ -1823,6 +1842,16 @@ public class MainActivity extends Activity {
             ui.post(() -> {
                 if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session)) {
                     directStreamPlayer.showSaveResult(ok, safe);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void directStreamPinned(String token, String session, int index, boolean pinned) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session)) {
+                    directStreamPlayer.setPinned(index, pinned);
                 }
             });
         }

@@ -73,6 +73,8 @@ public final class DirectStreamPlayer {
         void serverSelected(String key, String label, String serverPageUrl, String embedUrl);
         void saveRequested(long subtitleOffsetMs);
         void reopenManual(String serverPageUrl);
+        // 322.3.82: owner pins the selected subtitle to this server.
+        void pinRequested(int index);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -1814,6 +1816,7 @@ public final class DirectStreamPlayer {
             String name = o == null
                     ? "ترجمة SubHub"
                     : o.optString("name", "ترجمة SubHub");
+            if (ownerMode && o != null && o.optBoolean("pinned", false)) name = "📌 " + name;
             final int index = i;
             TextView item = listRow(chip(name, 15, () -> {
                 selectedSubtitle = index;
@@ -1830,9 +1833,39 @@ public final class DirectStreamPlayer {
             list.addView(item, lp);
         }
 
+        // 322.3.82: owner-only — pin the currently selected subtitle to this server.
+        if (ownerMode && captions && selectedSubtitle >= 0 && selectedSubtitle < catalog.length()) {
+            JSONObject current = catalog.optJSONObject(selectedSubtitle);
+            boolean alreadyPinned = current != null && current.optBoolean("pinned", false);
+            final int pinIndex = selectedSubtitle;
+            TextView pin = listRow(chip(
+                    alreadyPinned ? "📌  إلغاء تثبيت هذه الترجمة" : "📌  تثبيت هذه الترجمة لهذا السيرفر",
+                    14, () -> {
+                        listener.pinRequested(pinIndex);
+                        showTransientValue("جارٍ التثبيت…", 900);
+                        hidePanel();
+                    }));
+            pin.setBackground(round(0xff3a2f12, 0xfff7bc3d, 2, 14));
+            pin.setTextColor(Color.WHITE);
+            LinearLayout.LayoutParams pinLp = new LinearLayout.LayoutParams(-1, -2);
+            pinLp.setMargins(0, dp(12), 0, dp(2));
+            list.addView(pin, pinLp);
+        }
+
         scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
         panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
         showPanel(true);
+    }
+
+    // 322.3.82: keep the list's 📌 marker in step with what the owner just pinned.
+    public void setPinned(int index, boolean pinned) {
+        if (closed) return;
+        try {
+            for (int i = 0; i < catalog.length(); i++) {
+                JSONObject o = catalog.optJSONObject(i);
+                if (o != null) o.put("pinned", pinned && i == index);
+            }
+        } catch (Exception ignored) {}
     }
 
     public void selectDefault(int index) {

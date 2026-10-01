@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 90" in gradle
-assert "versionName '322.3.81'" in gradle
+assert "versionCode 91" in gradle
+assert "versionName '322.3.82'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -378,7 +378,7 @@ assert 'moviesmodServerKey' in moviesmod
 assert 'moviesmodServerLabel' in moviesmod
 assert 'moviesmodEnabled' in moviesmod
 assert 'isSubscriber' in moviesmod
-assert 'مشاهدة بالتطبيق تجريبي' in moviesmod
+assert 'مشاهدة بالتطبيق' in moviesmod
 assert '__subhubMoviesmodServerSelected' in moviesmod
 assert 'serverKey: useSaved ? saved.key' in moviesmod
 assert 'openMoviesmod(true)' in moviesmod
@@ -513,7 +513,7 @@ assert 'playbackReady = true' in direct
 
 
 # 322.3.71: compact stable startup panel with readable real stages.
-assert "button.textContent = '🎬 مشاهدة بالتطبيق تجريبي'" in moviesmod
+assert "button.textContent = '🎬 مشاهدة بالتطبيق'" in moviesmod
 assert "button.style.cssText = 'cursor:pointer';" in moviesmod  # 322.3.81: compact pill size
 assert 'new FrameLayout.LayoutParams(dp(310), dp(68)' in direct
 assert 'subscriberStageBase' in direct
@@ -605,7 +605,7 @@ assert "return compact === 'vidsrcmov' || compact === 'vidsrcfyi';" in vsm
 assert 'vsmEmbedUrl: next.embedUrl' in vsm
 assert 'moviesmodEnabled' not in vsm
 assert "embedUrl: (useSaved || ownerAuto) ? saved.embedUrl : ''" in vsm
-assert "'▶ مشاهدة مباشرة — تجريبي'" in vsm
+assert "button.textContent = '▶ مشاهدة بالتطبيق'" in vsm
 assert 'window.__subhubVsmReplacesDirect' in direct_js
 assert '"vsm".equals(mode)' in main
 assert 'ownerMode, openChooser, directEmbedUrl,' in main
@@ -631,3 +631,20 @@ assert 'stopCoverAnimators();' in direct
 assert "button.style.cssText = 'border-color:#e8b544;cursor:pointer';" in vsm
 assert 'min-height:72px' not in moviesmod
 print('322.3.81 checks OK')
+
+# 322.3.82: owner pins the selected subtitle to the server being watched.
+assert 'void pinRequested(int index);' in direct
+assert 'public void setPinned(int index, boolean pinned)' in direct
+assert 'listener.pinRequested(pinIndex);' in direct
+assert 'directStreamPinned(String token, String session, int index, boolean pinned)' in main
+assert 'PinNow && ' in main
+assert "window.__subhubVsmPinNow" in vsm and "setSubServerKeyV382('vsm')" in vsm
+assert "window.__subhubMoviesmodPinNow" in moviesmod and "setSubServerKeyV382('moviesmod')" in moviesmod
+assert 'pinned: x.pinned === true' in vsm and 'pinned: x.pinned === true' in moviesmod
+print('322.3.82 checks OK')
+
+# 322.3.82: downloaded subtitles keep their name (no ".txt" appended by MIME type).
+assert 'private String downloadMimeFor(String fileName, String mimeType)' in main
+assert 'values.put(MediaStore.MediaColumns.MIME_TYPE, downloadMimeFor(fileName, mimeType));' in main
+assert 'request.setMimeType(downloadMimeFor(fileName, mimeType));' in main
+print('322.3.82 download-name check OK')

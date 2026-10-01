@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.81 Polished Direct Stream
+name: Build TEST SubHub 322.3.82 Pinned Subtitles
 
 on:
   push:
     branches:
-      - 'test/vsm-polish-322.3.81'
+      - 'test/vsm-pin-322.3.82'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -130,8 +130,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='90'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.81'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='91'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.82'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -139,12 +139,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.81-polished-direct.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.82-pinned-subtitles.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.81-polished-direct
-          path: SubHub-322.3.81-polished-direct.apk
+          name: SubHub-322.3.82-pinned-subtitles
+          path: SubHub-322.3.82-pinned-subtitles.apk
           retention-days: 7
 
       - name: Remove signing key from runner

@@ -308,6 +308,8 @@
       if (typeof _buildSubtitleTrackCatalog !== 'function') {
         throw new Error('catalog unavailable');
       }
+      // 322.3.82: the subtitle pinned for this server (if any) becomes the default.
+      try { if (typeof setSubServerKeyV382 === 'function') setSubServerKeyV382('moviesmod'); } catch (_) {}
       const catalog = _buildSubtitleTrackCatalog().slice();
 
       if (typeof stopInlinePlayersV265 === 'function') stopInlinePlayersV265();
@@ -366,7 +368,7 @@
         serverLabel: useSaved ? saved.label : autoLabel,
         serverPageUrl: startPageUrl,
         subtitleOffsetMs: Number(saved.subtitleOffsetMs || 0),
-        catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub') })),
+        catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub'), pinned: x.pinned === true })),
         defaultIndex: startupSubtitleIndex
       }));
     } catch (_) {
@@ -582,6 +584,37 @@
     return !!ok;
   };
 
+  // 322.3.82: owner pins the selected subtitle to this server (toggle).
+  window.__subhubMoviesmodPinNow = async function (session, index) {
+    const state = active;
+    const bridge = window.SubHubAndroidBridge;
+    function report(ok, text) {
+      if (bridge && typeof bridge.directStreamSaveResult === 'function') {
+        bridge.directStreamSaveResult(token, session, !!ok, text);
+      }
+    }
+    try {
+      if (!state || state.session !== session || !state.owner
+          || !Number.isInteger(index) || !state.catalog[index]) {
+        report(false, 'تعذّر التثبيت');
+        return false;
+      }
+      if (typeof pinSubtitleForServerV382 !== 'function') {
+        report(false, 'حدّث الموقع أولاً لتفعيل التثبيت');
+        return false;
+      }
+      const result = await pinSubtitleForServerV382(state.catalog[index], 'moviesmod');
+      report(!!(result && result.ok), (result && result.message) || 'تعذّر التثبيت');
+      if (result && result.ok && bridge && typeof bridge.directStreamPinned === 'function') {
+        bridge.directStreamPinned(token, session, index, !!result.pinned);
+      }
+      return !!(result && result.ok);
+    } catch (_) {
+      report(false, 'تعذّر التثبيت');
+      return false;
+    }
+  };
+
   // Called by the native player after it closes itself when the owner taps
   // «سيرفر آخر»: reopen the manual server list on the same server page.
   window.__subhubMoviesmodReopenManual = function (rawPageUrl) {
@@ -732,8 +765,9 @@
     button.className = 'watch-pill';
     // 322.3.81: same size as the site's small watch pills (no custom enlargement).
     button.style.cssText = 'cursor:pointer';
-    button.textContent = '🎬 مشاهدة بالتطبيق تجريبي';
-    button.title = 'مشاهدة بالتطبيق تجريبي';
+    // 322.3.82: the site numbers app-type buttons (مشاهدة بالتطبيق ١ / ٢ ...).
+    button.textContent = '🎬 مشاهدة بالتطبيق';
+    button.title = 'مشاهدة بالتطبيق';
     button.addEventListener('click', function () { openMoviesmod(false); });
     return button;
   }
