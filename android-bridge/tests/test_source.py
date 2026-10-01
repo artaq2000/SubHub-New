@@ -27,7 +27,7 @@ assert "sendStage('deep-player-ui-ready'" in js
 assert "if (!isShareHost() || shareAdvanceClicked) return false" in js
 
 # SubHub keeps its own cover until the real nested player is ready.
-assert "BRIDGE_BUILD = '322.3.72'" in site
+assert "BRIDGE_BUILD = '322.3.73'" in site
 assert 'subhub-onlyflix-cover-v3223' in site
 assert 'ensureOnlyFlixCover' in site
 assert 'revealOnlyFlixDeepPlayer' in site
@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 81" in gradle
-assert "versionName '322.3.72'" in gradle
+assert "versionCode 82" in gradle
+assert "versionName '322.3.73'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -534,8 +534,25 @@ assert 'applySubscriberProbePreviewLayout' in direct
 assert 'new FrameLayout.LayoutParams(dp(320), dp(180), Gravity.CENTER)' in direct
 assert 'probe.setAlpha(1.0f)' in direct
 assert 'probe.setBackgroundColor(Color.BLACK)' in direct
-assert 'اضغط زر التشغيل داخل الشاشة إذا ظهر.' in direct
+assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
 assert 'subscriberStartupPhase <= 4 && probe != null' in direct
 assert 'if (phase == 4) timeoutMs = 30000L' in direct
 assert 'root.post(this::applySubscriberProbePreviewLayout)' in direct
 assert 'probe.setAlpha(interactiveSource ? 0.02f : 1.0f)' in direct
+
+
+# 322.3.73: subscriber sees only the focused player, and the WebView receives real touches.
+assert 'import android.view.ViewParent;' in direct
+assert 'probe.setClickable(true)' in direct
+assert 'probe.setFocusableInTouchMode(true)' in direct
+assert 'requestDisallowInterceptTouchEvent(true)' in direct
+assert 'root.addView(probe, p)' in direct
+assert 'subscriberProviderVisible' in direct
+assert 'providerFocusScript' in direct
+assert "__subhub_focus_bg" in direct
+assert "e.style.setProperty('position','fixed','important')" in direct
+assert "e.style.setProperty('width','100vw','important')" in direct
+assert "e.style.setProperty('height','100vh','important')" in direct
+assert 'probe.setAlpha(subscriberProviderVisible ? 1.0f : 0.0f)' in direct
+assert 'setTimeout(kick,120)' in direct
+assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
