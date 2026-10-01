@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 86" in gradle
-assert "versionName '322.3.77'" in gradle
+assert "versionCode 87" in gradle
+assert "versionName '322.3.78'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -586,3 +586,18 @@ assert 'age < 30000L' not in direct
 assert 'config.optBoolean("ownerMode", interactiveSource)' in main
 assert 'window.__subhubMoviesmodReopenManual(' in main
 
+
+
+# 322.3.78: app search must never let a stale render of the previously open
+# movie overwrite the newly selected search result.
+assert 'installMovieSearchRaceGuardV3278' in site
+assert '__subhubMovieSearchRaceGuardV3278' in site
+assert 'blockedPreviousMovieId' in site
+assert 'renderQueue' in site
+assert 'window.renderMovie = guardedRender' in site
+assert 'window.selectMovie = guardedSelect' in site
+assert 'currentId && id && id !== currentId' in site
+
+# Native visible version must match the APK package version.
+assert 'NATIVE_VERSION = "322.3.78"' in main
+assert 'NATIVE_VERSION_CODE = 87' in main
