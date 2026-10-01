@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.73 Moviesmod Touchable Player
+name: Build TEST SubHub 322.3.76 Moviesmod Save Sync
 
 on:
   push:
     branches:
-      - 'test/moviesmod-touchable-player-322.3.73'
+      - 'test/moviesmod-save-sync-322.3.76'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -130,21 +130,21 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='82'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.73'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='85'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.76'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
           echo "Actual signing SHA-256:   $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Prepare Moviesmod touchable-player test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.73-moviesmod-touchable-player.apk
+      - name: Prepare Moviesmod save-sync test APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.76-moviesmod-save-sync.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.73-moviesmod-touchable-player
-          path: SubHub-322.3.73-moviesmod-touchable-player.apk
+          name: SubHub-322.3.76-moviesmod-save-sync
+          path: SubHub-322.3.76-moviesmod-save-sync.apk
           retention-days: 7
 
       - name: Remove signing key from runner
