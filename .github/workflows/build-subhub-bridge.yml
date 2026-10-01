@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.70 Moviesmod Subscriber Startup
+name: Build TEST SubHub 322.3.71 Moviesmod Progress UI
 
 on:
   push:
     branches:
-      - 'test/moviesmod-subscriber-startup-322.3.70'
+      - 'test/moviesmod-progress-ui-322.3.71'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -130,21 +130,21 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='79'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.70'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='80'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.71'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
           echo "Actual signing SHA-256:   $ACTUAL"
           test "$ACTUAL" = "$EXPECTED"
 
-      - name: Prepare Moviesmod subscriber-startup test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.70-moviesmod-subscriber-startup.apk
+      - name: Prepare Moviesmod progress-ui test APK
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.71-moviesmod-progress-ui.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.70-moviesmod-subscriber-startup
-          path: SubHub-322.3.70-moviesmod-subscriber-startup.apk
+          name: SubHub-322.3.71-moviesmod-progress-ui
+          path: SubHub-322.3.71-moviesmod-progress-ui.apk
           retention-days: 7
 
       - name: Remove signing key from runner
