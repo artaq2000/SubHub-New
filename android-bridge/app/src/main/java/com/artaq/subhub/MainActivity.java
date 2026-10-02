@@ -260,6 +260,7 @@ public class MainActivity extends Activity {
                 + readAsset("direct_stream.js") + "\n"
                 + readAsset("moviesmod_stream.js") + "\n"
                 + readAsset("vsm_stream.js") + "\n"
+                + readAsset("series_stream.js") + "\n"
                 + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {

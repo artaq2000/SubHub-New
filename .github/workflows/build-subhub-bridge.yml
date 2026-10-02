@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.82 Pinned Subtitles
+name: Build TEST SubHub 322.3.83 Series Episodes
 
 on:
   push:
     branches:
-      - 'test/vsm-pin-322.3.82'
+      - 'test/series-episodes-322.3.83'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -79,6 +79,9 @@ jobs:
       - name: Validate resumable R2 upload JavaScript
         run: node --check app/src/main/assets/r2_upload.js
 
+      - name: Validate series episode stream JavaScript
+        run: node --check app/src/main/assets/series_stream.js
+
       - name: Test native playback mailbox
         run: |
           mkdir -p /tmp/subhub-playback-tests
@@ -130,8 +133,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='91'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.82'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='92'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.83'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -139,12 +142,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.82-pinned-subtitles.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.83-series-episodes.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.82-pinned-subtitles
-          path: SubHub-322.3.82-pinned-subtitles.apk
+          name: SubHub-322.3.83-series-episodes
+          path: SubHub-322.3.83-series-episodes.apk
           retention-days: 7
 
       - name: Remove signing key from runner

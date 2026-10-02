@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 91" in gradle
-assert "versionName '322.3.82'" in gradle
+assert "versionCode 92" in gradle
+assert "versionName '322.3.83'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -648,3 +648,15 @@ assert 'private String downloadMimeFor(String fileName, String mimeType)' in mai
 assert 'values.put(MediaStore.MediaColumns.MIME_TYPE, downloadMimeFor(fileName, mimeType));' in main
 assert 'request.setMimeType(downloadMimeFor(fileName, mimeType));' in main
 print('322.3.82 download-name check OK')
+
+# 322.3.83: Moviesmod / yellow cards for series episodes (SubHub Web v383).
+series=(root/'app/src/main/assets/series_stream.js').read_text(encoding='utf-8')
+assert 'readAsset("series_stream.js")' in main
+assert main.index('readAsset("vsm_stream.js")') < main.index('readAsset("series_stream.js")')
+assert 'window.SubHubSeriesAppSourceV383' in series
+assert "kind: 'tv'" in series
+assert "'https://moviesmod.gd/watch/tv/'" in series
+assert 'seriesAppSources: { [key]: { [mode]: next } }' in series
+assert "['Moviesmod', 'moviesmod'], ['Vsm', 'vsm']" in series
+assert "return compact === 'vidsrcmov' || compact === 'vidsrcfyi';" in series
+print('322.3.83 series checks OK')
