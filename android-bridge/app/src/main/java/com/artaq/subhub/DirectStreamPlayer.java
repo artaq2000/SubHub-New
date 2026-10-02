@@ -209,6 +209,7 @@ public final class DirectStreamPlayer {
     private int subtitleBackgroundOpacity;
     private int subtitleColor;
     private int resizeMode;
+    private TextView resizeModeButton;
     private int previousSystemUi;
     private boolean panelOpen;
     private boolean menuOpen;
@@ -401,10 +402,10 @@ public final class DirectStreamPlayer {
         addCompactQuick("↓", () -> adjustSubtitlePosition(-4));
         addCompactQuick("−.5", () -> adjustSync(500));
         addCompactQuick("+.5", () -> adjustSync(-500));
-        addCompactQuick("◐−", () -> adjustSubtitleBackground(-15));
-        addCompactQuick("◐+", () -> adjustSubtitleBackground(15));
+        addCompactQuick("◐−", () -> adjustSubtitleBackground(-5));
+        addCompactQuick("◐+", () -> adjustSubtitleBackground(5));
         addCompactQuick("🎨", this::showColorOptions);
-        addCompactQuick("▭", this::cycleResizeMode);
+        resizeModeButton = addCompactQuick(resizeModeButtonLabel(), this::cycleResizeMode);
 
         quickStrip = new HorizontalScrollView(activity);
         quickStrip.setHorizontalScrollBarEnabled(false);
@@ -2404,7 +2405,7 @@ public final class DirectStreamPlayer {
         enterImmersive();
     }
 
-    private void addCompactQuick(String text, Runnable action) {
+    private TextView addCompactQuick(String text, Runnable action) {
         TextView v = chip(text, 13, action);
         v.setMinWidth(0);
         v.setMinimumWidth(0);
@@ -2412,6 +2413,7 @@ public final class DirectStreamPlayer {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(50), dp(36));
         lp.setMargins(dp(2), 0, dp(2), 0);
         quickRow.addView(v, lp);
+        return v;
     }
 
     private void showPanel(boolean listPanel) {
@@ -2820,19 +2822,31 @@ public final class DirectStreamPlayer {
             Paint.Style oldStyle = paint.getStyle();
             paint.setColor(color);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawRoundRect(rect, radius, radius, paint);
+            float arc = Math.max(radius, rect.height() / 2f);
+            canvas.drawRoundRect(rect, arc, arc, paint);
             paint.setStyle(oldStyle);
             paint.setColor(oldColor);
         }
+    }
+
+    private String resizeModeButtonLabel() {
+        if (resizeMode == 1) return "↔";
+        if (resizeMode == 2) return "100%";
+        return "▭";
+    }
+
+    private void refreshResizeModeButton() {
+        if (resizeModeButton != null) resizeModeButton.setText(resizeModeButtonLabel());
     }
 
     private void cycleResizeMode() {
         resizeMode = (resizeMode + 1) % 3;
         prefs.edit().putInt("resize_mode", resizeMode).apply();
         applyResizeMode();
+        refreshResizeModeButton();
         if (resizeMode == 0) showTransientValue("▭  ملاءمة", 800);
-        else if (resizeMode == 1) showTransientValue("▭  تمديد", 800);
-        else showTransientValue("▭  قص", 800);
+        else if (resizeMode == 1) showTransientValue("↔  تمديد", 800);
+        else showTransientValue("100%  ملء الشاشة", 800);
     }
 
     private void applyResizeMode() {

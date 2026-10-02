@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.92 exclusive subtitles + picker
+name: Build TEST SubHub 322.3.93 subtitle UI polish
 
 on:
   push:
     branches:
-      - 'test/vidnest-322.3.92'
+      - 'test/vidnest-322.3.93'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -141,8 +141,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='101'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.92'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='102'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.93'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -150,12 +150,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.92-vidnest.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.93-vidnest.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.92-vidnest
-          path: SubHub-322.3.92-vidnest.apk
+          name: SubHub-322.3.93-vidnest
+          path: SubHub-322.3.93-vidnest.apk
           retention-days: 7
 
       - name: Remove signing key from runner
