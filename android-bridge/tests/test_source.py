@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 100" in gradle
-assert "versionName '322.3.91'" in gradle
+assert "versionCode 101" in gradle
+assert "versionName '322.3.92'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -746,3 +746,23 @@ assert 'if(!this.isConnected&&handle(this,null))return;' in main
 assert 'static boolean isAllowedSubtitleSite(String url)' in main
 assert 'if (isAllowedSubtitleSite(u)) openExternal(u);' in main
 print('322.3.91 subtitle download/open checks OK')
+
+# 322.3.92: subtitle file picker shows every file; exclusive subtitles play as 4-second pieces.
+assert 'if (isSubtitleFileChooser(fileChooserParams)) {' in main
+assert 'private static boolean isSubtitleFileChooser(WebChromeClient.FileChooserParams params)' in main
+assert '+ readAsset("segment_pump.js") + "\\n"' in main
+assert 'public void directStreamSegmentMode(String token, String session, int index, String notice)' in main
+assert 'public void directStreamSegmentCues(String token, String session, int index, double bucket, String raw, String notice)' in main
+assert 'public void segmentRequested(int index, double time)' in main
+_dsp=(root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
+assert 'void segmentRequested(int index, double time);' in _dsp
+assert 'if (segmentMode) requestSegment(time);' in _dsp
+assert 'public void enableSegmentMode(int index, String notice)' in _dsp
+assert 'public void setSegmentCues(int index, long bucket, JSONArray value, String notice)' in _dsp
+_pump=(root/'app/src/main/assets/segment_pump.js').read_text(encoding='utf-8')
+assert 'window.__subhubSegmentPumpV3292 = {' in _pump
+assert 'window.__subhubDirectSegment = function (session, index, time)' in _pump
+for _n in ['moviesmod_stream.js','vsm_stream.js','vidnest_stream.js','series_stream.js','direct_stream.js']:
+    _t=(root/'app/src/main/assets'/_n).read_text(encoding='utf-8')
+    assert 'pump.start(session, index, loaded.access, function () { return active === state; })) return;' in _t, _n
+print('322.3.92 subtitle picker + exclusive segment checks OK')

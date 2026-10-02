@@ -460,7 +460,13 @@
     let cues = [], error = '';
     try {
       const loaded = await _loadSubtitleCatalogEntry(state.catalog[index]);
-      if (!Array.isArray(loaded)) throw new Error('segmented');
+      if (!Array.isArray(loaded)) {
+        // 322.3.92: exclusive/limited subtitles arrive as 4-second pieces.
+        const pump = window.__subhubSegmentPumpV3292;
+        if (loaded && loaded.dynamic && pump
+            && pump.start(session, index, loaded.access, function () { return active === state; })) return;
+        throw new Error('segmented');
+      }
       cues = loaded
         .filter(c => Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start)
         .map(c => ({ start: c.start, end: c.end, text: String(c.text || '') }));

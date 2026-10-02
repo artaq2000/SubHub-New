@@ -76,6 +76,8 @@ public final class DirectStreamPlayer {
         void reopenManual(String serverPageUrl);
         // 322.3.82: owner pins the selected subtitle to this server.
         void pinRequested(int index);
+        // 322.3.92: exclusive subtitles — ask JS for the 4-second piece at this time.
+        void segmentRequested(int index, double time);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -193,6 +195,11 @@ public final class DirectStreamPlayer {
     private boolean playing;
     private boolean captions = true;
     private int selectedSubtitle = -1;
+    // 322.3.92: segment (exclusive) subtitle state, driven by the player clock.
+    private boolean segmentMode = false;
+    private long segmentBucket = Long.MIN_VALUE;
+    private long segmentAnswered = Long.MIN_VALUE;
+    private long segmentAskedAt = 0L;
     private JSONArray cues = new JSONArray();
     private String candidate;
     private Map<String,String> candidateHeaders;
@@ -2541,6 +2548,7 @@ public final class DirectStreamPlayer {
 
         TextView off = listRow(chip("بدون ترجمة", 15, () -> {
             selectedSubtitle = -1;
+            resetSegment();
             captions = false;
             cues = new JSONArray();
             currentSubtitleText = "";
@@ -2562,6 +2570,7 @@ public final class DirectStreamPlayer {
             final int index = i;
             TextView item = listRow(chip(name, 15, () -> {
                 selectedSubtitle = index;
+                resetSegment();
                 captions = true;
                 cues = new JSONArray();
                 currentSubtitleText = "";
@@ -2613,9 +2622,47 @@ public final class DirectStreamPlayer {
     public void selectDefault(int index) {
         if (index >= 0 && index < catalog.length()) {
             selectedSubtitle = index;
+            resetSegment();
             captions = true;
             listener.subtitleRequested(index);
         }
+    }
+
+    private void resetSegment() {
+        segmentMode = false;
+        segmentBucket = Long.MIN_VALUE;
+        segmentAnswered = Long.MIN_VALUE;
+        segmentAskedAt = 0L;
+    }
+
+    // 322.3.92: the selected subtitle is exclusive/limited — switch to pieces.
+    public void enableSegmentMode(int index, String notice) {
+        if (closed || selectedSubtitle != index) return;
+        resetSegment();
+        segmentMode = true;
+        cues = new JSONArray();
+        if (notice != null && !notice.trim().isEmpty()) showTransientValue(notice.trim(), 4500);
+    }
+
+    public void setSegmentCues(int index, long bucket, JSONArray value, String notice) {
+        if (closed || !segmentMode || selectedSubtitle != index) return;
+        if (notice != null && !notice.trim().isEmpty()) showTransientValue(notice.trim(), 5000);
+        if (bucket != segmentBucket) return; // stale piece: the clock moved on
+        cues = value == null ? new JSONArray() : value;
+        segmentAnswered = bucket;
+    }
+
+    private void requestSegment(double time) {
+        if (!segmentMode || selectedSubtitle < 0) return;
+        double t = Math.max(0d, time);
+        long bucket = (long) Math.floor(t / 4.0) * 4L;
+        long now = System.currentTimeMillis();
+        boolean moved = bucket != segmentBucket;
+        boolean retry = segmentAnswered != segmentBucket && now - segmentAskedAt > 5000L;
+        if (!moved && !retry) return;
+        segmentBucket = bucket;
+        segmentAskedAt = now;
+        try { listener.segmentRequested(selectedSubtitle, t); } catch (Exception ignored) {}
     }
 
     public void setCues(int index, JSONArray value, String error) {
@@ -2868,6 +2915,7 @@ public final class DirectStreamPlayer {
                 // Use ExoPlayer's content clock so subtitle time stays tied to the
                 // movie itself even if the stream exposes ad/timeline periods.
                 double time = (player.getContentPosition() - subtitleOffsetMs) / 1000.0;
+                if (segmentMode) requestSegment(time);
                 for (int i = 0; i < cues.length(); i++) {
                     JSONObject c = cues.optJSONObject(i);
                     if (c != null

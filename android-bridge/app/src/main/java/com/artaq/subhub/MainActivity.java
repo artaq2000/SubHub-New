@@ -257,6 +257,7 @@ public class MainActivity extends Activity {
         installVidSrcMessageChannel();
         clockScript = readAsset("player_clock.js").replace("__VIDSRC_GUARD_TOKEN__", vidSrcGuardToken);
         siteBridgeScript = readAsset("site_bridge.js") + "\n"
+                + readAsset("segment_pump.js") + "\n"
                 + readAsset("direct_stream.js") + "\n"
                 + readAsset("moviesmod_stream.js") + "\n"
                 + readAsset("vsm_stream.js") + "\n"
@@ -377,6 +378,16 @@ public class MainActivity extends Activity {
                             ? fileChooserParams.createIntent()
                             : null;
                 } catch (Exception ignored) {
+                    picker = null;
+                }
+
+                /*
+                 * v322.3.92: Android does not know .srt/.ass/.ssa as a MIME type,
+                 * so a subtitle accept filter greys those files out in the system
+                 * picker. For subtitle inputs show every file; the site already
+                 * validates the extension and size before uploading.
+                 */
+                if (isSubtitleFileChooser(fileChooserParams)) {
                     picker = null;
                 }
 
@@ -1664,6 +1675,28 @@ public class MainActivity extends Activity {
         super.onBackPressed();
     }
 
+    private static boolean isSubtitleFileChooser(WebChromeClient.FileChooserParams params) {
+        if (params == null) return false;
+        String[] types;
+        try {
+            types = params.getAcceptTypes();
+        } catch (Exception ignored) {
+            return false;
+        }
+        if (types == null) return false;
+        for (String raw : types) {
+            if (raw == null) continue;
+            for (String part : raw.split(",")) {
+                String t = part.trim().toLowerCase(java.util.Locale.ROOT);
+                if (t.equals(".srt") || t.equals(".vtt") || t.equals(".ass") || t.equals(".ssa")
+                        || t.equals("application/x-subrip") || t.equals("text/vtt")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILE_CHOOSER_REQUEST) {
@@ -1871,6 +1904,13 @@ public class MainActivity extends Activity {
                                     + subtitleOffsetMs + ")";
                             webView.evaluateJavascript(js, null);
                         }
+                        public void segmentRequested(int index, double time) {
+                            if (webView == null) return;
+                            String js = "window.__subhubDirectSegment && window.__subhubDirectSegment("
+                                    + JSONObject.quote(session) + "," + index + ","
+                                    + String.format(Locale.US, "%.3f", Math.max(0d, time)) + ")";
+                            webView.evaluateJavascript(js, null);
+                        }
                         public void pinRequested(int index) {
                             if (!moviesmodFlow || webView == null) return;
                             String js = jsPrefix + "PinNow && " + jsPrefix + "PinNow("
@@ -1894,6 +1934,31 @@ public class MainActivity extends Activity {
                 ui.post(() -> {
                     if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session))
                         directStreamPlayer.setCues(index, cues, error);
+                });
+            } catch (Exception ignored) {}
+        }
+
+        // 322.3.92: exclusive/limited subtitles — the player asks for the
+        // 4-second piece of its own clock; JS fetches it with the signed link.
+        @JavascriptInterface
+        public void directStreamSegmentMode(String token, String session, int index, String notice) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            final String safe = notice == null ? "" : notice.substring(0, Math.min(160, notice.length()));
+            ui.post(() -> {
+                if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session))
+                    directStreamPlayer.enableSegmentMode(index, safe);
+            });
+        }
+
+        @JavascriptInterface
+        public void directStreamSegmentCues(String token, String session, int index, double bucket, String raw, String notice) {
+            if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 400000) return;
+            final String safe = notice == null ? "" : notice.substring(0, Math.min(160, notice.length()));
+            try {
+                org.json.JSONArray cues = new org.json.JSONArray(raw);
+                ui.post(() -> {
+                    if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session))
+                        directStreamPlayer.setSegmentCues(index, (long) Math.floor(bucket), cues, safe);
                 });
             } catch (Exception ignored) {}
         }
