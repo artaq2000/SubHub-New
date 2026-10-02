@@ -42,10 +42,11 @@
     catch (_) { return false; }
   }
 
+  // 322.3.88: the Vidnest card plays for everyone who is not the owner —
+  // visitors, members and subscribers alike (the owner asked for it). Inside
+  // this script "subscriber" therefore means "any viewer".
   function isSubscriber() {
-    if (isOwner()) return false;
-    try { return typeof isSubscribed === 'function' && !!isSubscribed(); }
-    catch (_) { return false; }
+    return !isOwner();
   }
 
   function cleanServerLabel(raw) {

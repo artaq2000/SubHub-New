@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 96" in gradle
-assert "versionName '322.3.87'" in gradle
+assert "versionCode 97" in gradle
+assert "versionName '322.3.88'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -717,3 +717,8 @@ assert 'vidnestMode ? new DefaultDataSource.Factory(activity, data) : data;' in 
 assert 'import androidx.media3.datasource.DefaultDataSource;' in direct
 assert '// 322.3.87: the hidden provider player never plays in the background.' in direct
 print('322.3.87 vidnest link list checks OK')
+
+# 322.3.88: the Vidnest card plays for every non-owner viewer (visitors, members, subscribers).
+assert '// 322.3.88: the Vidnest card plays for everyone who is not the owner' in vidnest
+assert "isSubscribed === 'function'" not in vidnest
+print('322.3.88 vidnest for everyone checks OK')
