@@ -2815,7 +2815,7 @@
       const b = document.body, h = document.documentElement;
       if (!b) return reasons;
       if (b.classList.contains('pseudo-fs-lock')) { b.classList.remove('pseudo-fs-lock'); reasons.push('pseudo-fs-lock'); }
-      ['ios-fullwindow-lock-v308', 'ios-native-fs-v308'].forEach(function (c) {
+      ['ios-fullwindow-lock-v308', 'ios-native-fs-v308', 'trailer-full-lock-v266'].forEach(function (c) {
         if (b.classList.contains(c)) { b.classList.remove(c); reasons.push(c); }
       });
       if (b.style.position === 'fixed') {
@@ -2862,4 +2862,146 @@
   window.addEventListener('popstate', function () {
     setTimeout(function () { window.__subhubScrollRescueV3289('back'); }, 350);
   });
+})();
+
+/* 322.3.89b: «🩺 فحص التمرير» — owner only, in the ⋯ menu. Shows what blocks
+   page scrolling at that moment (page code vs. stuck touch) and can release it. */
+(function () {
+  'use strict';
+  if (window.__subhubScrollDiagV3289) return;
+  window.__subhubScrollDiagV3289 = true;
+  var TOKEN = '__VIDSRC_GUARD_TOKEN__';
+
+  function isOwner() {
+    try { return typeof isLoggedIn !== 'undefined' && !!isLoggedIn; } catch (_) { return false; }
+  }
+  function tag(el) {
+    if (!el) return '-';
+    var c = (typeof el.className === 'string' && el.className.trim()) ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
+    return el.tagName.toLowerCase() + (el.id ? '#' + el.id : '') + c;
+  }
+  function styleLine(name, el) {
+    var cs = getComputedStyle(el);
+    return name + ': overflow=' + cs.overflowY + ' position=' + cs.position + ' touch=' + cs.touchAction +
+      ' height=' + Math.round(el.getBoundingClientRect().height) +
+      (el.getAttribute('style') ? ' style="' + el.getAttribute('style').slice(0, 120) + '"' : '') +
+      (el.className ? ' class="' + String(el.className).slice(0, 120) + '"' : '');
+  }
+
+  function report() {
+    var lines = [];
+    var d = document, se = d.scrollingElement || d.documentElement;
+    lines.push(styleLine('html', d.documentElement));
+    lines.push(styleLine('body', d.body));
+    lines.push('scroll: y=' + Math.round(window.scrollY) + ' height=' + se.scrollHeight + ' view=' + se.clientHeight);
+    // The viewport scrolls with html's overflow, or body's when html is "visible".
+    var hcs = getComputedStyle(d.documentElement), bcs = getComputedStyle(d.body);
+    var vpOverflow = hcs.overflowY !== 'visible' ? hcs.overflowY : bcs.overflowY;
+    var locked = /hidden|clip/.test(vpOverflow) || bcs.position === 'fixed' ||
+      /none/.test(hcs.touchAction) || /none/.test(bcs.touchAction);
+    var room = se.scrollHeight - window.innerHeight;
+    lines.push('الحكم: ' + (locked
+      ? 'الصفحة مقفلة من الكود (overflow=' + vpOverflow + ' position=' + bcs.position + ')'
+      : (room > 20 ? 'الصفحة غير مقفلة من الكود — إن كان السحب بالإصبع لا يعمل فالمشكلة في اللمس داخل التطبيق' : 'لا يوجد محتوى أطول من الشاشة')));
+    var open = [];
+    d.querySelectorAll('.modal-bg.open, #searchOverlay.open, #toolsMenu.open, #embedPlayerModal.open, #videoPlayerModal.open')
+      .forEach(function (el) { open.push(tag(el)); });
+    lines.push('نوافذ مفتوحة: ' + (open.length ? open.join(' ، ') : 'لا شيء'));
+    var vw = window.innerWidth, vh = window.innerHeight, cover = [];
+    d.querySelectorAll('body *').forEach(function (el) {
+      if (cover.length >= 6) return;
+      try {
+        var cs = getComputedStyle(el);
+        if (cs.position !== 'fixed' || cs.display === 'none' || cs.visibility === 'hidden' || cs.pointerEvents === 'none') return;
+        var r = el.getBoundingClientRect();
+        if (r.width * r.height >= vw * vh * 0.4) cover.push(tag(el) + ' touch=' + cs.touchAction);
+      } catch (_) {}
+    });
+    lines.push('طبقات ثابتة كبيرة: ' + (cover.length ? cover.join(' ، ') : 'لا شيء'));
+    lines.push('العنصر في وسط الشاشة: ' + tag(d.elementFromPoint(vw / 2, vh / 2)));
+    try {
+      var last = localStorage.getItem('subhubScrollRescueV3289');
+      if (last) lines.push('آخر فك تلقائي: ' + last);
+    } catch (_) {}
+    try {
+      var b = window.SubHubAndroidBridge;
+      if (b && typeof b.scrollDiag === 'function') lines.push('التطبيق: ' + b.scrollDiag(TOKEN));
+    } catch (_) {}
+    return lines.join('\n');
+  }
+
+  function release() {
+    var b = document.body, h = document.documentElement;
+    ['pseudo-fs-lock', 'ios-fullwindow-lock-v308', 'ios-native-fs-v308', 'trailer-full-lock-v266'].forEach(function (c) { b.classList.remove(c); });
+    if (b.style.position === 'fixed') {
+      if (typeof unlockBodyScroll === 'function') unlockBodyScroll();
+      else { b.style.position = ''; b.style.top = ''; b.style.width = ''; }
+    }
+    b.style.touchAction = ''; h.style.touchAction = '';
+    // Manual release by the owner: also beats stylesheet-level locks.
+    h.style.setProperty('overflow-y', 'auto', 'important');
+    b.style.setProperty('overflow', 'visible', 'important');
+    var g = document.getElementById('subhub-vidsrc-subtitle-gesture-v3229');
+    if (g) g.style.display = 'none';
+    try { var nb = window.SubHubAndroidBridge; if (nb && typeof nb.resetTouchState === 'function') nb.resetTouchState(TOKEN); } catch (_) {}
+  }
+
+  function show() {
+    var old = document.getElementById('subhub-scroll-diag-v3289');
+    if (old) old.remove();
+    var text = report();
+    var bg = document.createElement('div');
+    bg.id = 'subhub-scroll-diag-v3289';
+    bg.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;padding:14px;direction:rtl';
+    var box = document.createElement('div');
+    box.style.cssText = 'width:min(560px,96vw);max-height:86vh;display:flex;flex-direction:column;gap:10px;background:#0b1625;color:#fff;border:1px solid #14b8a6;border-radius:16px;padding:14px';
+    var title = document.createElement('div');
+    title.style.cssText = 'font-weight:900;font-size:1rem';
+    title.textContent = '🩺 فحص التمرير';
+    var pre = document.createElement('pre');
+    pre.style.cssText = 'margin:0;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:left;font-size:12px;line-height:1.6;overflow:auto;background:#06101c;border-radius:10px;padding:10px;user-select:text';
+    pre.textContent = text;
+    var row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px';
+    function btn(label, color, fn) {
+      var x = document.createElement('button');
+      x.type = 'button'; x.textContent = label;
+      x.style.cssText = 'min-height:42px;border-radius:11px;border:1px solid ' + color + ';background:#10202f;color:#fff;font:inherit;font-weight:800';
+      x.addEventListener('click', fn);
+      return x;
+    }
+    row.appendChild(btn('🔧 فك القفل', '#166534', function () {
+      release();
+      setTimeout(function () { pre.textContent = '— بعد فك القفل —\n' + report(); }, 500);
+    }));
+    row.appendChild(btn('📋 نسخ', '#36506b', function () {
+      try { navigator.clipboard.writeText(pre.textContent); } catch (_) {}
+      try { if (typeof showToast === 'function') showToast('تم النسخ', 'success'); } catch (_) {}
+    }));
+    row.appendChild(btn('إغلاق', '#7f1d1d', function () { bg.remove(); }));
+    box.appendChild(title); box.appendChild(pre); box.appendChild(row);
+    bg.appendChild(box);
+    bg.addEventListener('click', function (e) { if (e.target === bg) bg.remove(); });
+    document.body.appendChild(bg);
+  }
+  window.__subhubShowScrollDiagV3289 = show;
+
+  function install() {
+    var menu = document.getElementById('toolsMenu');
+    var item = document.getElementById('subhub-scroll-diag-item-v3289');
+    if (!isOwner()) { if (item) item.remove(); return; }
+    if (!menu || item) return;
+    item = document.createElement('button');
+    item.id = 'subhub-scroll-diag-item-v3289';
+    item.type = 'button';
+    item.textContent = '🩺 فحص التمرير';
+    item.addEventListener('click', function (ev) {
+      try { ev.stopPropagation(); } catch (_) {}
+      try { if (typeof closeToolsMenu === 'function') closeToolsMenu(); } catch (_) {}
+      show();
+    });
+    menu.appendChild(item);
+  }
+  install();
+  setInterval(install, 1500);
 })();

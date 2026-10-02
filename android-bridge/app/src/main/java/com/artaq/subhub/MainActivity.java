@@ -1944,6 +1944,41 @@ public class MainActivity extends Activity {
         }
 
 
+        // 322.3.89b: owner «فحص التمرير» — native side of the report.
+        @JavascriptInterface
+        public String scrollDiag(String token) {
+            if (!vidSrcGuardToken.equals(token)) return "";
+            try {
+                return "guard=" + vidSrcGuardActive
+                        + " pseudoFs=" + vidSrcPseudoFullscreenActive
+                        + " customView=" + (customView != null)
+                        + " webView=" + (webView == null ? "null"
+                            : (webView.getVisibility() == View.VISIBLE ? "visible" : "hidden"))
+                        + " directPlayer=" + (directStreamPlayer != null);
+            } catch (Exception e) {
+                return "error";
+            }
+        }
+
+        // 322.3.89b: clears a stuck touch sequence in the WebView (taps work but
+        // finger scrolling does not) without restarting the app.
+        @JavascriptInterface
+        public void resetTouchState(String token) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> {
+                if (webView == null || !isTrustedHomePage()) return;
+                if (customView != null) exitFullScreen();
+                if (fullScreenLayer.getVisibility() == View.VISIBLE && customView == null) {
+                    fullScreenLayer.setVisibility(View.GONE);
+                }
+                webView.setVisibility(View.VISIBLE);
+                long t = SystemClock.uptimeMillis();
+                MotionEvent cancel = MotionEvent.obtain(t, t, MotionEvent.ACTION_CANCEL, 0f, 0f, 0);
+                try { webView.dispatchTouchEvent(cancel); } finally { cancel.recycle(); }
+                webView.requestFocus();
+            });
+        }
+
         @JavascriptInterface
         public void tapVidSrc(String token, double normalizedX, double normalizedY) {
             if (!vidSrcGuardToken.equals(token)) return;

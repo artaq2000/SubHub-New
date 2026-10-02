@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 98" in gradle
-assert "versionName '322.3.89'" in gradle
+assert "versionCode 99" in gradle
+assert "versionName '322.3.90'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -731,3 +731,11 @@ assert "q.textContent = '✕';" in _sb
 assert 'window.__subhubScrollRescueV3289' in _sb
 assert "q.textContent = 'الجودة';" not in _sb
 print('322.3.89 close button + scroll rescue checks OK')
+
+# 322.3.90: owner-only «🩺 فحص التمرير» + native touch reset.
+assert 'window.__subhubShowScrollDiagV3289 = show;' in _sb
+assert "item.textContent = '🩺 فحص التمرير';" in _sb
+assert 'public String scrollDiag(String token)' in main
+assert 'public void resetTouchState(String token)' in main
+assert 'MotionEvent.ACTION_CANCEL' in main
+print('322.3.90 scroll diagnostic checks OK')
