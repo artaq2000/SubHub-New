@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 94" in gradle
-assert "versionName '322.3.85'" in gradle
+assert "versionCode 95" in gradle
+assert "versionName '322.3.86'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -697,3 +697,12 @@ assert 'private void vidnestProbeFailed()' in direct
 assert '(failureDetail.isEmpty() ? "" : "\\n\\n" + failureDetail)' in direct
 assert 'failureDetail = vidnestDiag;' in direct
 print('322.3.85 vidnest probe checks OK')
+
+# 322.3.86: collect every Vidnest /proxy playlist and pick the first that passes a deep check.
+assert 'private void evaluateVidnestCandidates()' in direct
+assert 'static Object[] deepProbeVidnest(String url, String browserUa, String referer, String origin)' in direct
+assert 'static String deepCheck(String url, VidnestPlan plan, String referer, String origin)' in direct
+assert 'if (playlist.contains("#EXT-X-STREAM-INF")) {' in direct
+assert 'handler.postDelayed(this::evaluateVidnestCandidates, VIDNEST_COLLECT_MS);' in direct
+assert 'vidnestCandidates.add(url);' in direct
+print('322.3.86 vidnest deep-check checks OK')

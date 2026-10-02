@@ -131,6 +131,19 @@ public final class DirectStreamPlayer {
     private String vidnestProbeReport = "";
     // Owner-only detail shown inside the «لم يعمل» bar (stays visible).
     private String failureDetail = "";
+    // 322.3.86: Vidnest pages request several /proxy playlists (upcloud, megacloud…)
+    // and some are broken. All of them are collected, then checked deeply
+    // (playlist → first quality → first segment); the first that passes wins.
+    private final ArrayList<String> vidnestCandidates = new ArrayList<>();
+    private final ArrayList<Map<String,String>> vidnestCandidateHeaders = new ArrayList<>();
+    private int vidnestEvaluated = 0;
+    private boolean vidnestEvalScheduled = false;
+    private boolean vidnestEvaluating = false;
+    private int vidnestEvalWaits = 0;
+    private final StringBuilder vidnestEvalReport = new StringBuilder();
+    private static final long VIDNEST_COLLECT_MS = 2500L;
+    private static final long VIDNEST_MORE_WAIT_MS = 5000L;
+    private static final int VIDNEST_MAX_CANDIDATES = 8;
 
     private static final class VidnestPlan {
         final String name;
@@ -783,6 +796,13 @@ public final class DirectStreamPlayer {
         vidnestFallbackGeneration++;
         vidnestPlan = null;
         vidnestProbeReport = "";
+        vidnestCandidates.clear();
+        vidnestCandidateHeaders.clear();
+        vidnestEvaluated = 0;
+        vidnestEvalScheduled = false;
+        vidnestEvaluating = false;
+        vidnestEvalWaits = 0;
+        vidnestEvalReport.setLength(0);
     }
 
     private void retrySubscriberStartup() {
@@ -1598,11 +1618,17 @@ public final class DirectStreamPlayer {
     private void captureVidnest(String url, Map<String,String> headers, boolean proxyFormat) {
         if (closed || playing) return;
         if (proxyFormat) {
-            if (vidnestProxyCaptured) return;
+            // 322.3.86: collect every /proxy playlist, then pick a verified one.
+            if (vidnestCandidates.contains(url) || vidnestCandidates.size() >= VIDNEST_MAX_CANDIDATES) return;
+            vidnestCandidates.add(url);
+            vidnestCandidateHeaders.add(headers);
             vidnestProxyCaptured = true;
-            vidnestCandidateIsProxy = true;
-            vidnestFallbackGeneration++; // cancel any pending fallback
-            capture(url, headers);
+            vidnestFallbackGeneration++; // cancel any pending /hls fallback
+            if (!vidnestEvalScheduled) {
+                vidnestEvalScheduled = true;
+                if (interactiveSource) showStage("تم العثور على روابط… جارٍ فحصها…");
+                handler.postDelayed(this::evaluateVidnestCandidates, VIDNEST_COLLECT_MS);
+            }
             return;
         }
         // Not the clean /proxy link: keep the first one as a late fallback only.
@@ -1616,6 +1642,184 @@ public final class DirectStreamPlayer {
             vidnestCandidateIsProxy = false;
             capture(vidnestFallbackUrl, vidnestFallbackHeaders);
         }, VIDNEST_FALLBACK_WAIT_MS);
+    }
+
+    /** 322.3.86: check the collected /proxy playlists in order, off the UI thread. */
+    private void evaluateVidnestCandidates() {
+        if (closed || playing || vidnestEvaluating) return;
+        if (vidnestEvaluated >= vidnestCandidates.size()) {
+            // Nothing new to check: give the page a little longer to try other sources.
+            if (vidnestEvalWaits < 1) {
+                vidnestEvalWaits++;
+                handler.postDelayed(this::evaluateVidnestCandidates, VIDNEST_MORE_WAIT_MS);
+                return;
+            }
+            vidnestProbeReport = vidnestEvalReport.length() == 0
+                    ? "لم يظهر رابط proxy" : vidnestEvalReport.toString();
+            vidnestProbeFailed();
+            return;
+        }
+        vidnestEvaluating = true;
+        final int from = vidnestEvaluated;
+        final ArrayList<String> urls = new ArrayList<>(vidnestCandidates.subList(from, vidnestCandidates.size()));
+        final ArrayList<Map<String,String>> hdrs =
+                new ArrayList<>(vidnestCandidateHeaders.subList(from, vidnestCandidateHeaders.size()));
+        vidnestEvaluated = vidnestCandidates.size();
+        final String defaultUa = WebSettings.getDefaultUserAgent(activity);
+        final String fallbackReferer = source;
+        new Thread(() -> {
+            int found = -1;
+            VidnestPlan plan = null;
+            StringBuilder rep = new StringBuilder();
+            for (int i = 0; i < urls.size() && !closed; i++) {
+                Map<String,String> h = hdrs.get(i);
+                String ua = headerIn(h, "User-Agent", defaultUa);
+                String ref = headerIn(h, "Referer", fallbackReferer);
+                String org = headerIn(h, "Origin", "");
+                Object[] r = deepProbeVidnest(urls.get(i), ua, ref, org);
+                String host = "";
+                try { host = new java.net.URL(urls.get(i)).getHost(); } catch (Exception ignored) {}
+                if (rep.length() > 0) rep.append('\n');
+                rep.append(r[0] != null ? "✓ " : "✗ ").append(host).append(": ").append((String) r[1]);
+                if (r[0] != null) { found = i; plan = (VidnestPlan) r[0]; break; }
+            }
+            final int pick = found;
+            final VidnestPlan pickPlan = plan;
+            final String lines = rep.toString();
+            handler.post(() -> {
+                vidnestEvaluating = false;
+                if (closed || playing) return;
+                if (vidnestEvalReport.length() > 0 && !lines.isEmpty()) vidnestEvalReport.append('\n');
+                vidnestEvalReport.append(lines);
+                if (pick >= 0) {
+                    vidnestPlan = pickPlan;
+                    vidnestProbeReport = vidnestEvalReport.toString();
+                    vidnestCandidateIsProxy = true;
+                    capture(urls.get(pick), hdrs.get(pick));
+                } else {
+                    evaluateVidnestCandidates();
+                }
+            });
+        }, "vidnest-eval").start();
+    }
+
+    private static String headerIn(Map<String,String> h, String name, String fallback) {
+        if (h != null) {
+            for (Map.Entry<String,String> e : h.entrySet()) {
+                if (name.equalsIgnoreCase(e.getKey()) && e.getValue() != null) return e.getValue();
+            }
+        }
+        return fallback;
+    }
+
+    /** {VidnestPlan or null, short result}: playlist, first quality, first segment. */
+    static Object[] deepProbeVidnest(String url, String browserUa, String referer, String origin) {
+        VidnestPlan[] plans = new VidnestPlan[] {
+                new VidnestPlan("بلا Referer", browserUa, false),
+                new VidnestPlan("عميل بسيط", null, false),
+                new VidnestPlan("بالترويسات", browserUa, true)
+        };
+        String last = "";
+        for (VidnestPlan plan : plans) {
+            String problem = deepCheck(url, plan, referer, origin);
+            if (problem == null) return new Object[] { plan, plan.name };
+            last = problem;
+            // A playlist that answered but is broken further down will not be
+            // fixed by other headers; only retry when the first fetch failed.
+            if (!problem.startsWith("القائمة")) break;
+        }
+        return new Object[] { null, last };
+    }
+
+    /** null when playable; otherwise "<step>: <detail>". */
+    static String deepCheck(String url, VidnestPlan plan, String referer, String origin) {
+        Object[] p = fetchHead(url, plan, referer, origin, 512 * 1024);
+        String playlist = asPlaylist(p);
+        if (playlist == null) return "القائمة: " + describe(p);
+        String media = playlist;
+        String mediaUrl = url;
+        if (playlist.contains("#EXT-X-STREAM-INF")) {
+            String variant = firstUriAfter(playlist, "#EXT-X-STREAM-INF");
+            if (variant == null) return "الجودة: لا يوجد رابط";
+            mediaUrl = resolveUrl(url, variant);
+            Object[] v = fetchHead(mediaUrl, plan, referer, origin, 512 * 1024);
+            media = asPlaylist(v);
+            if (media == null) return "الجودة: " + describe(v);
+        }
+        if (!media.contains("#EXTINF")) return "القائمة: بلا مقاطع";
+        String seg = firstUriAfter(media, "#EXTINF");
+        if (seg == null) return "المقطع: لا يوجد رابط";
+        Object[] g = fetchHead(resolveUrl(mediaUrl, seg), plan, referer, origin, 188);
+        int code = (Integer) g[0];
+        byte[] b = (byte[]) g[2];
+        if (code < 200 || code >= 300 || b.length == 0 || b[0] == '<') return "المقطع: " + describe(g);
+        return null;
+    }
+
+    /** {Integer code, String contentType, byte[] head} — code -1 on network error. */
+    static Object[] fetchHead(String url, VidnestPlan plan, String referer, String origin, int max) {
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(5000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("Accept", "*/*");
+            if (plan.userAgent != null && !plan.userAgent.isEmpty()) c.setRequestProperty("User-Agent", plan.userAgent);
+            if (plan.sendReferer) {
+                if (referer != null && !referer.isEmpty()) c.setRequestProperty("Referer", referer);
+                if (origin != null && !origin.isEmpty()) c.setRequestProperty("Origin", origin);
+            }
+            int code = c.getResponseCode();
+            java.io.InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            if (in != null) {
+                byte[] buf = new byte[8192];
+                int r;
+                while (out.size() < max && (r = in.read(buf, 0, Math.min(buf.length, max - out.size()))) > 0) {
+                    out.write(buf, 0, r);
+                }
+                try { in.close(); } catch (Exception ignored) {}
+            }
+            return new Object[] { code, c.getContentType(), out.toByteArray() };
+        } catch (Exception e) {
+            String m = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+            return new Object[] { -1, m, new byte[0] };
+        } finally {
+            if (c != null) try { c.disconnect(); } catch (Exception ignored) {}
+        }
+    }
+
+    static String asPlaylist(Object[] r) {
+        int code = (Integer) r[0];
+        if (code < 200 || code >= 300) return null;
+        String t = new String((byte[]) r[2], java.nio.charset.StandardCharsets.UTF_8).replace("\uFEFF", "").trim();
+        return t.startsWith("#EXTM3U") ? t : null;
+    }
+
+    static String describe(Object[] r) {
+        int code = (Integer) r[0];
+        if (code < 0) return String.valueOf(r[1]);
+        String t = new String((byte[]) r[2], java.nio.charset.StandardCharsets.UTF_8)
+                .replace("\uFEFF", "").trim().replaceAll("\\s+", " ");
+        if (t.length() > 60) t = t.substring(0, 60);
+        return "HTTP " + code + (r[1] == null ? "" : " · " + r[1]) + (t.isEmpty() ? " · (فارغ)" : " · " + t);
+    }
+
+    static String firstUriAfter(String playlist, String tag) {
+        String[] lines = playlist.split("\\r?\\n");
+        boolean armed = false;
+        for (String raw : lines) {
+            String l = raw.trim();
+            if (l.startsWith(tag)) { armed = true; continue; }
+            if (armed && !l.isEmpty() && !l.startsWith("#")) return l;
+        }
+        return null;
+    }
+
+    static String resolveUrl(String base, String rel) {
+        try { return new java.net.URL(new java.net.URL(base), rel).toString(); }
+        catch (Exception e) { return rel; }
     }
 
     /** Owner-only diagnostic line shown when ExoPlayer fails on the Vidnest card. */
