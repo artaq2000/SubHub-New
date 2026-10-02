@@ -772,7 +772,7 @@ print('322.3.92 subtitle picker + exclusive segment checks OK')
 # 5% steps, and the screen-mode button changes with the active mode.
 assert 'adjustSubtitleBackground(-5)' in _dsp
 assert 'adjustSubtitleBackground(5)' in _dsp
-assert 'float arc = Math.max(radius, rect.height() / 2f);' in _dsp
+assert 'float arc = rect.height() / 2f;' in _dsp
 assert 'resizeModeButtonLabel()' in _dsp
 assert 'return "↔";' in _dsp
 assert 'return "100%";' in _dsp
