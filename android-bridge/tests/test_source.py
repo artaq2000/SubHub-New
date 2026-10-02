@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 99" in gradle
-assert "versionName '322.3.90'" in gradle
+assert "versionCode 100" in gradle
+assert "versionName '322.3.91'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -739,3 +739,10 @@ assert 'public String scrollDiag(String token)' in main
 assert 'public void resetTouchState(String token)' in main
 assert 'MotionEvent.ACTION_CANCEL' in main
 print('322.3.90 scroll diagnostic checks OK')
+
+# 322.3.91: detached <a download> keeps its name; subtitle sites open from target=_blank.
+assert "HTMLAnchorElement.prototype.click=function(){" in main
+assert 'if(!this.isConnected&&handle(this,null))return;' in main
+assert 'static boolean isAllowedSubtitleSite(String url)' in main
+assert 'if (isAllowedSubtitleSite(u)) openExternal(u);' in main
+print('322.3.91 subtitle download/open checks OK')

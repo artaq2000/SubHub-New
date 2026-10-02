@@ -411,7 +411,41 @@ public class MainActivity extends Activity {
                     android.os.Message resultMsg
             ) {
                 if (vidSrcGuardActive) notifyVidSrcBlocked();
-                return false;
+                // 322.3.90: subtitle search opens OpenSubtitles / YIFY pages with
+                // target=_blank. New windows stay blocked (ads), except a
+                // user-tapped one whose address is an allow-listed subtitle site:
+                // that page opens in the phone's browser.
+                if (vidSrcGuardActive || !isUserGesture || !isTrustedHomePage() || resultMsg == null) return false;
+                try {
+                    final WebView probe = new WebView(MainActivity.this);
+                    final boolean[] done = { false };
+                    probe.setWebViewClient(new WebViewClient() {
+                        private void take(WebView v, String u) {
+                            if (done[0]) return;
+                            done[0] = true;
+                            if (isAllowedSubtitleSite(u)) openExternal(u);
+                            ui.post(() -> { try { v.stopLoading(); v.destroy(); } catch (Exception ignored) {} });
+                        }
+                        @Override
+                        public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                            take(v, r.getUrl().toString());
+                            return true;
+                        }
+                        @Override
+                        public void onPageStarted(WebView v, String u, android.graphics.Bitmap f) {
+                            if (u != null && !u.startsWith("about:")) take(v, u);
+                        }
+                    });
+                    WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                    transport.setWebView(probe);
+                    resultMsg.sendToTarget();
+                    ui.postDelayed(() -> {
+                        if (!done[0]) { done[0] = true; try { probe.destroy(); } catch (Exception ignored) {} }
+                    }, 8000L);
+                    return true;
+                } catch (Exception e) {
+                    return false;
+                }
             }
 
             @Override
@@ -584,30 +618,41 @@ public class MainActivity extends Activity {
                         + "if(window.__subhubAndroidDownloadV1)return;"
                         + "window.__subhubAndroidDownloadV1=true;"
                         + "var TOKEN=" + token + ";"
-                        + "document.addEventListener('click',function(ev){try{"
-                        + "var t=ev.target;"
-                        + "var a=t&&t.closest?t.closest('a'):null;"
-                        + "if(!a)return;"
+                        // 322.3.90: one handler for page clicks AND for anchors the site
+                        // creates without attaching them to the page (a.click() on a
+                        // detached <a download>): those never reached the click listener,
+                        // so Android saved them as "<random>.txt" without their name.
+                        + "function handle(a,ev){"
                         + "var href=String(a.href||'');"
                         + "var dl=a.hasAttribute('download');"
-                        + "if(!dl&&href.indexOf('blob:')!==0&&href.indexOf('data:')!==0)return;"
+                        + "if(!dl&&href.indexOf('blob:')!==0&&href.indexOf('data:')!==0)return false;"
                         + "var name=String(a.getAttribute('download')||'');"
                         + "if(href.indexOf('http://')===0||href.indexOf('https://')===0){"
-                        + "ev.preventDefault();ev.stopPropagation();"
-                        + "SubHubAndroidBridge.downloadUrl(TOKEN,href,name);return;}"
+                        + "if(ev){ev.preventDefault();ev.stopPropagation();}"
+                        + "SubHubAndroidBridge.downloadUrl(TOKEN,href,name);return true;}"
                         + "if(href.indexOf('data:')===0){"
-                        + "ev.preventDefault();ev.stopPropagation();"
-                        + "SubHubAndroidBridge.saveDataUrl(TOKEN,href,name);return;}"
+                        + "if(ev){ev.preventDefault();ev.stopPropagation();}"
+                        + "SubHubAndroidBridge.saveDataUrl(TOKEN,href,name);return true;}"
                         + "if(href.indexOf('blob:')===0){"
-                        + "ev.preventDefault();ev.stopPropagation();"
+                        + "if(ev){ev.preventDefault();ev.stopPropagation();}"
                         + "fetch(href).then(function(r){return r.blob();}).then(function(b){"
                         + "if(b.size>" + MAX_SUBTITLE_DOWNLOAD_BYTES + ")throw new Error('too-large');"
                         + "var fr=new FileReader();"
                         + "fr.onload=function(){SubHubAndroidBridge.saveDataUrl(TOKEN,String(fr.result||''),name);};"
                         + "fr.readAsDataURL(b);"
                         + "}).catch(function(){SubHubAndroidBridge.downloadFailed(TOKEN);});"
-                        + "}"
+                        + "return true;}"
+                        + "return false;}"
+                        + "document.addEventListener('click',function(ev){try{"
+                        + "var t=ev.target;"
+                        + "var a=t&&t.closest?t.closest('a'):null;"
+                        + "if(!a)return;"
+                        + "handle(a,ev);"
                         + "}catch(e){}},true);"
+                        + "try{var oc=HTMLAnchorElement.prototype.click;"
+                        + "HTMLAnchorElement.prototype.click=function(){"
+                        + "try{if(!this.isConnected&&handle(this,null))return;}catch(e){}"
+                        + "return oc.apply(this,arguments);};}catch(e){}"
                         + "}catch(e){}})();";
         view.evaluateJavascript(js, null);
     }
@@ -1208,6 +1253,18 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
             return "";
         }
+    }
+
+    // 322.3.90: sites the subtitle search may open in the phone's browser.
+    static boolean isAllowedSubtitleSite(String url) {
+        try {
+            Uri u = Uri.parse(url);
+            if (!"https".equalsIgnoreCase(u.getScheme()) || u.getHost() == null) return false;
+            String h = u.getHost().toLowerCase(Locale.ROOT);
+            String[] ok = { "opensubtitles.org", "opensubtitles.com", "yifysubtitles.ch", "subsource.net" };
+            for (String d : ok) if (h.equals(d) || h.endsWith("." + d)) return true;
+        } catch (Exception ignored) {}
+        return false;
     }
 
     private void openExternal(String url) {
