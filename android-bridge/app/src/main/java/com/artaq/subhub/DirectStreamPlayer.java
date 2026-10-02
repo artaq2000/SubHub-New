@@ -111,6 +111,19 @@ public final class DirectStreamPlayer {
     // 322.3.79: saved server player URL (yellow card). When set, automatic
     // playback opens it directly instead of the Moviesmod server list.
     private final String directEmbedUrl;
+    // 322.3.84: teal Vidnest card. Vidnest pages request two stream families:
+    // a clean self-contained "/proxy?url=...m3u8&headers=..." link (https all the
+    // way, headers embedded) and a "/hls/<base64>" chain that goes through a plain
+    // http IP and fails in ExoPlayer. In this mode only the /proxy link is used
+    // (the other is a late fallback), the provider page is never allowed to load
+    // the held link itself, and ExoPlayer starts at once.
+    private final boolean vidnestMode;
+    private boolean vidnestProxyCaptured = false;
+    private boolean vidnestCandidateIsProxy = false;
+    private String vidnestFallbackUrl = null;
+    private Map<String,String> vidnestFallbackHeaders = null;
+    private int vidnestFallbackGeneration = 0;
+    private static final long VIDNEST_FALLBACK_WAIT_MS = 4000L;
     private int directKickRounds = 0;
     // 322.3.80: clean SubHub cover over the hidden provider page (direct mode only).
     private FrameLayout directCover;
@@ -188,6 +201,18 @@ public final class DirectStreamPlayer {
                               String preferredServerKey, String preferredServerLabel,
                               boolean interactiveSource, boolean ownerMode,
                               boolean openChooser, String directEmbedUrl, Listener listener) {
+        this(activity, parent, source, catalog, resumeKey, allowedHost,
+                preferredServerKey, preferredServerLabel, interactiveSource,
+                ownerMode, openChooser, directEmbedUrl, false, listener);
+    }
+
+    public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
+                              JSONArray catalog, String resumeKey, String allowedHost,
+                              String preferredServerKey, String preferredServerLabel,
+                              boolean interactiveSource, boolean ownerMode,
+                              boolean openChooser, String directEmbedUrl,
+                              boolean vidnestMode, Listener listener) {
+        this.vidnestMode = vidnestMode;
         this.activity = activity;
         this.directEmbedUrl = (directEmbedUrl == null || interactiveSource) ? "" : directEmbedUrl.trim();
         this.listener = listener;
@@ -734,6 +759,11 @@ public final class DirectStreamPlayer {
         pendingServerLabel = "";
         pendingServerPickedAt = 0L;
         serverChoiceReported = false;
+        vidnestProxyCaptured = false;
+        vidnestCandidateIsProxy = false;
+        vidnestFallbackUrl = null;
+        vidnestFallbackHeaders = null;
+        vidnestFallbackGeneration++;
     }
 
     private void retrySubscriberStartup() {
@@ -1248,6 +1278,16 @@ public final class DirectStreamPlayer {
                         && url.toLowerCase(Locale.ROOT).contains(".m3u8")
                         && ((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())) {
                     Map<String,String> headers = new HashMap<>(r.getRequestHeaders());
+                    if (vidnestMode) {
+                        if (isVidnestProxyPlaylist(r.getUrl())) {
+                            handler.post(() -> captureVidnest(url, headers, true));
+                            // Hold the fresh link for ExoPlayer: the provider page's own
+                            // player gets an empty playlist and never loads it.
+                            return heldPlaylistResponse();
+                        }
+                        handler.post(() -> captureVidnest(url, headers, false));
+                        return null;
+                    }
                     handler.post(() -> capture(url, headers));
                 }
                 return null;
@@ -1496,9 +1536,11 @@ public final class DirectStreamPlayer {
                     listener.serverSelected(key, label, discoveredServerPageUrl, resolvedProviderUrl);
                 }
             }
+            // 322.3.84: Vidnest starts at once (the link is fresh and held).
+            long startDelay = vidnestMode ? 150L : (interactiveSource ? 1200L : 300L);
             handler.postDelayed(() -> {
                 if (!closed && !playing) startStream();
-            }, interactiveSource ? 1200L : 300L);
+            }, startDelay);
         }
     }
 
@@ -1510,6 +1552,69 @@ public final class DirectStreamPlayer {
             probe.destroy();
             probe = null;
         }
+    }
+
+    // 322.3.84 — Vidnest helpers ------------------------------------------------
+
+    /** "https://<x>.animanga.fun/proxy?url=<...m3u8>&headers=<json>" (not /ts-proxy). */
+    static boolean isVidnestProxyPlaylist(Uri u) {
+        if (u == null || !"https".equals(u.getScheme())) return false;
+        String path = u.getPath();
+        if (path == null) return false;
+        String p = path.toLowerCase(Locale.ROOT);
+        if (!(p.equals("/proxy") || p.endsWith("/proxy"))) return false;
+        String inner;
+        try { inner = u.getQueryParameter("url"); } catch (Exception e) { return false; }
+        return inner != null && inner.toLowerCase(Locale.ROOT).contains(".m3u8");
+    }
+
+    private static WebResourceResponse heldPlaylistResponse() {
+        Map<String,String> h = new HashMap<>();
+        h.put("Access-Control-Allow-Origin", "*");
+        h.put("Cache-Control", "no-store");
+        return new WebResourceResponse("application/vnd.apple.mpegurl", "utf-8", 200, "OK", h,
+                new java.io.ByteArrayInputStream("#EXTM3U\n".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    private void captureVidnest(String url, Map<String,String> headers, boolean proxyFormat) {
+        if (closed || playing) return;
+        if (proxyFormat) {
+            if (vidnestProxyCaptured) return;
+            vidnestProxyCaptured = true;
+            vidnestCandidateIsProxy = true;
+            vidnestFallbackGeneration++; // cancel any pending fallback
+            capture(url, headers);
+            return;
+        }
+        // Not the clean /proxy link: keep the first one as a late fallback only.
+        if (vidnestProxyCaptured || vidnestFallbackUrl != null) return;
+        vidnestFallbackUrl = url;
+        vidnestFallbackHeaders = headers;
+        final int gen = ++vidnestFallbackGeneration;
+        handler.postDelayed(() -> {
+            if (closed || playing || gen != vidnestFallbackGeneration
+                    || vidnestProxyCaptured || vidnestFallbackUrl == null) return;
+            vidnestCandidateIsProxy = false;
+            capture(vidnestFallbackUrl, vidnestFallbackHeaders);
+        }, VIDNEST_FALLBACK_WAIT_MS);
+    }
+
+    /** Owner-only diagnostic line shown when ExoPlayer fails on the Vidnest card. */
+    private String vidnestDiagnostic(PlaybackException error) {
+        String host = "";
+        try { host = Uri.parse(candidate == null ? "" : candidate).getHost(); } catch (Exception ignored) {}
+        if (host == null) host = "";
+        String code = "";
+        try { code = error == null ? "" : error.getErrorCodeName(); } catch (Exception ignored) {}
+        String cause = "";
+        try {
+            Throwable c = error == null ? null : error.getCause();
+            if (c != null) cause = c.getClass().getSimpleName()
+                    + (c.getMessage() == null ? "" : ": " + c.getMessage());
+        } catch (Exception ignored) {}
+        if (cause.length() > 140) cause = cause.substring(0, 140);
+        return "Vidnest · " + (vidnestCandidateIsProxy ? "proxy" : "احتياطي") + " · " + host
+                + "\n" + code + (cause.isEmpty() ? "" : "\n" + cause);
     }
 
     private String header(String name, String fallback) {
@@ -1533,18 +1638,23 @@ public final class DirectStreamPlayer {
 
         destroyProbe();
 
+        // 322.3.84: the Vidnest /proxy link carries its own upstream headers, so
+        // ExoPlayer sends only a browser User-Agent and Referer (no Origin/Cookie).
+        final boolean minimalHeaders = vidnestMode && vidnestCandidateIsProxy;
         Map<String,String> headers = new HashMap<>();
         headers.put("Referer", referer);
-        if (!origin.isEmpty()) headers.put("Origin", origin);
+        if (!origin.isEmpty() && !minimalHeaders) headers.put("Origin", origin);
 
         DefaultHttpDataSource.Factory http =
                 new DefaultHttpDataSource.Factory()
                         .setUserAgent(userAgent)
+                        .setAllowCrossProtocolRedirects(vidnestMode)
                         .setDefaultRequestProperties(headers);
 
         ResolvingDataSource.Factory data =
                 new ResolvingDataSource.Factory(http, spec -> {
                     Map<String,String> scoped = new HashMap<>(spec.httpRequestHeaders);
+                    if (minimalHeaders) return spec;
                     String cookies = CookieManager.getInstance().getCookie(spec.uri.toString());
                     if (cookies != null && !cookies.isEmpty()) scoped.put("Cookie", cookies);
                     return spec.withRequestHeaders(scoped);
@@ -1604,6 +1714,7 @@ public final class DirectStreamPlayer {
             }
 
             @Override public void onPlayerError(PlaybackException error) {
+                final String vidnestDiag = (vidnestMode && ownerMode) ? vidnestDiagnostic(error) : "";
                 if (!interactiveSource && subscriberStartupAttempt < 2) {
                     retrySubscriberStartup();
                 } else if (!interactiveSource) {
@@ -1613,10 +1724,12 @@ public final class DirectStreamPlayer {
                     cleanupPlayerForRetry();
                     destroyProbe();
                     removeDirectCover();
-                    showStage("تعذّر تشغيل الفيديو. حاول مرة أخرى.");
+                    showStage(vidnestDiag.isEmpty() ? "تعذّر تشغيل الفيديو. حاول مرة أخرى."
+                            : "تعذّر تشغيل الفيديو.\n" + vidnestDiag);
                     if (ownerMode) showDecisionBar(false);
                 } else {
-                    message("تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة.");
+                    message(vidnestDiag.isEmpty() ? "تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة."
+                            : "تعذّر تشغيل البث.\n" + vidnestDiag);
                     showDecisionBar(false);
                 }
             }

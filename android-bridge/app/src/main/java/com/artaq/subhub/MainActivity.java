@@ -260,6 +260,7 @@ public class MainActivity extends Activity {
                 + readAsset("direct_stream.js") + "\n"
                 + readAsset("moviesmod_stream.js") + "\n"
                 + readAsset("vsm_stream.js") + "\n"
+                + readAsset("vidnest_stream.js") + "\n"
                 + readAsset("series_stream.js") + "\n"
                 + readAsset("r2_upload.js");
 
@@ -1709,8 +1710,12 @@ public class MainActivity extends Activity {
                     final boolean openChooser;
                     // 322.3.79: "vsm" (yellow card: vidsrc.mov / VidSrc.fyi) shares the
                     // Moviesmod owner flow; its playback opens the saved server player URL.
-                    final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode);
-                    final String jsPrefix = "vsm".equals(mode) ? "window.__subhubVsm" : "window.__subhubMoviesmod";
+                    // 322.3.84: "vidnest" (teal card) is a full copy of the purple flow for the
+                    // Vidnest server only, with its own capture rules in DirectStreamPlayer.
+                    final boolean vidnestMode = "vidnest".equals(mode);
+                    final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode) || vidnestMode;
+                    final String jsPrefix = "vsm".equals(mode) ? "window.__subhubVsm"
+                            : vidnestMode ? "window.__subhubVidnest" : "window.__subhubMoviesmod";
                     String directEmbedUrl = "";
                     if (moviesmodFlow) {
                         String tmdbId = config.optString("tmdbId");
@@ -1736,7 +1741,7 @@ public class MainActivity extends Activity {
                         }
                         sourceUrl = resolvedSourceUrl;
                         allowedHost = "moviesmod.gd";
-                        resumeKey = "moviesmod_" + stableKey;
+                        resumeKey = (vidnestMode ? "vidnest_" : "moviesmod_") + stableKey;
                         preferredServerKey = config.optString("serverKey", "").trim();
                         preferredServerLabel = config.optString("serverLabel", "").trim();
                         interactiveSource = config.optBoolean("interactiveSource", false);
@@ -1776,7 +1781,7 @@ public class MainActivity extends Activity {
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
                             sourceUrl, catalog, resumeKey, allowedHost,
                             preferredServerKey, preferredServerLabel, interactiveSource,
-                            ownerMode, openChooser, directEmbedUrl,
+                            ownerMode, openChooser, directEmbedUrl, vidnestMode,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
