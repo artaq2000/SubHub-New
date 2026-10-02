@@ -2750,6 +2750,16 @@ public final class DirectStreamPlayer {
         showTransientValue("خلفية " + toArabicDigits(subtitleBackgroundOpacity) + "٪", 750);
     }
 
+    private int subtitleBackgroundAlpha() {
+        if (subtitleBackgroundOpacity <= 0) return 0;
+
+        // Perceptual curve: the first steps are genuinely light, then each
+        // press darkens the background progressively instead of jumping to black.
+        double level = subtitleBackgroundOpacity / 100.0;
+        int alpha = (int) Math.round(225.0 * Math.pow(level, 1.65));
+        return Math.max(1, Math.min(225, alpha));
+    }
+
     private void applySubtitleText(String text) {
         currentSubtitleText = text == null ? "" : text;
         subtitle.setTextColor(subtitleColor);
@@ -2766,13 +2776,15 @@ public final class DirectStreamPlayer {
         }
 
         SpannableString styled = new SpannableString(currentSubtitleText);
-        int alpha = Math.round(255f * subtitleBackgroundOpacity / 100f);
+        int alpha = subtitleBackgroundAlpha();
+        int outlineAlpha = Math.min(235, Math.max(18, alpha + 18));
         styled.setSpan(
                 new RoundedLineBackgroundSpan(
                         Color.argb(alpha, 0, 0, 0),
-                        dp(8),
-                        dp(7),
-                        dp(2)
+                        Color.argb(outlineAlpha, 0, 0, 0),
+                        dp(12),
+                        dp(3),
+                        dp(1)
                 ),
                 0,
                 styled.length(),
@@ -2782,17 +2794,19 @@ public final class DirectStreamPlayer {
     }
 
     private static final class RoundedLineBackgroundSpan implements LineBackgroundSpan {
-        private final int color;
-        private final float radius;
+        private final int fillColor;
+        private final int outlineColor;
         private final float horizontalPadding;
         private final float verticalPadding;
+        private final float outlineWidth;
 
-        RoundedLineBackgroundSpan(int color, float radius, float horizontalPadding,
-                                  float verticalPadding) {
-            this.color = color;
-            this.radius = radius;
+        RoundedLineBackgroundSpan(int fillColor, int outlineColor, float horizontalPadding,
+                                  float verticalPadding, float outlineWidth) {
+            this.fillColor = fillColor;
+            this.outlineColor = outlineColor;
             this.horizontalPadding = horizontalPadding;
             this.verticalPadding = verticalPadding;
+            this.outlineWidth = outlineWidth;
         }
 
         @Override
@@ -2809,21 +2823,39 @@ public final class DirectStreamPlayer {
 
             float width = paint.measureText(text.subSequence(start, visibleEnd).toString());
             float center = (left + right) / 2f;
-            float rectLeft = center - width / 2f - horizontalPadding;
-            float rectRight = center + width / 2f + horizontalPadding;
             RectF rect = new RectF(
-                    rectLeft,
-                    top + verticalPadding,
-                    rectRight,
-                    bottom - verticalPadding
+                    center - width / 2f - horizontalPadding,
+                    top - verticalPadding,
+                    center + width / 2f + horizontalPadding,
+                    bottom + verticalPadding
             );
 
             int oldColor = paint.getColor();
             Paint.Style oldStyle = paint.getStyle();
-            paint.setColor(color);
+            float oldStrokeWidth = paint.getStrokeWidth();
+            boolean oldAntiAlias = paint.isAntiAlias();
+
+            paint.setAntiAlias(true);
+            float arc = rect.height() / 2f;
+
+            // Clean solid fill.
+            paint.setColor(fillColor);
             paint.setStyle(Paint.Style.FILL);
-            float arc = Math.max(radius, rect.height() / 2f);
             canvas.drawRoundRect(rect, arc, arc, paint);
+
+            // A thin defined edge prevents the capsule from looking sprayed or fuzzy.
+            if (outlineWidth > 0f) {
+                RectF outlineRect = new RectF(rect);
+                outlineRect.inset(outlineWidth / 2f, outlineWidth / 2f);
+                float outlineArc = outlineRect.height() / 2f;
+                paint.setColor(outlineColor);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(outlineWidth);
+                canvas.drawRoundRect(outlineRect, outlineArc, outlineArc, paint);
+            }
+
+            paint.setAntiAlias(oldAntiAlias);
+            paint.setStrokeWidth(oldStrokeWidth);
             paint.setStyle(oldStyle);
             paint.setColor(oldColor);
         }

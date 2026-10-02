@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 102" in gradle
-assert "versionName '322.3.93'" in gradle
+assert "versionCode 103" in gradle
+assert "versionName '322.3.94'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -778,3 +778,16 @@ assert 'return "↔";' in _dsp
 assert 'return "100%";' in _dsp
 assert 'refreshResizeModeButton();' in _dsp
 print('322.3.93 subtitle UI polish checks OK')
+
+
+# 322.3.94: subtitle background is a clean pill with extra side space and a
+# perceptual opacity curve so 5/10/15... are visibly different.
+assert 'private int subtitleBackgroundAlpha()' in _dsp
+assert 'Math.pow(level, 1.65)' in _dsp
+assert '225.0 * Math.pow' in _dsp
+assert 'Color.argb(outlineAlpha, 0, 0, 0)' in _dsp
+assert 'dp(12)' in _dsp
+assert 'top - verticalPadding' in _dsp and 'bottom + verticalPadding' in _dsp
+assert 'Paint.Style.STROKE' in _dsp
+assert 'outlineRect.inset(outlineWidth / 2f, outlineWidth / 2f);' in _dsp
+print('322.3.94 precise subtitle background checks OK')
