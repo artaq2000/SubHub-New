@@ -124,6 +124,22 @@ public final class DirectStreamPlayer {
     private Map<String,String> vidnestFallbackHeaders = null;
     private int vidnestFallbackGeneration = 0;
     private static final long VIDNEST_FALLBACK_WAIT_MS = 4000L;
+    // 322.3.85: the playlist is fetched once by the app before ExoPlayer starts
+    // (like the Termux test that worked) to pick headers the server accepts.
+    // null = not probed yet; otherwise the chosen request style.
+    private VidnestPlan vidnestPlan = null;
+    private String vidnestProbeReport = "";
+    // Owner-only detail shown inside the «لم يعمل» bar (stays visible).
+    private String failureDetail = "";
+
+    private static final class VidnestPlan {
+        final String name;
+        final String userAgent;   // null = platform default (like a plain client)
+        final boolean sendReferer;
+        VidnestPlan(String name, String userAgent, boolean sendReferer) {
+            this.name = name; this.userAgent = userAgent; this.sendReferer = sendReferer;
+        }
+    }
     private int directKickRounds = 0;
     // 322.3.80: clean SubHub cover over the hidden provider page (direct mode only).
     private FrameLayout directCover;
@@ -496,7 +512,8 @@ public final class DirectStreamPlayer {
         } else {
             decisionText.setText("لم يعمل"
                     + (name.isEmpty() ? "" : " السيرفر " + name)
-                    + "\nاضغط «سيرفر آخر» للرجوع إلى القائمة.");
+                    + "\nاضغط «سيرفر آخر» للرجوع إلى القائمة."
+                    + (failureDetail.isEmpty() ? "" : "\n\n" + failureDetail));
             decisionSave.setVisibility(View.GONE);
         }
         decisionBar.setVisibility(View.VISIBLE);
@@ -764,6 +781,8 @@ public final class DirectStreamPlayer {
         vidnestFallbackUrl = null;
         vidnestFallbackHeaders = null;
         vidnestFallbackGeneration++;
+        vidnestPlan = null;
+        vidnestProbeReport = "";
     }
 
     private void retrySubscriberStartup() {
@@ -1614,7 +1633,95 @@ public final class DirectStreamPlayer {
         } catch (Exception ignored) {}
         if (cause.length() > 140) cause = cause.substring(0, 140);
         return "Vidnest · " + (vidnestCandidateIsProxy ? "proxy" : "احتياطي") + " · " + host
-                + "\n" + code + (cause.isEmpty() ? "" : "\n" + cause);
+                + "\n" + code + (cause.isEmpty() ? "" : "\n" + cause)
+                + (vidnestProbeReport.isEmpty() ? "" : "\nالفحص: " + vidnestProbeReport);
+    }
+
+    /**
+     * 322.3.85: fetch the playlist the way the working Termux test did, then two
+     * alternatives. Returns {VidnestPlan or null, report}. Runs off the UI thread.
+     */
+    private Object[] probeVidnestPlaylist(String url, String browserUa, String referer, String origin) {
+        VidnestPlan[] plans = new VidnestPlan[] {
+                new VidnestPlan("بلا Referer", browserUa, false),
+                new VidnestPlan("عميل بسيط", null, false),
+                new VidnestPlan("بالترويسات", browserUa, true)
+        };
+        StringBuilder report = new StringBuilder();
+        for (VidnestPlan plan : plans) {
+            if (closed) break;
+            String line = probeOnce(url, plan, referer, origin);
+            if (line == null) {
+                report.append("✓ ").append(plan.name);
+                return new Object[] { plan, report.toString() };
+            }
+            if (report.length() > 0) report.append('\n');
+            report.append("✗ ").append(plan.name).append(": ").append(line);
+        }
+        return new Object[] { null, report.toString() };
+    }
+
+    /** null when the body starts with #EXTM3U; otherwise a short description. */
+    static String probeOnce(String url, VidnestPlan plan, String referer, String origin) {
+        java.net.HttpURLConnection c = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            // Short timeouts: three tries must fit inside the 15 s startup phase.
+            c.setConnectTimeout(4000);
+            c.setReadTimeout(4000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("Accept", "*/*");
+            if (plan.userAgent != null && !plan.userAgent.isEmpty()) c.setRequestProperty("User-Agent", plan.userAgent);
+            if (plan.sendReferer) {
+                if (referer != null && !referer.isEmpty()) c.setRequestProperty("Referer", referer);
+                if (origin != null && !origin.isEmpty()) c.setRequestProperty("Origin", origin);
+            }
+            int code = c.getResponseCode();
+            java.io.InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream();
+            byte[] buf = new byte[1024];
+            int n = 0;
+            if (in != null) {
+                int r;
+                while (n < buf.length && (r = in.read(buf, n, buf.length - n)) > 0) n += r;
+                try { in.close(); } catch (Exception ignored) {}
+            }
+            String body = new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8);
+            String trimmed = body.replace("\uFEFF", "").trim();
+            if (code >= 200 && code < 300 && trimmed.startsWith("#EXTM3U")) return null;
+            String type = c.getContentType();
+            String enc = c.getContentEncoding();
+            String head = trimmed.replaceAll("\\s+", " ");
+            if (head.length() > 70) head = head.substring(0, 70);
+            return "HTTP " + code
+                    + (type == null ? "" : " · " + type)
+                    + (enc == null ? "" : " · " + enc)
+                    + (head.isEmpty() ? " · (فارغ)" : " · " + head);
+        } catch (Exception e) {
+            String m = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+            return m.length() > 90 ? m.substring(0, 90) : m;
+        } finally {
+            if (c != null) try { c.disconnect(); } catch (Exception ignored) {}
+        }
+    }
+
+    /** Same outcome paths as an ExoPlayer error, with the probe report for the owner. */
+    private void vidnestProbeFailed() {
+        failureDetail = ownerMode ? ("Vidnest · فحص الرابط فشل\n" + vidnestProbeReport) : "";
+        if (!interactiveSource && subscriberStartupAttempt < 2) {
+            retrySubscriberStartup();
+        } else if (!interactiveSource) {
+            subscriberStartupGeneration++;
+            subscriberStartupPhase = 0;
+            stopSubscriberStageAnimation();
+            cleanupPlayerForRetry();
+            destroyProbe();
+            removeDirectCover();
+            showStage("تعذّر تشغيل الفيديو. حاول مرة أخرى.");
+            if (ownerMode) showDecisionBar(false);
+        } else {
+            message("تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة.");
+            showDecisionBar(false);
+        }
     }
 
     private String header(String name, String fallback) {
@@ -1638,11 +1745,42 @@ public final class DirectStreamPlayer {
 
         destroyProbe();
 
-        // 322.3.84: the Vidnest /proxy link carries its own upstream headers, so
-        // ExoPlayer sends only a browser User-Agent and Referer (no Origin/Cookie).
+        // 322.3.85: probe the Vidnest playlist first (background thread), then
+        // start ExoPlayer with the request style the server answered correctly.
+        if (vidnestMode && vidnestCandidateIsProxy && vidnestPlan == null) {
+            final String url = candidate;
+            final String ua = userAgent, ref = referer, org = origin;
+            final int gen = subscriberStartupGeneration;
+            new Thread(() -> {
+                final Object[] result = probeVidnestPlaylist(url, ua, ref, org);
+                handler.post(() -> {
+                    if (closed || gen != subscriberStartupGeneration || !url.equals(candidate)) return;
+                    vidnestProbeReport = (String) result[1];
+                    if (result[0] == null) {
+                        vidnestProbeFailed();
+                    } else {
+                        vidnestPlan = (VidnestPlan) result[0];
+                        startExoPlayer(ua, ref, org);
+                    }
+                });
+            }, "vidnest-probe").start();
+            return;
+        }
+        startExoPlayer(userAgent, referer, origin);
+    }
+
+    private void startExoPlayer(String userAgent, String referer, String origin) {
+        if (candidate == null || closed) return;
+
+        // 322.3.84/85: the Vidnest /proxy link carries its own upstream headers.
+        // ExoPlayer uses the request style chosen by the probe (no Origin/Cookie).
         final boolean minimalHeaders = vidnestMode && vidnestCandidateIsProxy;
+        if (minimalHeaders && vidnestPlan != null) {
+            userAgent = vidnestPlan.userAgent;
+            if (!vidnestPlan.sendReferer) referer = "";
+        }
         Map<String,String> headers = new HashMap<>();
-        headers.put("Referer", referer);
+        if (referer != null && !referer.isEmpty()) headers.put("Referer", referer);
         if (!origin.isEmpty() && !minimalHeaders) headers.put("Origin", origin);
 
         DefaultHttpDataSource.Factory http =
@@ -1715,6 +1853,7 @@ public final class DirectStreamPlayer {
 
             @Override public void onPlayerError(PlaybackException error) {
                 final String vidnestDiag = (vidnestMode && ownerMode) ? vidnestDiagnostic(error) : "";
+                failureDetail = vidnestDiag;
                 if (!interactiveSource && subscriberStartupAttempt < 2) {
                     retrySubscriberStartup();
                 } else if (!interactiveSource) {

@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 93" in gradle
-assert "versionName '322.3.84'" in gradle
+assert "versionCode 94" in gradle
+assert "versionName '322.3.85'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -686,3 +686,14 @@ assert 'vidnestDiagnostic(error)' in direct
 assert "mode: 'moviesmod'" in moviesmod and "mode: 'vsm'" in vsm
 assert 'vidnest' not in moviesmod and 'vidnest' not in vsm
 print('322.3.84 vidnest checks OK')
+
+# 322.3.85: probe the Vidnest playlist before ExoPlayer; owner sees the report in the bar.
+assert 'private Object[] probeVidnestPlaylist(String url, String browserUa, String referer, String origin)' in direct
+assert 'static String probeOnce(String url, VidnestPlan plan, String referer, String origin)' in direct
+assert 'new VidnestPlan("بلا Referer", browserUa, false)' in direct
+assert 'private void startExoPlayer(String userAgent, String referer, String origin)' in direct
+assert 'if (vidnestMode && vidnestCandidateIsProxy && vidnestPlan == null) {' in direct
+assert 'private void vidnestProbeFailed()' in direct
+assert '(failureDetail.isEmpty() ? "" : "\\n\\n" + failureDetail)' in direct
+assert 'failureDetail = vidnestDiag;' in direct
+print('322.3.85 vidnest probe checks OK')
