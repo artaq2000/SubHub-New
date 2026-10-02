@@ -45,6 +45,7 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
 import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.common.Tracks;
+import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
@@ -144,6 +145,24 @@ public final class DirectStreamPlayer {
     private static final long VIDNEST_COLLECT_MS = 2500L;
     private static final long VIDNEST_MORE_WAIT_MS = 5000L;
     private static final int VIDNEST_MAX_CANDIDATES = 8;
+    // 322.3.87: every quality of every /proxy link is checked, like the Web Video
+    // Cast list. Working qualities are rebuilt into a clean master playlist
+    // (data: URI) so ExoPlayer's automatic quality never switches to a broken one.
+    private final ArrayList<VidnestStream> vidnestStreams = new ArrayList<>();
+    private boolean vidnestListShown = false;
+    private boolean vidnestEvalPending = false;
+
+    static final class VidnestStream {
+        String host = "";
+        String label = "";
+        String duration = "";
+        boolean ok;
+        boolean adaptive;
+        String problem = "";
+        String playUrl = "";
+        VidnestPlan plan;
+        Map<String,String> headers;
+    }
 
     private static final class VidnestPlan {
         final String name;
@@ -803,6 +822,9 @@ public final class DirectStreamPlayer {
         vidnestEvaluating = false;
         vidnestEvalWaits = 0;
         vidnestEvalReport.setLength(0);
+        vidnestStreams.clear();
+        vidnestListShown = false;
+        vidnestEvalPending = false;
     }
 
     private void retrySubscriberStartup() {
@@ -1325,7 +1347,8 @@ public final class DirectStreamPlayer {
                             return heldPlaylistResponse();
                         }
                         handler.post(() -> captureVidnest(url, headers, false));
-                        return null;
+                        // 322.3.87: the hidden provider player never plays in the background.
+                        return heldPlaylistResponse();
                     }
                     handler.post(() -> capture(url, headers));
                 }
@@ -1372,7 +1395,7 @@ public final class DirectStreamPlayer {
         }
 
         handler.postDelayed(() -> {
-            if (interactiveSource && !closed && !playing) {
+            if (interactiveSource && !closed && !playing && !vidnestListShown && !vidnestEvaluating) {
                 message("لم يُلتقط بث بعد. اختر سيرفراً آخر أو أعد المحاولة.");
                 if (!selectedProviderLabel.isEmpty()) showDecisionBar(false);
             }
@@ -1628,6 +1651,13 @@ public final class DirectStreamPlayer {
                 vidnestEvalScheduled = true;
                 if (interactiveSource) showStage("تم العثور على روابط… جارٍ فحصها…");
                 handler.postDelayed(this::evaluateVidnestCandidates, VIDNEST_COLLECT_MS);
+            } else if (!vidnestEvalPending) {
+                // A link that shows up after the first check is checked too.
+                vidnestEvalPending = true;
+                handler.postDelayed(() -> {
+                    vidnestEvalPending = false;
+                    evaluateVidnestCandidates();
+                }, VIDNEST_COLLECT_MS);
             }
             return;
         }
@@ -1644,10 +1674,15 @@ public final class DirectStreamPlayer {
         }, VIDNEST_FALLBACK_WAIT_MS);
     }
 
-    /** 322.3.86: check the collected /proxy playlists in order, off the UI thread. */
+    /**
+     * 322.3.86/87: check the collected /proxy playlists off the UI thread. Every
+     * quality becomes one row (like Web Video Cast). The owner picks from the list;
+     * subscribers (and the owner's saved-server test) start the first working one.
+     */
     private void evaluateVidnestCandidates() {
         if (closed || playing || vidnestEvaluating) return;
         if (vidnestEvaluated >= vidnestCandidates.size()) {
+            if (hasWorkingVidnestStream()) return; // the list is already showing / playing
             // Nothing new to check: give the page a little longer to try other sources.
             if (vidnestEvalWaits < 1) {
                 vidnestEvalWaits++;
@@ -1667,40 +1702,287 @@ public final class DirectStreamPlayer {
         vidnestEvaluated = vidnestCandidates.size();
         final String defaultUa = WebSettings.getDefaultUserAgent(activity);
         final String fallbackReferer = source;
+        final boolean stopAtFirst = !interactiveSource;
         new Thread(() -> {
-            int found = -1;
-            VidnestPlan plan = null;
-            StringBuilder rep = new StringBuilder();
+            final ArrayList<VidnestStream> found = new ArrayList<>();
             for (int i = 0; i < urls.size() && !closed; i++) {
                 Map<String,String> h = hdrs.get(i);
                 String ua = headerIn(h, "User-Agent", defaultUa);
                 String ref = headerIn(h, "Referer", fallbackReferer);
                 String org = headerIn(h, "Origin", "");
-                Object[] r = deepProbeVidnest(urls.get(i), ua, ref, org);
-                String host = "";
-                try { host = new java.net.URL(urls.get(i)).getHost(); } catch (Exception ignored) {}
-                if (rep.length() > 0) rep.append('\n');
-                rep.append(r[0] != null ? "✓ " : "✗ ").append(host).append(": ").append((String) r[1]);
-                if (r[0] != null) { found = i; plan = (VidnestPlan) r[0]; break; }
+                ArrayList<VidnestStream> rows = analyzeVidnestLink(urls.get(i), ua, ref, org);
+                for (VidnestStream r : rows) r.headers = h;
+                found.addAll(rows);
+                if (stopAtFirst && firstWorking(rows) != null) break;
             }
-            final int pick = found;
-            final VidnestPlan pickPlan = plan;
-            final String lines = rep.toString();
             handler.post(() -> {
                 vidnestEvaluating = false;
                 if (closed || playing) return;
-                if (vidnestEvalReport.length() > 0 && !lines.isEmpty()) vidnestEvalReport.append('\n');
-                vidnestEvalReport.append(lines);
-                if (pick >= 0) {
-                    vidnestPlan = pickPlan;
-                    vidnestProbeReport = vidnestEvalReport.toString();
-                    vidnestCandidateIsProxy = true;
-                    capture(urls.get(pick), hdrs.get(pick));
-                } else {
+                vidnestStreams.addAll(found);
+                for (VidnestStream r : found) {
+                    if (vidnestEvalReport.length() > 0) vidnestEvalReport.append('\n');
+                    vidnestEvalReport.append(r.ok ? "✓ " : "✗ ").append(rowText(r));
+                }
+                vidnestProbeReport = vidnestEvalReport.toString();
+                if (!hasWorkingVidnestStream()) {
                     evaluateVidnestCandidates();
+                } else if (interactiveSource) {
+                    showVidnestList();
+                } else {
+                    playVidnestStream(firstWorking(vidnestStreams));
                 }
             });
         }, "vidnest-eval").start();
+    }
+
+    private boolean hasWorkingVidnestStream() {
+        return firstWorking(vidnestStreams) != null;
+    }
+
+    private static VidnestStream firstWorking(ArrayList<VidnestStream> rows) {
+        for (VidnestStream r : rows) if (r.ok) return r; // adaptive rows come first
+        return null;
+    }
+
+    static String rowText(VidnestStream r) {
+        StringBuilder b = new StringBuilder(r.host);
+        if (!r.label.isEmpty()) b.append(" · ").append(r.label);
+        if (r.ok) {
+            if (!r.duration.isEmpty()) b.append(" · ").append(r.duration);
+        } else if (!r.problem.isEmpty()) {
+            b.append(" · ").append(r.problem);
+        }
+        return b.toString();
+    }
+
+    private void playVidnestStream(VidnestStream r) {
+        if (r == null || closed || playing) return;
+        vidnestListShown = false;
+        hidePanel();
+        vidnestPlan = r.plan;
+        vidnestCandidateIsProxy = true;
+        capture(r.playUrl, r.headers);
+    }
+
+    /** Owner list of captured links, green = working, orange = broken. */
+    private void showVidnestList() {
+        if (closed || playing) return;
+        vidnestListShown = true;
+        status.setVisibility(View.GONE);
+        int working = 0;
+        for (VidnestStream r : vidnestStreams) if (r.ok) working++;
+        panelTitle.setText("روابط البث — " + working + " سليم من " + vidnestStreams.size());
+        panelBody.removeAllViews();
+
+        ScrollView scroll = new ScrollView(activity);
+        LinearLayout list = new LinearLayout(activity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(4), dp(4), dp(4), dp(12));
+        for (VidnestStream r : vidnestStreams) {
+            final VidnestStream row = r;
+            String text = (r.ok ? "▶  " : "✗  ") + rowText(r);
+            TextView item = listRow(chip(text, 13, () -> {
+                if (row.ok) playVidnestStream(row);
+                else showTransientValue("هذا الرابط معطوب — اختر رابطاً أخضر", 1600);
+            }));
+            item.setTextColor(r.ok ? 0xff86efac : 0xfffbbf24);
+            if (r.adaptive && r.ok) item.setBackground(round(0xff12301d, 0xff4ade80, 1, 14));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, dp(2), 0, dp(2));
+            list.addView(item, lp);
+        }
+        scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
+        panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+        showPanel(true);
+        panel.bringToFront();
+    }
+
+    /**
+     * 322.3.87: one /proxy link → rows. A master playlist gives an «تلقائي» row
+     * (clean master of the working qualities) plus one row per quality.
+     */
+    static ArrayList<VidnestStream> analyzeVidnestLink(String url, String browserUa, String referer, String origin) {
+        ArrayList<VidnestStream> rows = new ArrayList<>();
+        String host = "";
+        try { host = new java.net.URL(url).getHost(); } catch (Exception ignored) {}
+        host = host.replaceFirst("\\.animanga\\.fun$", "");
+        VidnestPlan[] plans = new VidnestPlan[] {
+                new VidnestPlan("بلا Referer", browserUa, false),
+                new VidnestPlan("عميل بسيط", null, false),
+                new VidnestPlan("بالترويسات", browserUa, true)
+        };
+        VidnestPlan plan = null;
+        String top = null;
+        String lastProblem = "";
+        for (VidnestPlan p : plans) {
+            Object[] r = fetchHead(url, p, referer, origin, 512 * 1024);
+            top = asPlaylist(r);
+            if (top != null) { plan = p; break; }
+            lastProblem = "القائمة: " + describe(r);
+        }
+        if (top == null) {
+            VidnestStream bad = new VidnestStream();
+            bad.host = host; bad.label = "proxy"; bad.problem = lastProblem;
+            rows.add(bad);
+            return rows;
+        }
+
+        if (!top.contains("#EXT-X-STREAM-INF")) {
+            VidnestStream one = new VidnestStream();
+            one.host = host; one.label = "المصدر"; one.plan = plan;
+            String problem = checkMedia(url, top, plan, referer, origin);
+            one.ok = problem == null;
+            one.problem = problem == null ? "" : problem;
+            one.duration = formatDuration(totalDuration(top));
+            one.playUrl = url;
+            rows.add(one);
+            return rows;
+        }
+
+        // Master playlist: check audio renditions and every quality.
+        String[] lines = top.split("\\r?\\n");
+        ArrayList<String> header = new ArrayList<>();
+        java.util.LinkedHashMap<String,String> audioOk = new java.util.LinkedHashMap<>(); // group → rewritten line(s)
+        ArrayList<String> infLines = new ArrayList<>();
+        ArrayList<String> uris = new ArrayList<>();
+        for (int i = 0; i < lines.length; i++) {
+            String l = lines[i].trim();
+            if (l.startsWith("#EXT-X-INDEPENDENT-SEGMENTS") || l.startsWith("#EXT-X-VERSION")) header.add(l);
+            if (l.startsWith("#EXT-X-MEDIA:") && l.contains("TYPE=AUDIO")) {
+                String u = attr(l, "URI");
+                String g = attr(l, "GROUP-ID");
+                if (u == null) {
+                    audioOk.merge(g == null ? "" : g, l, (a, b) -> a + "\n" + b);
+                } else {
+                    String abs = resolveUrl(url, u);
+                    String pl = asPlaylist(fetchHead(abs, plan, referer, origin, 512 * 1024));
+                    if (pl != null && pl.contains("#EXTINF")) {
+                        String fixed = l.replace("URI=\"" + u + "\"", "URI=\"" + abs + "\"");
+                        audioOk.merge(g == null ? "" : g, fixed, (a, b) -> a + "\n" + b);
+                    }
+                }
+            }
+            if (l.startsWith("#EXT-X-STREAM-INF")) {
+                for (int j = i + 1; j < lines.length; j++) {
+                    String n = lines[j].trim();
+                    if (n.isEmpty() || n.startsWith("#")) continue;
+                    infLines.add(l);
+                    uris.add(resolveUrl(url, n));
+                    break;
+                }
+            }
+        }
+
+        ArrayList<VidnestStream> qualities = new ArrayList<>();
+        ArrayList<String> okInf = new ArrayList<>();
+        ArrayList<String> okUri = new ArrayList<>();
+        String duration = "";
+        boolean segmentChecked = false;
+        for (int i = 0; i < uris.size(); i++) {
+            String inf = cleanStreamInf(infLines.get(i), audioOk);
+            VidnestStream q = new VidnestStream();
+            q.host = host; q.plan = plan;
+            String res = attr(infLines.get(i), "RESOLUTION");
+            String bw = attr(infLines.get(i), "BANDWIDTH");
+            String bwDigits = bw == null ? "" : bw.replaceAll("[^0-9]", "");
+            q.label = res != null ? res
+                    : (!bwDigits.isEmpty() && bwDigits.length() < 12 ? (Long.parseLong(bwDigits) / 1000) + " kbps" : "جودة " + (i + 1));
+            Object[] r = fetchHead(uris.get(i), plan, referer, origin, 512 * 1024);
+            String media = asPlaylist(r);
+            if (media == null) {
+                q.problem = "القائمة: " + describe(r);
+            } else if (!media.contains("#EXTINF")) {
+                q.problem = "القائمة: بلا مقاطع";
+            } else {
+                String problem = segmentChecked ? null : checkMedia(uris.get(i), media, plan, referer, origin);
+                if (problem == null) {
+                    segmentChecked = true;
+                    q.ok = true;
+                    q.duration = formatDuration(totalDuration(media));
+                    if (duration.isEmpty()) duration = q.duration;
+                    okInf.add(inf);
+                    okUri.add(uris.get(i));
+                    q.playUrl = masterDataUri(header, audioOk, java.util.Collections.singletonList(inf),
+                            java.util.Collections.singletonList(uris.get(i)));
+                } else {
+                    q.problem = problem;
+                }
+            }
+            qualities.add(q);
+        }
+        if (!okUri.isEmpty()) {
+            VidnestStream auto = new VidnestStream();
+            auto.host = host; auto.plan = plan; auto.ok = true; auto.adaptive = true;
+            auto.label = "تلقائي — " + okUri.size() + (okUri.size() == 1 ? " جودة" : " جودات");
+            auto.duration = duration;
+            auto.playUrl = masterDataUri(header, audioOk, okInf, okUri);
+            rows.add(auto);
+        }
+        rows.addAll(qualities);
+        return rows;
+    }
+
+    /** null when the media playlist's first segment answers with media bytes. */
+    static String checkMedia(String mediaUrl, String media, VidnestPlan plan, String referer, String origin) {
+        if (!media.contains("#EXTINF")) return "القائمة: بلا مقاطع";
+        String seg = firstUriAfter(media, "#EXTINF");
+        if (seg == null) return "المقطع: لا يوجد رابط";
+        Object[] g = fetchHead(resolveUrl(mediaUrl, seg), plan, referer, origin, 188);
+        int code = (Integer) g[0];
+        byte[] b = (byte[]) g[2];
+        if (code < 200 || code >= 300 || b.length == 0 || b[0] == '<') return "المقطع: " + describe(g);
+        return null;
+    }
+
+    static String attr(String line, String name) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?:^|[:,])" + java.util.regex.Pattern.quote(name) + "=(\"[^\"]*\"|[^,]*)")
+                .matcher(line);
+        if (!m.find()) return null;
+        String v = m.group(1);
+        return v.startsWith("\"") ? v.substring(1, v.length() - 1) : v;
+    }
+
+    static String stripAttr(String line, String name) {
+        String out = line.replaceAll("(?<=[:,])" + java.util.regex.Pattern.quote(name) + "=(\"[^\"]*\"|[^,]*),?", "");
+        return out.endsWith(",") ? out.substring(0, out.length() - 1) : out;
+    }
+
+    /** Drop subtitle groups; drop an audio group that has no working rendition. */
+    static String cleanStreamInf(String inf, java.util.Map<String,String> audioOk) {
+        String out = stripAttr(inf, "SUBTITLES");
+        String g = attr(out, "AUDIO");
+        if (g != null && !audioOk.containsKey(g)) out = stripAttr(out, "AUDIO");
+        return out;
+    }
+
+    static String masterDataUri(java.util.List<String> header, java.util.Map<String,String> audio,
+                                java.util.List<String> infs, java.util.List<String> uris) {
+        StringBuilder m = new StringBuilder("#EXTM3U\n");
+        for (String h : header) m.append(h).append('\n');
+        java.util.HashSet<String> usedGroups = new java.util.HashSet<>();
+        for (String inf : infs) { String g = attr(inf, "AUDIO"); if (g != null) usedGroups.add(g); }
+        for (java.util.Map.Entry<String,String> e : audio.entrySet()) {
+            if (usedGroups.contains(e.getKey())) m.append(e.getValue()).append('\n');
+        }
+        for (int i = 0; i < infs.size(); i++) m.append(infs.get(i)).append('\n').append(uris.get(i)).append('\n');
+        return "data:application/vnd.apple.mpegurl;base64," + java.util.Base64.getEncoder()
+                .encodeToString(m.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    static double totalDuration(String media) {
+        double sum = 0;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("#EXTINF:([0-9.]+)").matcher(media);
+        while (m.find()) {
+            try { sum += Double.parseDouble(m.group(1)); } catch (Exception ignored) {}
+        }
+        return sum;
+    }
+
+    static String formatDuration(double seconds) {
+        if (seconds < 1) return "";
+        long s = Math.round(seconds);
+        return String.format(Locale.ROOT, "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60);
     }
 
     private static String headerIn(Map<String,String> h, String name, String fallback) {
@@ -1826,6 +2108,7 @@ public final class DirectStreamPlayer {
     private String vidnestDiagnostic(PlaybackException error) {
         String host = "";
         try { host = Uri.parse(candidate == null ? "" : candidate).getHost(); } catch (Exception ignored) {}
+        if ((host == null || host.isEmpty()) && candidate != null && candidate.startsWith("data:")) host = "قائمة نظيفة";
         if (host == null) host = "";
         String code = "";
         try { code = error == null ? "" : error.getErrorCodeName(); } catch (Exception ignored) {}
@@ -2083,7 +2366,10 @@ public final class DirectStreamPlayer {
                 .setMimeType(MimeTypes.APPLICATION_M3U8)
                 .build();
 
-        player.setMediaSource(new HlsMediaSource.Factory(data).createMediaSource(item));
+        // 322.3.87: Vidnest plays a clean master given as a data: URI.
+        androidx.media3.datasource.DataSource.Factory sourceFactory =
+                vidnestMode ? new DefaultDataSource.Factory(activity, data) : data;
+        player.setMediaSource(new HlsMediaSource.Factory(sourceFactory).createMediaSource(item));
         player.prepare();
         if (pendingResumeMs >= 5000L) player.seekTo(pendingResumeMs);
         player.play();

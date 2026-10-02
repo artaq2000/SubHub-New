@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 95" in gradle
-assert "versionName '322.3.86'" in gradle
+assert "versionCode 96" in gradle
+assert "versionName '322.3.87'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -326,7 +326,7 @@ assert 'installSubtitleGesture' in direct_player
 assert 'A−' in direct_player and 'A+' in direct_player
 assert 'WindowInsets.Type.systemBars()' in direct_player
 assert 'SYSTEM_UI_FLAG_IMMERSIVE_STICKY' in direct_player
-assert 'HlsMediaSource.Factory(data)' in direct_player
+assert 'HlsMediaSource.Factory(sourceFactory)' in direct_player
 assert 'player.setMediaSource' in direct_player
 assert 'player.play()' in direct_player
 assert 'beginCapture()' in direct_player
@@ -706,3 +706,14 @@ assert 'if (playlist.contains("#EXT-X-STREAM-INF")) {' in direct
 assert 'handler.postDelayed(this::evaluateVidnestCandidates, VIDNEST_COLLECT_MS);' in direct
 assert 'vidnestCandidates.add(url);' in direct
 print('322.3.86 vidnest deep-check checks OK')
+
+# 322.3.87: Web-Video-Cast-like link list for the owner + clean master of working qualities.
+assert 'static ArrayList<VidnestStream> analyzeVidnestLink(String url, String browserUa, String referer, String origin)' in direct
+assert 'private void showVidnestList()' in direct
+assert 'private void playVidnestStream(VidnestStream r)' in direct
+assert 'static String masterDataUri(' in direct
+assert 'static String cleanStreamInf(String inf, java.util.Map<String,String> audioOk)' in direct
+assert 'vidnestMode ? new DefaultDataSource.Factory(activity, data) : data;' in direct
+assert 'import androidx.media3.datasource.DefaultDataSource;' in direct
+assert '// 322.3.87: the hidden provider player never plays in the background.' in direct
+print('322.3.87 vidnest link list checks OK')
