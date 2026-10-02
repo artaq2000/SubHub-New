@@ -316,7 +316,8 @@ public final class DirectStreamPlayer {
                 1.25f * activity.getResources().getDisplayMetrics().density,
                 0, 0, Color.BLACK);
         subtitle.setLineSpacing(0, 1.04f);
-        subtitle.setPadding(dp(6), dp(2), dp(6), dp(3));
+        subtitle.setPadding(dp(SUBTITLE_VIEW_PAD_SIDE_DP), dp(SUBTITLE_VIEW_PAD_EDGE_DP),
+                dp(SUBTITLE_VIEW_PAD_SIDE_DP), dp(SUBTITLE_VIEW_PAD_EDGE_DP));
         subtitle.setBackgroundColor(Color.TRANSPARENT);
         subtitle.setVisibility(View.GONE);
         FrameLayout.LayoutParams subLp =
@@ -402,8 +403,8 @@ public final class DirectStreamPlayer {
         addCompactQuick("↓", () -> adjustSubtitlePosition(-4));
         addCompactQuick("−.5", () -> adjustSync(500));
         addCompactQuick("+.5", () -> adjustSync(-500));
-        addCompactQuick("◐−", () -> adjustSubtitleBackground(-5));
-        addCompactQuick("◐+", () -> adjustSubtitleBackground(5));
+        addCompactQuick("◐−", () -> adjustSubtitleBackground(-SUBTITLE_BG_STEP));
+        addCompactQuick("◐+", () -> adjustSubtitleBackground(SUBTITLE_BG_STEP));
         addCompactQuick("🎨", this::showColorOptions);
         resizeModeButton = addCompactQuick(resizeModeButtonLabel(), this::cycleResizeMode);
 
@@ -2740,8 +2741,14 @@ public final class DirectStreamPlayer {
         subtitleOffsetMs = Math.max(-600000L, Math.min(600000L, value));
     }
 
+    // 322.3.95: ten clear steps (10%..100%). Saved odd values from older
+    // builds (5, 15, 35...) snap onto the 10-step ladder on the next press.
+    static final int SUBTITLE_BG_STEP = 10;
+
     private void adjustSubtitleBackground(int delta) {
-        subtitleBackgroundOpacity = Math.max(0, Math.min(100, subtitleBackgroundOpacity + delta));
+        int stepped = (int) Math.round(subtitleBackgroundOpacity / (double) SUBTITLE_BG_STEP)
+                * SUBTITLE_BG_STEP;
+        subtitleBackgroundOpacity = Math.max(0, Math.min(100, stepped + delta));
         prefs.edit()
                 .putInt("background_opacity", subtitleBackgroundOpacity)
                 .putBoolean("background", subtitleBackgroundOpacity > 0)
@@ -2750,14 +2757,17 @@ public final class DirectStreamPlayer {
         showTransientValue("خلفية " + toArabicDigits(subtitleBackgroundOpacity) + "٪", 750);
     }
 
-    private int subtitleBackgroundAlpha() {
-        if (subtitleBackgroundOpacity <= 0) return 0;
+    // Light at the start, then each press darkens evenly:
+    // 10%≈4% black, 30%≈17%, 50%≈34%, 70%≈53%, 100%≈86% (never a hard black slab).
+    static int subtitleBackgroundAlphaFor(int opacity) {
+        if (opacity <= 0) return 0;
+        double level = Math.min(100, opacity) / 100.0;
+        int alpha = (int) Math.round(220.0 * Math.pow(level, 1.35));
+        return Math.max(8, Math.min(220, alpha));
+    }
 
-        // Perceptual curve: the first steps are genuinely light, then each
-        // press darkens the background progressively instead of jumping to black.
-        double level = subtitleBackgroundOpacity / 100.0;
-        int alpha = (int) Math.round(225.0 * Math.pow(level, 1.65));
-        return Math.max(1, Math.min(225, alpha));
+    private int subtitleBackgroundAlpha() {
+        return subtitleBackgroundAlphaFor(subtitleBackgroundOpacity);
     }
 
     private void applySubtitleText(String text) {
@@ -2776,15 +2786,15 @@ public final class DirectStreamPlayer {
         }
 
         SpannableString styled = new SpannableString(currentSubtitleText);
-        int alpha = subtitleBackgroundAlpha();
-        int outlineAlpha = Math.min(235, Math.max(18, alpha + 18));
         styled.setSpan(
                 new RoundedLineBackgroundSpan(
-                        Color.argb(alpha, 0, 0, 0),
-                        Color.argb(outlineAlpha, 0, 0, 0),
-                        dp(12),
-                        dp(3),
-                        dp(1)
+                        Color.argb(subtitleBackgroundAlpha(), 0, 0, 0),
+                        SUBTITLE_PILL_SIDE_DP * density(),
+                        SUBTITLE_PILL_EDGE_DP * density(),
+                        subtitle.getShadowRadius(),
+                        subtitle.getShadowDx(),
+                        subtitle.getShadowDy(),
+                        subtitle.getShadowColor()
                 ),
                 0,
                 styled.length(),
@@ -2793,20 +2803,37 @@ public final class DirectStreamPlayer {
         subtitle.setText(styled);
     }
 
+    // The pill is drawn by the TextView itself, so the view's padding MUST be
+    // larger than how far the pill reaches past the text; otherwise Android
+    // clips the round ends flat (the 322.3.94 bug).
+    static final int SUBTITLE_PILL_SIDE_DP = 14;
+    static final int SUBTITLE_PILL_EDGE_DP = 4;
+    static final int SUBTITLE_VIEW_PAD_SIDE_DP = SUBTITLE_PILL_SIDE_DP + 4;
+    static final int SUBTITLE_VIEW_PAD_EDGE_DP = SUBTITLE_PILL_EDGE_DP + 3;
+
+    private float density() {
+        return activity.getResources().getDisplayMetrics().density;
+    }
+
     private static final class RoundedLineBackgroundSpan implements LineBackgroundSpan {
         private final int fillColor;
-        private final int outlineColor;
         private final float horizontalPadding;
-        private final float verticalPadding;
-        private final float outlineWidth;
+        private final float edgePadding;
+        private final float shadowRadius;
+        private final float shadowDx;
+        private final float shadowDy;
+        private final int shadowColor;
 
-        RoundedLineBackgroundSpan(int fillColor, int outlineColor, float horizontalPadding,
-                                  float verticalPadding, float outlineWidth) {
+        RoundedLineBackgroundSpan(int fillColor, float horizontalPadding, float edgePadding,
+                                  float shadowRadius, float shadowDx, float shadowDy,
+                                  int shadowColor) {
             this.fillColor = fillColor;
-            this.outlineColor = outlineColor;
             this.horizontalPadding = horizontalPadding;
-            this.verticalPadding = verticalPadding;
-            this.outlineWidth = outlineWidth;
+            this.edgePadding = edgePadding;
+            this.shadowRadius = shadowRadius;
+            this.shadowDx = shadowDx;
+            this.shadowDy = shadowDy;
+            this.shadowColor = shadowColor;
         }
 
         @Override
@@ -2816,48 +2843,46 @@ public final class DirectStreamPlayer {
             int visibleEnd = end;
             while (visibleEnd > start) {
                 char c = text.charAt(visibleEnd - 1);
-                if (c == '\n' || c == '\r') visibleEnd--;
+                if (c == '\n' || c == '\r' || c == ' ') visibleEnd--;
                 else break;
             }
             if (visibleEnd <= start) return;
 
-            float width = paint.measureText(text.subSequence(start, visibleEnd).toString());
+            boolean firstLine = lineNumber == 0;
+            boolean lastLine = end >= text.length();
+
+            float width = paint.measureText(text, start, visibleEnd);
             float center = (left + right) / 2f;
+            // Only the outer edges grow; inner lines meet exactly, so two
+            // translucent pills never overlap into a darker stripe.
             RectF rect = new RectF(
                     center - width / 2f - horizontalPadding,
-                    top - verticalPadding,
+                    top - (firstLine ? edgePadding : 0f),
                     center + width / 2f + horizontalPadding,
-                    bottom + verticalPadding
+                    bottom + (lastLine ? edgePadding : 0f)
             );
 
             int oldColor = paint.getColor();
             Paint.Style oldStyle = paint.getStyle();
-            float oldStrokeWidth = paint.getStrokeWidth();
             boolean oldAntiAlias = paint.isAntiAlias();
 
+            // The TextView's text shadow lives on this same Paint. Left on, it
+            // paints a second blurred black copy of the pill: fuzzy edges and a
+            // background that turns black far too fast. Switch it off for the
+            // pill only, then restore it for the text.
+            paint.clearShadowLayer();
             paint.setAntiAlias(true);
-            float arc = rect.height() / 2f;
-
-            // Clean solid fill.
-            paint.setColor(fillColor);
             paint.setStyle(Paint.Style.FILL);
+            paint.setColor(fillColor);
+            float arc = rect.height() / 2f; // full half-circle on both ends
             canvas.drawRoundRect(rect, arc, arc, paint);
 
-            // A thin defined edge prevents the capsule from looking sprayed or fuzzy.
-            if (outlineWidth > 0f) {
-                RectF outlineRect = new RectF(rect);
-                outlineRect.inset(outlineWidth / 2f, outlineWidth / 2f);
-                float outlineArc = outlineRect.height() / 2f;
-                paint.setColor(outlineColor);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(outlineWidth);
-                canvas.drawRoundRect(outlineRect, outlineArc, outlineArc, paint);
-            }
-
             paint.setAntiAlias(oldAntiAlias);
-            paint.setStrokeWidth(oldStrokeWidth);
             paint.setStyle(oldStyle);
             paint.setColor(oldColor);
+            if (shadowRadius > 0f) {
+                paint.setShadowLayer(shadowRadius, shadowDx, shadowDy, shadowColor);
+            }
         }
     }
 

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 root=Path(__file__).resolve().parents[1]
 main=(root/'app/src/main/java/com/artaq/subhub/MainActivity.java').read_text(encoding='utf-8')
@@ -41,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 103" in gradle
-assert "versionName '322.3.94'" in gradle
+assert "versionCode 104" in gradle
+assert "versionName '322.3.95'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -770,8 +771,8 @@ print('322.3.92 subtitle picker + exclusive segment checks OK')
 
 # 322.3.93: subtitle background is visibly pill-rounded, opacity moves in small
 # 5% steps, and the screen-mode button changes with the active mode.
-assert 'adjustSubtitleBackground(-5)' in _dsp
-assert 'adjustSubtitleBackground(5)' in _dsp
+assert 'adjustSubtitleBackground(-SUBTITLE_BG_STEP)' in _dsp
+assert 'adjustSubtitleBackground(SUBTITLE_BG_STEP)' in _dsp
 assert 'float arc = rect.height() / 2f;' in _dsp
 assert 'resizeModeButtonLabel()' in _dsp
 assert 'return "↔";' in _dsp
@@ -780,14 +781,22 @@ assert 'refreshResizeModeButton();' in _dsp
 print('322.3.93 subtitle UI polish checks OK')
 
 
-# 322.3.94: subtitle background is a clean pill with extra side space and a
-# perceptual opacity curve so 5/10/15... are visibly different.
-assert 'private int subtitleBackgroundAlpha()' in _dsp
-assert 'Math.pow(level, 1.65)' in _dsp
-assert '225.0 * Math.pow' in _dsp
-assert 'Color.argb(outlineAlpha, 0, 0, 0)' in _dsp
-assert 'dp(12)' in _dsp
-assert 'top - verticalPadding' in _dsp and 'bottom + verticalPadding' in _dsp
-assert 'Paint.Style.STROKE' in _dsp
-assert 'outlineRect.inset(outlineWidth / 2f, outlineWidth / 2f);' in _dsp
-print('322.3.94 precise subtitle background checks OK')
+# 322.3.95: real pill ends (no clipping by the TextView), no text-shadow
+# doubling under the pill, and a 10-step light-to-dark opacity ladder.
+assert 'static final int SUBTITLE_BG_STEP = 10;' in _dsp
+assert 'paint.clearShadowLayer();' in _dsp
+assert 'paint.setShadowLayer(shadowRadius, shadowDx, shadowDy, shadowColor);' in _dsp
+assert 'SUBTITLE_VIEW_PAD_SIDE_DP = SUBTITLE_PILL_SIDE_DP + 4' in _dsp
+assert 'SUBTITLE_VIEW_PAD_EDGE_DP = SUBTITLE_PILL_EDGE_DP + 3' in _dsp
+assert 'subtitle.setPadding(dp(SUBTITLE_VIEW_PAD_SIDE_DP)' in _dsp
+assert 'top - (firstLine ? edgePadding : 0f)' in _dsp
+assert 'bottom + (lastLine ? edgePadding : 0f)' in _dsp
+assert 'Paint.Style.STROKE' not in _dsp.split('class RoundedLineBackgroundSpan')[1].split('\n    }\n')[0]
+_m = re.search(r'Math\.round\(220\.0 \* Math\.pow\(level, ([0-9.]+)\)\)', _dsp)
+assert _m, 'alpha curve'
+def _alpha(o, k=float(_m.group(1))):
+    return 0 if o <= 0 else max(8, min(220, round(220 * (o / 100) ** k)))
+_lad = [_alpha(o) for o in range(0, 101, 10)]
+assert all(x < y for x, y in zip(_lad, _lad[1:])), _lad
+assert _lad[1] <= 16 and _lad[-1] <= 220, _lad
+print('322.3.95 subtitle pill + opacity ladder checks OK')
