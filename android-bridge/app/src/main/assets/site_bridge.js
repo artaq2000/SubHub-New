@@ -301,6 +301,7 @@
           'font:800 13px/1 system-ui,sans-serif;backdrop-filter:blur(8px);',
           'pointer-events:auto!important;position:relative;z-index:2147483645!important;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="quality"]{min-width:52px;}',
+          '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="close"]{min-width:48px;font-size:20px;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-shortcut-v3231[data-provider-action="subs"]{display:none!important;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .subhub-provider-close-hidden-v3233{',
           'display:none!important;visibility:hidden!important;opacity:0!important;',
@@ -338,18 +339,32 @@
         } catch (_) {}
       }
 
-      let q = controls.querySelector('[data-provider-action="quality"]');
+      // 322.3.89: «الجودة» did not work for this source; its slot is now ✕,
+      // which closes only the player (the page and its poster stay).
+      try {
+        const oldQuality = controls.querySelector('[data-provider-action="quality"]');
+        if (oldQuality) oldQuality.remove();
+      } catch (_) {}
+      let q = controls.querySelector('[data-provider-action="close"]');
       if (!q) {
         q = document.createElement('button');
         q.type = 'button';
         q.className = 'video-top-btn subhub-provider-shortcut-v3231';
-        q.setAttribute('data-provider-action', 'quality');
-        q.setAttribute('aria-label', 'جودة المصدر');
-        q.setAttribute('title', 'جودة المصدر');
-        q.textContent = 'الجودة';
+        q.setAttribute('data-provider-action', 'close');
+        q.setAttribute('aria-label', 'إغلاق المشغّل');
+        q.setAttribute('title', 'إغلاق المشغّل');
+        q.textContent = '✕';
         q.addEventListener('click', function (ev) {
           try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
-          try { toggleVidSrcQualityV3251(); } catch (_) {}
+          try { if (vidSrcQualitySessionV3251) endVidSrcQualityV3251(); } catch (_) {}
+          try {
+            const hiddenClose = controls.querySelector('[data-subhub-hidden-close-v3233="1"]');
+            if (hiddenClose) hiddenClose.click();
+            else if (typeof closeEmbedPlayer === 'function') closeEmbedPlayer();
+          } catch (_) {
+            try { if (typeof closeEmbedPlayer === 'function') closeEmbedPlayer(); } catch (_) {}
+          }
+          try { setTimeout(function () { window.__subhubScrollRescueV3289 && window.__subhubScrollRescueV3289('close'); }, 400); } catch (_) {}
         }, true);
       }
 
@@ -2765,3 +2780,86 @@
   return true;
 })();
 
+
+
+/* 322.3.89: scroll rescue. Leaving a film while the small VidSrc player was
+   open (phone back button) sometimes left the page unable to scroll until the
+   app was restarted. When no player is open, any leftover scroll lock or
+   transparent touch layer is removed — on every page change and every second.
+   The reason is shown once in a short toast so the real cause can be found. */
+(function () {
+  'use strict';
+  if (window.__subhubScrollRescueV3289) return;
+
+  function playerOpen() {
+    try {
+      if (document.querySelector('#embedPlayerModal.open, #videoPlayerModal.open')) return true;
+      if (document.querySelector('.modal-bg.open:not(.inline-player-v265)')) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  function note(reasons, from) {
+    if (!reasons.length) return;
+    try {
+      const msg = '🔓 تم فك قفل التمرير: ' + reasons.join('، ');
+      if (typeof showToast === 'function') showToast(msg, 'info');
+      localStorage.setItem('subhubScrollRescueV3289', JSON.stringify({ at: Date.now(), from: from, reasons: reasons }));
+    } catch (_) {}
+  }
+
+  function rescue(from) {
+    if (playerOpen()) return [];
+    const reasons = [];
+    try {
+      const b = document.body, h = document.documentElement;
+      if (!b) return reasons;
+      if (b.classList.contains('pseudo-fs-lock')) { b.classList.remove('pseudo-fs-lock'); reasons.push('pseudo-fs-lock'); }
+      ['ios-fullwindow-lock-v308', 'ios-native-fs-v308'].forEach(function (c) {
+        if (b.classList.contains(c)) { b.classList.remove(c); reasons.push(c); }
+      });
+      if (b.style.position === 'fixed') {
+        if (typeof unlockBodyScroll === 'function') unlockBodyScroll();
+        else { b.style.position = ''; b.style.top = ''; b.style.width = ''; b.style.overflow = ''; }
+        reasons.push('body-fixed');
+      }
+      if (b.style.overflow === 'hidden') { b.style.overflow = ''; reasons.push('body-overflow'); }
+      if (h.style.overflow === 'hidden') { h.style.overflow = ''; reasons.push('html-overflow'); }
+      if (b.style.touchAction === 'none') { b.style.touchAction = ''; reasons.push('body-touch'); }
+      if (h.style.touchAction === 'none') { h.style.touchAction = ''; reasons.push('html-touch'); }
+      const g = document.getElementById('subhub-vidsrc-subtitle-gesture-v3229');
+      if (g && g.style.display !== 'none') { g.style.display = 'none'; reasons.push('gesture-layer'); }
+      // Any leftover full-screen layer of the VidSrc/embed player.
+      const vw = window.innerWidth || 1, vh = window.innerHeight || 1;
+      Array.prototype.slice.call(b.children).forEach(function (el) {
+        try {
+          const tag = (el.id || '') + ' ' + (typeof el.className === 'string' ? el.className : '');
+          if (!/vidsrc|takeover|gesture|wake|embed|v32\d\d/i.test(tag)) return;
+          const cs = getComputedStyle(el);
+          if (cs.position !== 'fixed' || cs.display === 'none' || cs.pointerEvents === 'none') return;
+          const r = el.getBoundingClientRect();
+          if (r.width * r.height < vw * vh * 0.5) return;
+          el.style.setProperty('pointer-events', 'none', 'important');
+          reasons.push('layer:' + (el.id || el.className || el.tagName));
+        } catch (_) {}
+      });
+    } catch (_) {}
+    return reasons;
+  }
+
+  window.__subhubScrollRescueV3289 = function (from) {
+    const r = rescue(from || 'manual');
+    note(r, from || 'manual');
+    return r;
+  };
+
+  let lastUrl = location.href;
+  setInterval(function () {
+    let from = 'tick';
+    if (location.href !== lastUrl) { lastUrl = location.href; from = 'page'; }
+    note(rescue(from), from);
+  }, 1000);
+  window.addEventListener('popstate', function () {
+    setTimeout(function () { window.__subhubScrollRescueV3289('back'); }, 350);
+  });
+})();

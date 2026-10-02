@@ -41,8 +41,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 97" in gradle
-assert "versionName '322.3.88'" in gradle
+assert "versionCode 98" in gradle
+assert "versionName '322.3.89'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -722,3 +722,12 @@ print('322.3.87 vidnest link list checks OK')
 assert '// 322.3.88: the Vidnest card plays for everyone who is not the owner' in vidnest
 assert "isSubscribed === 'function'" not in vidnest
 print('322.3.88 vidnest for everyone checks OK')
+
+# 322.3.89: ✕ replaces «الجودة» in the VidSrc player; scroll rescue when no player is open.
+assert "q.setAttribute('data-provider-action', 'close');" in bridge_js if 'bridge_js' in dir() else True
+_sb=(root/'app/src/main/assets/site_bridge.js').read_text(encoding='utf-8')
+assert "q.setAttribute('data-provider-action', 'close');" in _sb
+assert "q.textContent = '✕';" in _sb
+assert 'window.__subhubScrollRescueV3289' in _sb
+assert "q.textContent = 'الجودة';" not in _sb
+print('322.3.89 close button + scroll rescue checks OK')
