@@ -296,7 +296,7 @@
         s.textContent = [
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar,',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .video-top-controls{',
-          'display:flex!important;align-items:center!important;gap:8px!important;',
+          'align-items:center!important;gap:8px!important;',
           'padding:0!important;background:transparent!important;}',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedTopBar>button,',
           '#embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] .video-top-controls>button,',
