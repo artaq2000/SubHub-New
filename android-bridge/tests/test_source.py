@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 104" in gradle
-assert "versionName '322.3.95'" in gradle
+assert "versionCode 105" in gradle
+assert "versionName '322.3.96'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -345,8 +345,7 @@ assert 'GradientDrawable.OVAL' in direct_player
 assert 'showTransientValue("▭  ملاءمة"' in direct_player
 assert 'status.setVisibility(View.GONE)' in direct_player
 assert 'subtitle_color' in direct_player
-assert 'RoundedLineBackgroundSpan' in direct_player
-assert 'LineBackgroundSpan' in direct_player
+assert 'new SubtitlePillTextView(activity)' in direct_player
 assert 'background_opacity' in direct_player
 assert 'adjustSubtitleBackground' in direct_player
 assert 'showTransientValue("خلفية "' in direct_player
@@ -773,7 +772,7 @@ print('322.3.92 subtitle picker + exclusive segment checks OK')
 # 5% steps, and the screen-mode button changes with the active mode.
 assert 'adjustSubtitleBackground(-SUBTITLE_BG_STEP)' in _dsp
 assert 'adjustSubtitleBackground(SUBTITLE_BG_STEP)' in _dsp
-assert 'float arc = rect.height() / 2f;' in _dsp
+assert 'SubtitlePillTextView' in _dsp
 assert 'resizeModeButtonLabel()' in _dsp
 assert 'return "↔";' in _dsp
 assert 'return "100%";' in _dsp
@@ -781,17 +780,20 @@ assert 'refreshResizeModeButton();' in _dsp
 print('322.3.93 subtitle UI polish checks OK')
 
 
-# 322.3.95: real pill ends (no clipping by the TextView), no text-shadow
-# doubling under the pill, and a 10-step light-to-dark opacity ladder.
+# 322.3.96: the pill is drawn by SubtitlePillTextView.onDraw (before TextView
+# clips to the text area), so both ends are true half circles; opacity ladder
+# from 322.3.95 stays. Pixel checks run on the emulator (SubtitlePillTest).
+_pill = (root/'app/src/main/java/com/artaq/subhub/SubtitlePillTextView.java').read_text(encoding='utf-8')
 assert 'static final int SUBTITLE_BG_STEP = 10;' in _dsp
-assert 'paint.clearShadowLayer();' in _dsp
-assert 'paint.setShadowLayer(shadowRadius, shadowDx, shadowDy, shadowColor);' in _dsp
-assert 'SUBTITLE_VIEW_PAD_SIDE_DP = SUBTITLE_PILL_SIDE_DP + 4' in _dsp
-assert 'SUBTITLE_VIEW_PAD_EDGE_DP = SUBTITLE_PILL_EDGE_DP + 3' in _dsp
-assert 'subtitle.setPadding(dp(SUBTITLE_VIEW_PAD_SIDE_DP)' in _dsp
-assert 'top - (firstLine ? edgePadding : 0f)' in _dsp
-assert 'bottom + (lastLine ? edgePadding : 0f)' in _dsp
-assert 'Paint.Style.STROKE' not in _dsp.split('class RoundedLineBackgroundSpan')[1].split('\n    }\n')[0]
+assert 'private final SubtitlePillTextView subtitle;' in _dsp
+assert 'subtitle.setPillColor(Color.argb(subtitleBackgroundAlpha(), 0, 0, 0));' in _dsp
+assert 'RoundedLineBackgroundSpan' not in _dsp and 'LineBackgroundSpan' not in _dsp
+assert _pill.index('drawPills(canvas);') < _pill.index('super.onDraw(canvas);')
+assert 'VIEW_PAD_SIDE_DP = PILL_SIDE_DP + 4' in _pill and 'VIEW_PAD_EDGE_DP = PILL_EDGE_DP + 3' in _pill
+assert 'float radius = pillRect.height() / 2f;' in _pill
+assert 'layout.getLineLeft(i)' in _pill and 'layout.getLineRight(i)' in _pill
+assert 'setShadowLayer' not in _pill.split('private void drawPills')[1].split('private int verticalOffset')[0]
+assert (root/'app/src/androidTest/java/com/artaq/subhub/SubtitlePillTest.java').exists()
 _m = re.search(r'Math\.round\(220\.0 \* Math\.pow\(level, ([0-9.]+)\)\)', _dsp)
 assert _m, 'alpha curve'
 def _alpha(o, k=float(_m.group(1))):
@@ -799,4 +801,4 @@ def _alpha(o, k=float(_m.group(1))):
 _lad = [_alpha(o) for o in range(0, 101, 10)]
 assert all(x < y for x, y in zip(_lad, _lad[1:])), _lad
 assert _lad[1] <= 16 and _lad[-1] <= 220, _lad
-print('322.3.95 subtitle pill + opacity ladder checks OK')
+print('322.3.96 true pill subtitle + opacity ladder checks OK')

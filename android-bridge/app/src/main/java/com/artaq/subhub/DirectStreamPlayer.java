@@ -14,8 +14,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.text.Spannable;
-import android.text.SpannableString;
-import android.text.style.LineBackgroundSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -91,7 +89,7 @@ public final class DirectStreamPlayer {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final FrameLayout root;
     private final TextView status;
-    private final TextView subtitle;
+    private final SubtitlePillTextView subtitle;
     private final TextView valueToast;
     private final TextView menuButton;
     private final LinearLayout toolbar;
@@ -307,7 +305,7 @@ public final class DirectStreamPlayer {
         previousSystemUi = activity.getWindow().getDecorView().getSystemUiVisibility();
         enterImmersive();
 
-        subtitle = new TextView(activity);
+        subtitle = new SubtitlePillTextView(activity);
         subtitle.setTextColor(subtitleColor);
         subtitle.setTextSize(subtitleSizeSp);
         subtitle.setGravity(Gravity.CENTER);
@@ -316,8 +314,7 @@ public final class DirectStreamPlayer {
                 1.25f * activity.getResources().getDisplayMetrics().density,
                 0, 0, Color.BLACK);
         subtitle.setLineSpacing(0, 1.04f);
-        subtitle.setPadding(dp(SUBTITLE_VIEW_PAD_SIDE_DP), dp(SUBTITLE_VIEW_PAD_EDGE_DP),
-                dp(SUBTITLE_VIEW_PAD_SIDE_DP), dp(SUBTITLE_VIEW_PAD_EDGE_DP));
+        // Padding (larger than the pill reach) is set by SubtitlePillTextView itself.
         subtitle.setBackgroundColor(Color.TRANSPARENT);
         subtitle.setVisibility(View.GONE);
         FrameLayout.LayoutParams subLp =
@@ -2774,116 +2771,10 @@ public final class DirectStreamPlayer {
         currentSubtitleText = text == null ? "" : text;
         subtitle.setTextColor(subtitleColor);
         subtitle.setBackgroundColor(Color.TRANSPARENT);
-
-        if (currentSubtitleText.isEmpty()) {
-            subtitle.setText("");
-            return;
-        }
-
-        if (subtitleBackgroundOpacity <= 0) {
-            subtitle.setText(currentSubtitleText);
-            return;
-        }
-
-        SpannableString styled = new SpannableString(currentSubtitleText);
-        styled.setSpan(
-                new RoundedLineBackgroundSpan(
-                        Color.argb(subtitleBackgroundAlpha(), 0, 0, 0),
-                        SUBTITLE_PILL_SIDE_DP * density(),
-                        SUBTITLE_PILL_EDGE_DP * density(),
-                        subtitle.getShadowRadius(),
-                        subtitle.getShadowDx(),
-                        subtitle.getShadowDy(),
-                        subtitle.getShadowColor()
-                ),
-                0,
-                styled.length(),
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-        );
-        subtitle.setText(styled);
-    }
-
-    // The pill is drawn by the TextView itself, so the view's padding MUST be
-    // larger than how far the pill reaches past the text; otherwise Android
-    // clips the round ends flat (the 322.3.94 bug).
-    static final int SUBTITLE_PILL_SIDE_DP = 14;
-    static final int SUBTITLE_PILL_EDGE_DP = 4;
-    static final int SUBTITLE_VIEW_PAD_SIDE_DP = SUBTITLE_PILL_SIDE_DP + 4;
-    static final int SUBTITLE_VIEW_PAD_EDGE_DP = SUBTITLE_PILL_EDGE_DP + 3;
-
-    private float density() {
-        return activity.getResources().getDisplayMetrics().density;
-    }
-
-    private static final class RoundedLineBackgroundSpan implements LineBackgroundSpan {
-        private final int fillColor;
-        private final float horizontalPadding;
-        private final float edgePadding;
-        private final float shadowRadius;
-        private final float shadowDx;
-        private final float shadowDy;
-        private final int shadowColor;
-
-        RoundedLineBackgroundSpan(int fillColor, float horizontalPadding, float edgePadding,
-                                  float shadowRadius, float shadowDx, float shadowDy,
-                                  int shadowColor) {
-            this.fillColor = fillColor;
-            this.horizontalPadding = horizontalPadding;
-            this.edgePadding = edgePadding;
-            this.shadowRadius = shadowRadius;
-            this.shadowDx = shadowDx;
-            this.shadowDy = shadowDy;
-            this.shadowColor = shadowColor;
-        }
-
-        @Override
-        public void drawBackground(Canvas canvas, Paint paint, int left, int right,
-                                   int top, int baseline, int bottom,
-                                   CharSequence text, int start, int end, int lineNumber) {
-            int visibleEnd = end;
-            while (visibleEnd > start) {
-                char c = text.charAt(visibleEnd - 1);
-                if (c == '\n' || c == '\r' || c == ' ') visibleEnd--;
-                else break;
-            }
-            if (visibleEnd <= start) return;
-
-            boolean firstLine = lineNumber == 0;
-            boolean lastLine = end >= text.length();
-
-            float width = paint.measureText(text, start, visibleEnd);
-            float center = (left + right) / 2f;
-            // Only the outer edges grow; inner lines meet exactly, so two
-            // translucent pills never overlap into a darker stripe.
-            RectF rect = new RectF(
-                    center - width / 2f - horizontalPadding,
-                    top - (firstLine ? edgePadding : 0f),
-                    center + width / 2f + horizontalPadding,
-                    bottom + (lastLine ? edgePadding : 0f)
-            );
-
-            int oldColor = paint.getColor();
-            Paint.Style oldStyle = paint.getStyle();
-            boolean oldAntiAlias = paint.isAntiAlias();
-
-            // The TextView's text shadow lives on this same Paint. Left on, it
-            // paints a second blurred black copy of the pill: fuzzy edges and a
-            // background that turns black far too fast. Switch it off for the
-            // pill only, then restore it for the text.
-            paint.clearShadowLayer();
-            paint.setAntiAlias(true);
-            paint.setStyle(Paint.Style.FILL);
-            paint.setColor(fillColor);
-            float arc = rect.height() / 2f; // full half-circle on both ends
-            canvas.drawRoundRect(rect, arc, arc, paint);
-
-            paint.setAntiAlias(oldAntiAlias);
-            paint.setStyle(oldStyle);
-            paint.setColor(oldColor);
-            if (shadowRadius > 0f) {
-                paint.setShadowLayer(shadowRadius, shadowDx, shadowDy, shadowColor);
-            }
-        }
+        // 322.3.96: the pill is drawn by SubtitlePillTextView (true half-circle
+        // ends, never clipped, no text-shadow doubling).
+        subtitle.setPillColor(Color.argb(subtitleBackgroundAlpha(), 0, 0, 0));
+        subtitle.setText(currentSubtitleText);
     }
 
     private String resizeModeButtonLabel() {
