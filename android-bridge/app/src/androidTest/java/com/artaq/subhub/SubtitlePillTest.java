@@ -26,15 +26,23 @@ public class SubtitlePillTest {
     private static final String TWO = "السيد (ساكاموتو) الذي كنت أعرفه\nقد اختفى منذ زمن طويل.";
 
     private Bitmap render(String text, int pillAlpha, int maxWidthPx) {
+        return render(text, pillAlpha, maxWidthPx, true);
+    }
+
+    private Bitmap render(String text, int pillAlpha, int maxWidthPx, boolean drawGlyphs) {
         AtomicReference<Bitmap> out = new AtomicReference<>();
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             Context c = InstrumentationRegistry.getInstrumentation().getTargetContext();
             SubtitlePillTextView v = new SubtitlePillTextView(c);
-            v.setTextColor(0xFFFFD84A);
+            v.setTextColor(drawGlyphs ? 0xFFFFD84A : Color.TRANSPARENT);
             v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
             v.setGravity(Gravity.CENTER);
             v.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
-            v.setShadowLayer(1.25f * c.getResources().getDisplayMetrics().density, 0, 0, Color.BLACK);
+            if (drawGlyphs) {
+                v.setShadowLayer(1.25f * c.getResources().getDisplayMetrics().density, 0, 0, Color.BLACK);
+            } else {
+                v.setShadowLayer(0f, 0f, 0f, Color.TRANSPARENT);
+            }
             v.setLineSpacing(0, 1.04f);
             v.setMaxWidth(maxWidthPx);
             v.setPillColor(Color.argb(pillAlpha, 0, 0, 0));
@@ -128,7 +136,9 @@ public class SubtitlePillTest {
     @Test
     public void twoLinesNeverOverlapIntoDarkerStripe() {
         int alpha = 120;
-        Bitmap b = render(TWO, alpha, 700);
+        // Hide glyphs and their fully-opaque shadow for this assertion. The
+        // layout is unchanged, so only the pill pixels are measured.
+        Bitmap b = render(TWO, alpha, 700, false);
         int[] r = box(b);
         int maxAlpha = 0;
         // Scan the column just inside the wider pill's left end across all rows.
