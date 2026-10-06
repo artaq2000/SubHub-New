@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 108" in gradle
-assert "versionName '322.3.99'" in gradle
+assert "versionCode 109" in gradle
+assert "versionName '322.3.100'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -844,8 +844,17 @@ mm99=(root/'app/src/main/assets/moviesmod_stream.js').read_text(encoding='utf-8'
 assert "function isSubscriber() {\n    return !isOwner();\n  }" in mm99
 assert 'return cleanServerLabel(raw).length >= 2;' in vsm99 and "compact === 'vidsrcmov'" not in vsm99
 ser99=(root/'app/src/main/assets/series_stream.js').read_text(encoding='utf-8')
-assert "if (mode === 'vsm') return compact.length >= 2;" in ser99
+assert "if (mode === 'vidnest') return compact === 'vidnest';" in ser99   # 322.3.100: yellow open, teal Vidnest-only
 assert 'openMode || "moviesmod".equals(mode) || "vsm".equals(mode),' in main
 vid99=(root/'app/src/main/assets/vidnest_stream.js').read_text(encoding='utf-8')
 assert "return compact === 'vidnest';" in vid99          # teal stays Vidnest-only
 print('322.3.99 open system for purple and yellow checks OK')
+
+# 322.3.100: series episodes get all five app cards, for everyone.
+ser100=(root/'app/src/main/assets/series_stream.js').read_text(encoding='utf-8')
+assert "const SERIES_MODES = ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2'];" in ser100
+assert "['Open1', 'open1'], ['Open2', 'open2']].forEach" in ser100 and "['Vidnest', 'vidnest']," in ser100
+assert "if (mode === 'vidnest') return compact === 'vidnest';" in ser100
+assert "function isSubscriber() {\n    return !isOwner();\n  }" in ser100
+assert main.index('readAsset("open2_stream.js")') < main.index('readAsset("series_stream.js")')   # film handlers first
+print('322.3.100 series five app cards checks OK')

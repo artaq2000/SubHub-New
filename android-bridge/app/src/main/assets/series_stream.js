@@ -1,5 +1,8 @@
 (function () {
   'use strict';
+  // 322.3.100: all five app cards (purple, yellow, teal Vidnest, مفتوح ١, مفتوح ٢)
+  // serve series episodes; each episode keeps one saved server per card:
+  //   subtitles/{id}.seriesAppSources['s1e2'].moviesmod | .vsm | .vidnest | .open1 | .open2
   // 322.3.83: Moviesmod (purple) and the yellow «مباشر تجريبي» card for SERIES
   // episodes. Films keep moviesmod_stream.js / vsm_stream.js untouched; this file
   // only serves the series page of SubHub Web v383, which calls
@@ -27,11 +30,20 @@
     try { return typeof isLoggedIn !== 'undefined' && !!isLoggedIn; }
     catch (_) { return false; }
   }
+  // 322.3.100: series episodes play for everyone who is not the owner —
+  // visitors, members and subscribers alike, like the film cards.
   function isSubscriber() {
-    if (isOwner()) return false;
-    try { return typeof isSubscribed === 'function' && !!isSubscribed(); }
-    catch (_) { return false; }
+    return !isOwner();
   }
+  // 322.3.100: the five app cards for series episodes (same as films).
+  const SERIES_MODES = ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2'];
+  const MODE_STYLE = {
+    moviesmod: { name: 'Moviesmod', title: '🎬 Moviesmod', border: '#7b68ee' },
+    vsm: { name: 'المباشر التجريبي', title: '▶ مشغّل مباشر — تجريبي', border: '#e8b544' },
+    vidnest: { name: 'Vidnest', title: '🎬 تجريبي — Vidnest', border: '#14b8a6' },
+    open1: { name: 'مفتوح ١', title: '🎬 مفتوح ١ — تجريبي', border: '#f97316' },
+    open2: { name: 'مفتوح ٢', title: '🎬 مفتوح ٢ — تجريبي', border: '#ec4899' }
+  };
   function notify(text, type) {
     try { if (typeof showToast === 'function') showToast(text, type || 'error'); } catch (_) {}
   }
@@ -45,7 +57,7 @@
     return 's' + Number(season) + 'e' + Number(episode);
   }
   function modeName(mode) {
-    return mode === 'vsm' ? 'المباشر التجريبي' : 'Moviesmod';
+    return (MODE_STYLE[mode] || MODE_STYLE.moviesmod).name;
   }
 
   function cleanServerLabel(raw) {
@@ -56,8 +68,8 @@
     if (!v || v.length > 48) return false;
     if (/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(v)) return false;
     const compact = v.replace(/[^a-z0-9]/g, '');
-    // 322.3.99: open system for the yellow mode too (any real server name).
-    if (mode === 'vsm') return compact.length >= 2;
+    // 322.3.100: teal stays Vidnest-only (its own capture); every other card is open.
+    if (mode === 'vidnest') return compact === 'vidnest';
     return compact.length >= 2;
   }
   function normalizePageUrl(raw) {
@@ -176,7 +188,7 @@
     try {
       const owner = isOwner();
       const subscriber = isSubscriber();
-      if (!owner && !subscriber) { notify('هذا المصدر للمشتركين.', 'warn'); return; }
+      if (!owner && !subscriber) return;
       if (owner) {
         if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess()) || current() !== selected) return;
       }
@@ -315,10 +327,10 @@
     bg.id = 'subhub-series-stream-sheet';
     bg.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding:18px;direction:rtl';
     const box = document.createElement('div');
-    box.style.cssText = 'width:min(520px,96vw);border:1px solid ' + (mode === 'vsm' ? '#e8b544' : '#7b68ee') + ';border-radius:18px;background:#0b1625;color:#fff;padding:16px;box-shadow:0 16px 60px rgba(0,0,0,.55)';
+    box.style.cssText = 'width:min(520px,96vw);border:1px solid ' + (MODE_STYLE[mode] || MODE_STYLE.moviesmod).border + ';border-radius:18px;background:#0b1625;color:#fff;padding:16px;box-shadow:0 16px 60px rgba(0,0,0,.55)';
     const title = document.createElement('div');
     title.style.cssText = 'font-weight:900;font-size:1rem;line-height:1.7;margin-bottom:4px';
-    title.textContent = (mode === 'vsm' ? '▶ مشغّل مباشر — تجريبي' : '🎬 Moviesmod') + ' · الموسم ' + info.season + ' الحلقة ' + info.episode;
+    title.textContent = (MODE_STYLE[mode] || MODE_STYLE.moviesmod).title + ' · الموسم ' + info.season + ' الحلقة ' + info.episode;
     const msg = document.createElement('div');
     msg.style.cssText = 'color:#b8c5d6;font-size:.86rem;line-height:1.7;margin-bottom:12px';
     msg.textContent = 'السيرفر المحفوظ: ' + saved.label;
@@ -348,7 +360,7 @@
   // Entry point used by SubHub Web v383 (seriesPlayExtraV383).
   window.SubHubSeriesAppSourceV383 = function (raw) {
     const info = {
-      source: raw && raw.source === 'vsm' ? 'vsm' : 'moviesmod',
+      source: raw && SERIES_MODES.indexOf(raw.source) >= 0 ? raw.source : 'moviesmod',
       movieId: String((raw && raw.movieId) || ''),
       season: Number(raw && raw.season),
       episode: Number(raw && raw.episode)
@@ -365,7 +377,8 @@
 
   // Native callbacks: handle our own sessions, delegate everything else to the
   // film handlers installed earlier by moviesmod_stream.js / vsm_stream.js.
-  [['Moviesmod', 'moviesmod'], ['Vsm', 'vsm']].forEach(function (pair) {
+  [['Moviesmod', 'moviesmod'], ['Vsm', 'vsm'], ['Vidnest', 'vidnest'],
+   ['Open1', 'open1'], ['Open2', 'open2']].forEach(function (pair) {
     const prefix = '__subhub' + pair[0];
     const mode = pair[1];
 
