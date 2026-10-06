@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 107" in gradle
-assert "versionName '322.3.98'" in gradle
+assert "versionCode 108" in gradle
+assert "versionName '322.3.99'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -602,7 +602,7 @@ vsm=(root/'app/src/main/assets/vsm_stream.js').read_text(encoding='utf-8')
 direct_js=(root/'app/src/main/assets/direct_stream.js').read_text(encoding='utf-8')
 assert 'readAsset("vsm_stream.js")' in main
 assert "mode: 'vsm'" in vsm
-assert "return compact === 'vidsrcmov' || compact === 'vidsrcfyi';" in vsm
+# 322.3.99: the yellow card is open to any server (owner's decision); checked below.
 assert 'vsmEmbedUrl: next.embedUrl' in vsm
 assert 'moviesmodEnabled' not in vsm
 assert "embedUrl: (useSaved || ownerAuto) ? saved.embedUrl : ''" in vsm
@@ -659,7 +659,7 @@ assert "kind: 'tv'" in series
 assert "'https://moviesmod.gd/watch/tv/'" in series
 assert 'seriesAppSources: { [key]: { [mode]: next } }' in series
 assert "['Moviesmod', 'moviesmod'], ['Vsm', 'vsm']" in series
-assert "return compact === 'vidsrcmov' || compact === 'vidsrcfyi';" in series
+# 322.3.99: series yellow mode is open too; checked below.
 print('322.3.83 series checks OK')
 
 # 322.3.84: teal Vidnest card — a full copy of the purple flow for Vidnest only.
@@ -832,7 +832,20 @@ dsp97=(root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_t
 assert 'private final boolean openServers;' in dsp97
 assert 'window.__subhubOpenTapV3298' in dsp97 and 'function legacyEls()' in dsp97
 assert '"open1".equals(mode) || "open2".equals(mode)' in main
-assert 'vidnestMode, openMode,' in main
+assert 'openMode || "moviesmod".equals(mode) || "vsm".equals(mode),' in main  # 322.3.99 widened
 vid98=(root/'app/src/main/assets/vidnest_stream.js').read_text(encoding='utf-8')
 assert "return compact === 'vidnest';" in vid98                     # old teal card unchanged
 print('322.3.98 open server cards checks OK')
+
+# 322.3.99: the yellow card is shown to everyone (not only subscribers).
+vsm99=(root/'app/src/main/assets/vsm_stream.js').read_text(encoding='utf-8')
+assert "function isSubscriber() {\n    return !isOwner();\n  }" in vsm99
+mm99=(root/'app/src/main/assets/moviesmod_stream.js').read_text(encoding='utf-8')
+assert "function isSubscriber() {\n    return !isOwner();\n  }" in mm99
+assert 'return cleanServerLabel(raw).length >= 2;' in vsm99 and "compact === 'vidsrcmov'" not in vsm99
+ser99=(root/'app/src/main/assets/series_stream.js').read_text(encoding='utf-8')
+assert "if (mode === 'vsm') return compact.length >= 2;" in ser99
+assert 'openMode || "moviesmod".equals(mode) || "vsm".equals(mode),' in main
+vid99=(root/'app/src/main/assets/vidnest_stream.js').read_text(encoding='utf-8')
+assert "return compact === 'vidnest';" in vid99          # teal stays Vidnest-only
+print('322.3.99 open system for purple and yellow checks OK')

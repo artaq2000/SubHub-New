@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.98";
-    private static final int NATIVE_VERSION_CODE = 107;
+    private static final String NATIVE_VERSION = "322.3.99";
+    private static final int NATIVE_VERSION_CODE = 108;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -1881,7 +1881,9 @@ public class MainActivity extends Activity {
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
                             sourceUrl, catalog, resumeKey, allowedHost,
                             preferredServerKey, preferredServerLabel, interactiveSource,
-                            ownerMode, openChooser, directEmbedUrl, vidnestMode, openMode,
+                            ownerMode, openChooser, directEmbedUrl, vidnestMode,
+                            // 322.3.99: purple and yellow join the open system; teal stays Vidnest-only.
+                            openMode || "moviesmod".equals(mode) || "vsm".equals(mode),
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;

@@ -56,7 +56,8 @@
     if (!v || v.length > 48) return false;
     if (/^(watch now|play|play now|home|movies|select server|trailer|download|settings)$/.test(v)) return false;
     const compact = v.replace(/[^a-z0-9]/g, '');
-    if (mode === 'vsm') return compact === 'vidsrcmov' || compact === 'vidsrcfyi';
+    // 322.3.99: open system for the yellow mode too (any real server name).
+    if (mode === 'vsm') return compact.length >= 2;
     return compact.length >= 2;
   }
   function normalizePageUrl(raw) {
@@ -317,7 +318,7 @@
     box.style.cssText = 'width:min(520px,96vw);border:1px solid ' + (mode === 'vsm' ? '#e8b544' : '#7b68ee') + ';border-radius:18px;background:#0b1625;color:#fff;padding:16px;box-shadow:0 16px 60px rgba(0,0,0,.55)';
     const title = document.createElement('div');
     title.style.cssText = 'font-weight:900;font-size:1rem;line-height:1.7;margin-bottom:4px';
-    title.textContent = (mode === 'vsm' ? '▶ تجريبي — ' + VSM_SERVERS_TEXT : '🎬 Moviesmod') + ' · الموسم ' + info.season + ' الحلقة ' + info.episode;
+    title.textContent = (mode === 'vsm' ? '▶ مشغّل مباشر — تجريبي' : '🎬 Moviesmod') + ' · الموسم ' + info.season + ' الحلقة ' + info.episode;
     const msg = document.createElement('div');
     msg.style.cssText = 'color:#b8c5d6;font-size:.86rem;line-height:1.7;margin-bottom:12px';
     msg.textContent = 'السيرفر المحفوظ: ' + saved.label;
@@ -379,7 +380,7 @@
       const label = cleanServerLabel(rawLabel);
       if (!key || !label) return;
       if (!validServerLabel(mode, label)) {
-        notify(mode === 'vsm' ? ('هذا الزر لـ ' + VSM_SERVERS_TEXT + ' فقط — اختر أحدهما.') : 'اسم السيرفر غير معروف — جرّب سيرفراً آخر.');
+        notify('اسم السيرفر غير معروف — جرّب سيرفراً آخر.');
         return;
       }
       state.serverKey = key;

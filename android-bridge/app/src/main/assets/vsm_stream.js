@@ -41,10 +41,12 @@
     catch (_) { return false; }
   }
 
+  // 322.3.99: the yellow card plays for everyone who is not the owner —
+  // visitors, members and subscribers alike (the owner asked for it, as for
+  // the teal and the two open cards). Inside this script "subscriber" means
+  // "any viewer".
   function isSubscriber() {
-    if (isOwner()) return false;
-    try { return typeof isSubscribed === 'function' && !!isSubscribed(); }
-    catch (_) { return false; }
+    return !isOwner();
   }
 
   function cleanServerLabel(raw) {
@@ -58,9 +60,10 @@
   // 322.3.79: this card is reserved for the two servers that do not work
   // through the purple card's automatic server click.
   const VSM_SERVERS_TEXT = 'vidsrc.mov / VidSrc.fyi';
+  // 322.3.99: open system — any real server name on the Moviesmod page is
+  // accepted (was vidsrc.mov / VidSrc.fyi only). Saved servers keep working.
   function supportedServerLabel(raw) {
-    const compact = cleanServerLabel(raw).toLowerCase().replace(/[^a-z0-9]/g, '');
-    return compact === 'vidsrcmov' || compact === 'vidsrcfyi';
+    return cleanServerLabel(raw).length >= 2;
   }
 
   function validServerLabel(raw) {
@@ -544,7 +547,7 @@
     const label = cleanServerLabel(rawLabel);
     if (!key || !label) return;
     if (!validServerLabel(label)) {
-      notify('هذا الزر لـ ' + VSM_SERVERS_TEXT + ' فقط — اختر أحدهما.');
+      notify('اسم السيرفر غير معروف — جرّب سيرفراً آخر.');
       return;
     }
 
@@ -724,7 +727,7 @@
     title.style.cssText =
       'border:0;background:transparent;color:#fff;font:inherit;font-weight:800;' +
       'cursor:pointer;line-height:1.5;padding:0 4px';
-    title.textContent = '▶ تجريبي — ' + VSM_SERVERS_TEXT;
+    title.textContent = '▶ مشغّل مباشر — تجريبي';
 
     const detail = document.createElement('small');
     detail.style.cssText = 'display:block;color:#a9b7cb;font-size:.62rem;font-weight:700;margin-top:2px';
