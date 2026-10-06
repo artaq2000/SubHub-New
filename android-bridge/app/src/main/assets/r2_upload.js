@@ -3,6 +3,8 @@
 
   /*
    * SubHub Android 322.3.48 — native background R2 upload.
+ *   322.3.97: «استكمال الرفع» / «إيقاف وحذف الرفع» controls, a «stalled»
+ *   state for jobs no thread works on, one monitor per job.
    *
    * Preferred path:
    *   Web page chooses the file -> Android remembers its content:// Uri ->
@@ -149,38 +151,199 @@
     return false;
   }
 
-  function monitorNative(jobId, ui){
+  /*
+   * 322.3.97 — controls under the progress bar of the quick-link editor:
+   *   «▶ استكمال الرفع»      only when the job is stalled (no thread working on it)
+   *   «⏹ إيقاف وحذف الرفع»   whenever a saved job exists (active, stalled, error)
+   * Delete needs a second tap within 4 s (no confirm() dialog dependency).
+   */
+  var DISCARDED_MSG = '🗑️ تم إيقاف الرفع وحذفه — يمكنك رفع ملف جديد';
+  var CTRL_ID = 'qlR2NativeCtrlV397';
+  var lastKickAt = 0;
+  var monitoredJob = '';
+  var monitoredPromise = null;
+
+  function ctrlHost(){
+    var btn = document.getElementById('qlUpBtn');
+    if(!btn || !btn.parentElement) return null;
+    var host = btn.parentElement;
+    try{
+      var d = getComputedStyle(host).display;
+      // The upload button sits in a row/grid of buttons: go one level up so the
+      // controls get their own full-width line instead of squeezing the row.
+      if((d === 'flex' || d === 'inline-flex' || d === 'grid') && host.parentElement){
+        host = host.parentElement;
+      }
+    }catch(_){}
+    return host;
+  }
+
+  function ctrlButtonCss(kind){
+    var base = 'flex:1;min-width:0;padding:11px 10px;border-radius:12px;' +
+      'font:inherit;font-weight:700;font-size:15px;cursor:pointer;';
+    if(kind === 'danger'){
+      return base + 'background:#2a1416;border:1px solid #7a2a2e;color:#ff8f8f;';
+    }
+    return base + 'background:#13233a;border:1px solid #2f5d93;color:#cfe3ff;';
+  }
+
+  function renderControls(state){
+    var host = ctrlHost();
+    var box = document.getElementById(CTRL_ID);
+    var st = state && state.status;
+    var show = !!(state && state.jobId &&
+      ['queued','uploading','waiting','completing','auth_required','stalled','error'].indexOf(st) >= 0);
+
+    if(!show){
+      if(box) box.remove();
+      return;
+    }
+    if(!host) return;
+
+    if(!box){
+      box = document.createElement('div');
+      box.id = CTRL_ID;
+      box.style.cssText = 'display:flex;gap:10px;width:100%;margin-top:10px;box-sizing:border-box;';
+
+      var resume = document.createElement('button');
+      resume.type = 'button';
+      resume.setAttribute('data-act', 'resume');
+      resume.style.cssText = ctrlButtonCss('normal');
+      resume.textContent = '▶ استكمال الرفع';
+      resume.onclick = function(){ kickResume(true); };
+
+      var del = document.createElement('button');
+      del.type = 'button';
+      del.setAttribute('data-act', 'discard');
+      del.style.cssText = ctrlButtonCss('danger');
+      del.textContent = '⏹ إيقاف وحذف الرفع';
+      del.onclick = function(){ onDiscardTap(del); };
+
+      box.appendChild(resume);
+      box.appendChild(del);
+      host.appendChild(box);
+    }
+
+    var r = box.querySelector('[data-act="resume"]');
+    if(r) r.style.display = st === 'stalled' ? '' : 'none';
+  }
+
+  function onDiscardTap(btn){
+    if(btn.getAttribute('data-armed') !== '1'){
+      btn.setAttribute('data-armed', '1');
+      btn.textContent = 'اضغط مرة ثانية للتأكيد';
+      setTimeout(function(){
+        if(btn.isConnected){
+          btn.removeAttribute('data-armed');
+          btn.textContent = '⏹ إيقاف وحذف الرفع';
+        }
+      }, 4000);
+      return;
+    }
+    var bridge = nativeBridge();
+    var res = '';
+    try{ res = String(bridge ? bridge.discardUpload() : 'ERR:خدمة الرفع غير متاحة'); }catch(_){ res = 'ERR:تعذّر الحذف'; }
+    if(res.indexOf('ERR:') === 0){
+      btn.removeAttribute('data-armed');
+      btn.textContent = '⏹ إيقاف وحذف الرفع';
+      try{ qlUpUI(0, '❌ ' + res.slice(4)); }catch(_){}
+      return;
+    }
+    renderControls(null);
+    try{ qlUpUI(0, DISCARDED_MSG); }catch(_){}
+  }
+
+  function kickResume(manual){
+    var bridge = nativeBridge();
+    if(!bridge || typeof bridge.resumeUpload !== 'function') return;
+    var now = Date.now();
+    if(!manual && now - lastKickAt < 30000) return;
+    lastKickAt = now;
+    try{
+      var res = String(bridge.resumeUpload() || '');
+      if(manual && res.indexOf('ERR:') === 0){
+        try{ qlUpUI(0, '❌ ' + res.slice(4)); }catch(_){}
+      }
+    }catch(_){}
+  }
+
+  function monitorNative(jobId, ui, label){
     var bridge = nativeBridge();
     if(!bridge) return Promise.reject(new Error('خدمة الرفع في الخلفية غير متاحة'));
 
-    return new Promise(function(resolve, reject){
+    // One polling loop per job: focus/visibility used to start a new one every
+    // time. A second caller for the same job shares the running loop's result.
+    if(monitoredJob && monitoredJob === String(jobId || '') && monitoredPromise){
+      return monitoredPromise;
+    }
+    monitoredJob = String(jobId || '');
+
+    var show = function(state){
+      if(state && state.status === 'stalled'){
+        var p = Number(state.percent || 0);
+        if(typeof ui === 'function'){
+          ui(p, '⚠️ الرفع متوقف ولا يتقدّم (' + Math.round(p) +
+            '%) — اضغط «استكمال الرفع» أو «إيقاف وحذف الرفع»');
+        }
+        return;
+      }
+      if(label && typeof ui === 'function' && state && state.message){
+        ui(Number(state.percent || 0), label + state.message);
+        return;
+      }
+      nativeUi(ui, state);
+    };
+
+    monitoredPromise = new Promise(function(resolve, reject){
       var stopped = false;
+      var finish = function(){
+        stopped = true;
+        if(nativeMonitor) clearTimeout(nativeMonitor);
+        if(monitoredJob === String(jobId || '')){ monitoredJob = ''; monitoredPromise = null; }
+      };
 
       async function tick(){
         if(stopped) return;
         var state = parseState(bridge.getState(String(jobId || '')));
-        nativeUi(ui, state);
+
+        // 322.3.97: the job was deleted (or replaced). Before, this status had
+        // no branch at all and the loop polled «none» forever. Checked before
+        // drawing so the «تم الحذف» message is not wiped by an empty update.
+        if(state.status === 'none' || !state.status){
+          finish();
+          renderControls(null);
+          reject(new Error(DISCARDED_MSG));
+          return;
+        }
+
+        show(state);
+        renderControls(state);
 
         if(state.status === 'auth_required'){
           await maybeRefreshNativeAuth(bridge, jobId, state);
         }
 
+        if(state.status === 'stalled'){
+          // One automatic restart attempt every 30 s; the buttons stay visible.
+          kickResume(false);
+        }
+
         if(state.status === 'done'){
-          stopped = true;
-          if(nativeMonitor) clearTimeout(nativeMonitor);
+          finish();
           applyNativeResult(state);
           resolve(state.url || '');
           return;
         }
 
         if(state.status === 'error'){
-          stopped = true;
+          finish();
           reject(new Error(state.message || 'تعذّر إكمال الرفع'));
           return;
         }
 
         if(state.status === 'cancelled'){
-          stopped = true;
+          finish();
+          renderControls(null);
           reject(new Error('تم إيقاف الرفع'));
           return;
         }
@@ -191,6 +354,7 @@
 
       tick();
     });
+    return monitoredPromise;
   }
 
   async function startNativeUpload(file, folder, ui, mode, context){
@@ -229,7 +393,7 @@
         return;
       }
 
-      if(['queued','uploading','waiting','completing','auth_required'].indexOf(state.status) < 0) return;
+      if(['queued','uploading','waiting','completing','auth_required','stalled'].indexOf(state.status) < 0) return;
 
       var mode = String(state.mode || 'quick');
       var ui = null;
@@ -241,7 +405,14 @@
         ui = _seriesTrailerUploadUiV291;
       }
 
-      monitorNative(state.jobId, ui).catch(function(){});
+      // 322.3.97: the saved job belongs to one movie. In any other movie's
+      // editor say so plainly instead of looking like this movie is uploading.
+      var label = '';
+      if(!currentContextMatches(state)){
+        label = '⬆️ رفع فيلم آخر' + (state.filename ? ' (' + state.filename + ')' : '') + ' — ';
+      }
+
+      monitorNative(state.jobId, ui, label).catch(function(){});
     }catch(_){}
   }
 
@@ -444,7 +615,8 @@
         if(urlEl) urlEl.value = url;
         try{ qlUpUI(100, '✅ تم الرفع بالكامل — الرابط جاهز، اضغط حفظ'); }catch(_){}
       }catch(e){
-        try{ qlUpUI(0, '❌ ' + ((e && e.message) ? e.message : 'فشل الرفع')); }catch(_){}
+        var qm = (e && e.message) ? e.message : 'فشل الرفع';
+        try{ qlUpUI(0, qm === DISCARDED_MSG ? qm : '❌ ' + qm); }catch(_){}
       }finally{
         qlBusy = false;
         if(btn){ btn.disabled = false; btn.textContent = '⬆️ ارفع ملفاً إلى R2'; }

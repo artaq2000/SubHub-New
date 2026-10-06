@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 105" in gradle
-assert "versionName '322.3.96'" in gradle
+assert "versionCode 106" in gradle
+assert "versionName '322.3.97'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -802,3 +802,18 @@ _lad = [_alpha(o) for o in range(0, 101, 10)]
 assert all(x < y for x, y in zip(_lad, _lad[1:])), _lad
 assert _lad[1] <= 16 and _lad[-1] <= 220, _lad
 print('322.3.96 true pill subtitle + opacity ladder checks OK')
+
+# 322.3.97: a stuck native R2 upload can always be resumed or deleted.
+bridge97=(root/'app/src/main/java/com/artaq/subhub/R2NativeBridge.java').read_text(encoding='utf-8')
+svc97=(root/'app/src/main/java/com/artaq/subhub/R2UploadService.java').read_text(encoding='utf-8')
+assert 'public synchronized String discardUpload()' in bridge97
+assert 'public synchronized String resumeUpload()' in bridge97
+assert 'activity.stopService(' in bridge97          # never startForegroundService for a cancel
+assert '"stalled"' in bridge97 and 'R2UploadService.WORKER_ALIVE' in bridge97
+assert 'static volatile boolean WORKER_ALIVE' in svc97
+assert 'PART_STALL_MS' in svc97 and 'conn.disconnect()' in svc97
+assert 'ensureReadable(' in svc97 and 'FatalLocalException' in svc97
+assert 'resurrect' in svc97                          # saveState guard against a discarded job
+assert 'qlR2NativeCtrlV397' in r2upload and 'bridge.discardUpload()' in r2upload
+assert "state.status === 'none'" in r2upload
+print('322.3.97 R2 upload unstick checks OK')

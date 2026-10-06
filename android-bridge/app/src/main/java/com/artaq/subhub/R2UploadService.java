@@ -35,6 +35,7 @@ import java.util.TreeMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Foreground multipart uploader for SubHub R2.
@@ -59,6 +60,17 @@ public final class R2UploadService extends Service {
 
     private static final String CHANNEL_ID = "subhub_r2_uploads";
     private static final int NOTIFICATION_ID = 34801;
+
+    /*
+     * 322.3.97: true only while the upload loop is actually executing. The
+     * bridge reads it to tell "uploading" apart from "a saved state that no
+     * thread is working on" — the case that froze the editor on
+     * «تم تجديد الجلسة — استكمال الرفع…» forever.
+     */
+    static volatile boolean WORKER_ALIVE = false;
+
+    /** No bytes written for this long ⇒ the socket is dead; drop it and retry. */
+    private static final long PART_STALL_MS = 90_000L;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -110,9 +122,11 @@ public final class R2UploadService extends Service {
         cancelNow = false;
         acquireWakeLock();
         executor.execute(() -> {
+            WORKER_ALIVE = true;
             try {
                 runUpload();
             } finally {
+                WORKER_ALIVE = false;
                 running.set(false);
                 releaseWakeLock();
             }
@@ -139,6 +153,13 @@ public final class R2UploadService extends Service {
             if (total <= 0L || chunk <= 0L) throw new Exception("حجم الملف غير صالح");
 
             setStatus(state, "uploading", "جاري رفع الفيلم في الخلفية…");
+
+            /*
+             * 322.3.97: after SubHub is closed the picker's read grant can be
+             * gone. Before, every part then failed "temporarily" and retried
+             * forever. Now it stops once with a clear reason.
+             */
+            ensureReadable(Uri.parse(state.optString("uri", "")));
 
             if (state.optString("key", "").isEmpty()
                     || state.optString("uploadId", "").isEmpty()) {
@@ -274,6 +295,10 @@ public final class R2UploadService extends Service {
                 throw e;
             } catch (FatalHttpException e) {
                 throw e;
+            } catch (FatalLocalException e) {
+                throw e;
+            } catch (CancelledException e) {
+                throw e;
             } catch (Exception e) {
                 consecutiveFailures++;
                 state.put("status", "waiting");
@@ -311,6 +336,10 @@ public final class R2UploadService extends Service {
         FileInputStream in = null;
         OutputStream out = null;
 
+        Thread watchdog = null;
+        final AtomicLong lastIo = new AtomicLong(System.currentTimeMillis());
+        final AtomicBoolean stalled = new AtomicBoolean(false);
+
         try {
             c = (HttpURLConnection) new URL(signedUrl).openConnection();
             c.setRequestMethod("PUT");
@@ -319,10 +348,39 @@ public final class R2UploadService extends Service {
             c.setDoOutput(true);
             c.setFixedLengthStreamingMode(length);
             c.setRequestProperty("Content-Type", "application/octet-stream");
-            c.connect();
 
-            pfd = getContentResolver().openFileDescriptor(uri, "r");
-            if (pfd == null) throw new Exception("تعذّر فتح الملف");
+            /*
+             * 322.3.97: readTimeout does not cover WRITES. When the network
+             * drops mid-part, out.write() can block for a very long time and
+             * the whole upload looks frozen. The watchdog disconnects a part
+             * that has sent nothing for PART_STALL_MS; the normal retry loop
+             * then asks for a fresh URL and sends the same part again.
+             */
+            final HttpURLConnection conn = c;
+            watchdog = new Thread(() -> {
+                try {
+                    while (true) {
+                        Thread.sleep(5000L);
+                        if (System.currentTimeMillis() - lastIo.get() > PART_STALL_MS) {
+                            stalled.set(true);
+                            try { conn.disconnect(); } catch (Exception ignored) {}
+                            return;
+                        }
+                    }
+                } catch (InterruptedException ignored) {}
+            }, "SubHubR2PartWatchdog");
+            watchdog.setDaemon(true);
+            watchdog.start();
+
+            c.connect();
+            lastIo.set(System.currentTimeMillis());
+
+            try {
+                pfd = getContentResolver().openFileDescriptor(uri, "r");
+            } catch (SecurityException | java.io.FileNotFoundException e) {
+                throw new FatalLocalException(FILE_GONE);
+            }
+            if (pfd == null) throw new FatalLocalException(FILE_GONE);
             in = new FileInputStream(pfd.getFileDescriptor());
 
             boolean positioned = false;
@@ -344,6 +402,7 @@ public final class R2UploadService extends Service {
                 int n = in.read(buffer, 0, want);
                 if (n < 0) throw new Exception("انتهى الملف قبل اكتمال الجزء");
                 out.write(buffer, 0, n);
+                lastIo.set(System.currentTimeMillis());
                 remaining -= n;
                 sentInPart += n;
 
@@ -359,6 +418,7 @@ public final class R2UploadService extends Service {
                 }
             }
             out.flush();
+            lastIo.set(System.currentTimeMillis());
 
             int code = c.getResponseCode();
             if (code < 200 || code >= 300) {
@@ -374,7 +434,15 @@ public final class R2UploadService extends Service {
                 throw new Exception("لم يصل ETag للجزء");
             }
             return etag.trim();
+        } catch (FatalLocalException | CancelledException e) {
+            throw e;
+        } catch (Exception e) {
+            if (stalled.get()) {
+                throw new Exception("توقّف إرسال الجزء " + partNumber + " — إعادة المحاولة");
+            }
+            throw e;
         } finally {
+            if (watchdog != null) watchdog.interrupt();
             try { if (out != null) out.close(); } catch (Exception ignored) {}
             try { if (in != null) in.close(); } catch (Exception ignored) {}
             try { if (pfd != null) pfd.close(); } catch (Exception ignored) {}
@@ -536,7 +604,37 @@ public final class R2UploadService extends Service {
     }
 
     private void saveState(JSONObject state) {
+        /*
+         * 322.3.97: the loop keeps its own copy of the state. If the owner
+         * pressed «إيقاف وحذف الرفع» (state removed) or started another job,
+         * writing that copy back would resurrect the discarded upload — the
+         * exact "can't delete it" trap. Stop instead.
+         */
+        String mine = state.optString("jobId", "");
+        JSONObject stored = readState();
+        if (stored == null || mine.isEmpty() || !mine.equals(stored.optString("jobId", ""))) {
+            cancelNow = true;
+            return;
+        }
         prefs.edit().putString(KEY_STATE, state.toString()).commit();
+    }
+
+    static final String FILE_GONE =
+            "الملف المختار لم يعد متاحاً للتطبيق — اضغط «إيقاف وحذف الرفع» ثم اختر الملف من جديد";
+
+    private void ensureReadable(Uri uri) throws FatalLocalException {
+        if (uri == null || uri.toString().isEmpty()) throw new FatalLocalException(FILE_GONE);
+        ParcelFileDescriptor p = null;
+        try {
+            p = getContentResolver().openFileDescriptor(uri, "r");
+            if (p == null) throw new FatalLocalException(FILE_GONE);
+        } catch (FatalLocalException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FatalLocalException(FILE_GONE);
+        } finally {
+            try { if (p != null) p.close(); } catch (Exception ignored) {}
+        }
     }
 
     private static TreeMap<Integer, String> readParts(JSONArray a) {
@@ -703,6 +801,15 @@ public final class R2UploadService extends Service {
         return b.build();
     }
 
+    /** Used by «إيقاف وحذف الرفع» so no stale progress notification is left behind. */
+    static void clearNotification(Context ctx) {
+        try {
+            NotificationManager nm =
+                    (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (nm != null) nm.cancel(NOTIFICATION_ID);
+        } catch (Exception ignored) {}
+    }
+
     private void notifyNow(JSONObject state, boolean ongoing) {
         NotificationManager nm =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
@@ -762,6 +869,13 @@ public final class R2UploadService extends Service {
     private static final class AuthRequiredException extends Exception {}
 
     private static final class CancelledException extends Exception {}
+
+    /** A problem on the phone side that retrying cannot fix (file no longer readable). */
+    private static final class FatalLocalException extends Exception {
+        FatalLocalException(String message) {
+            super(message);
+        }
+    }
 
     private static final class FatalHttpException extends Exception {
         FatalHttpException(int code, String body) {
