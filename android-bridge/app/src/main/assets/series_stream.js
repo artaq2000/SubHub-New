@@ -335,7 +335,8 @@
     msg.style.cssText = 'color:#b8c5d6;font-size:.86rem;line-height:1.7;margin-bottom:12px';
     msg.textContent = 'السيرفر المحفوظ: ' + saved.label;
     const row = document.createElement('div');
-    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px';
+    // 322.3.101: رابع زر «إلغاء» يغلق النافذة بلا أي فعل.
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px';
     function btn(text, css, fn) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -349,6 +350,7 @@
     row.appendChild(btn('حذف', 'border:1px solid #783b48;background:#24151d', function () {
       if (confirm('حذف السيرفر المحفوظ لهذه الحلقة؟')) deleteSaved(info, mode);
     }));
+    row.appendChild(btn('إلغاء', 'border:1px solid #475569;background:#1e293b', function () {}));
     box.appendChild(title);
     box.appendChild(msg);
     box.appendChild(row);
