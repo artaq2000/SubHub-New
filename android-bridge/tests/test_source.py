@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 106" in gradle
-assert "versionName '322.3.97'" in gradle
+assert "versionCode 107" in gradle
+assert "versionName '322.3.98'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -359,7 +359,8 @@ assert 'readAsset("moviesmod_stream.js")' in main
 assert '"moviesmod".equals(mode)' in main
 assert 'fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId)' in main
 assert 'allowedHost = "moviesmod.gd"' in main
-assert 'resumeKey = (vidnestMode ? "vidnest_" : "moviesmod_") + stableKey' in main
+# 322.3.98: purple/teal keys unchanged; open cards add their own prefix.
+assert 'resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey' in main
 assert 'resumePrefKey' in direct
 assert 'persistResume(false)' in direct
 assert 'prefs.edit().putLong(key, position).apply()' in direct
@@ -674,7 +675,7 @@ assert "setSubServerKeyV382('vidnest')" in vidnest
 assert "button.style.cssText = 'border-color:#14b8a6;cursor:pointer';" in vidnest
 assert 'final boolean vidnestMode = "vidnest".equals(mode);' in main
 assert '"window.__subhubVidnest"' in main
-assert '(vidnestMode ? "vidnest_" : "moviesmod_") + stableKey' in main
+assert '(vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey' in main
 assert 'ownerMode, openChooser, directEmbedUrl, vidnestMode,' in main
 assert 'static boolean isVidnestProxyPlaylist(Uri u)' in direct
 assert 'return heldPlaylistResponse();' in direct
@@ -817,3 +818,21 @@ assert 'resurrect' in svc97                          # saveState guard against a
 assert 'qlR2NativeCtrlV397' in r2upload and 'bridge.discardUpload()' in r2upload
 assert "state.status === 'none'" in r2upload
 print('322.3.97 R2 upload unstick checks OK')
+
+# 322.3.98: two open-server cards (open1/open2) beside the untouched old cards.
+for key in ('open1', 'open2'):
+    card=(root/('app/src/main/assets/%s_stream.js' % key)).read_text(encoding='utf-8')
+    assert ("mode: '%s'," % key) in card
+    assert ('%sEnabled' % key) in card and 'vidnestEnabled' not in card
+    assert 'return cleanServerLabel(raw).length >= 2;' in card     # no server-name list
+    assert 'return !isOwner();' in card                              # everyone may watch
+    assert "setSubServerKeyV382('%s')" % key in card
+    assert ('readAsset("%s_stream.js")' % key) in main
+dsp97=(root/'app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java').read_text(encoding='utf-8')
+assert 'private final boolean openServers;' in dsp97
+assert 'window.__subhubOpenTapV3298' in dsp97 and 'function legacyEls()' in dsp97
+assert '"open1".equals(mode) || "open2".equals(mode)' in main
+assert 'vidnestMode, openMode,' in main
+vid98=(root/'app/src/main/assets/vidnest_stream.js').read_text(encoding='utf-8')
+assert "return compact === 'vidnest';" in vid98                     # old teal card unchanged
+print('322.3.98 open server cards checks OK')

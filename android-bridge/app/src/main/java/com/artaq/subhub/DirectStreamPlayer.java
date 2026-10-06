@@ -119,6 +119,10 @@ public final class DirectStreamPlayer {
     // (the other is a late fallback), the provider page is never allowed to load
     // the held link itself, and ExoPlayer starts at once.
     private final boolean vidnestMode;
+    // 322.3.98: open-server cards (open1/open2). No built-in list of server
+    // names: every server button on the Moviesmod page counts, and the owner
+    // may tap one directly on the page instead of using the chooser.
+    private final boolean openServers;
     private boolean vidnestProxyCaptured = false;
     private boolean vidnestCandidateIsProxy = false;
     private String vidnestFallbackUrl = null;
@@ -257,7 +261,7 @@ public final class DirectStreamPlayer {
                               boolean openChooser, String directEmbedUrl, Listener listener) {
         this(activity, parent, source, catalog, resumeKey, allowedHost,
                 preferredServerKey, preferredServerLabel, interactiveSource,
-                ownerMode, openChooser, directEmbedUrl, false, listener);
+                ownerMode, openChooser, directEmbedUrl, false, false, listener);
     }
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
@@ -266,7 +270,19 @@ public final class DirectStreamPlayer {
                               boolean interactiveSource, boolean ownerMode,
                               boolean openChooser, String directEmbedUrl,
                               boolean vidnestMode, Listener listener) {
+        this(activity, parent, source, catalog, resumeKey, allowedHost,
+                preferredServerKey, preferredServerLabel, interactiveSource,
+                ownerMode, openChooser, directEmbedUrl, vidnestMode, false, listener);
+    }
+
+    public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
+                              JSONArray catalog, String resumeKey, String allowedHost,
+                              String preferredServerKey, String preferredServerLabel,
+                              boolean interactiveSource, boolean ownerMode,
+                              boolean openChooser, String directEmbedUrl,
+                              boolean vidnestMode, boolean openServers, Listener listener) {
         this.vidnestMode = vidnestMode;
+        this.openServers = openServers && !vidnestMode;
         this.activity = activity;
         this.directEmbedUrl = (directEmbedUrl == null || interactiveSource) ? "" : directEmbedUrl.trim();
         this.listener = listener;
@@ -1101,16 +1117,33 @@ public final class DirectStreamPlayer {
         String wanted = JSONObject.quote(normalizeServerLabel(preferredServerLabel));
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
         return "(function(){try{"
-                + "var bridgeToken=" + bridgeToken + ",wanted=" + wanted + ";"
+                + "var bridgeToken=" + bridgeToken + ",wanted=" + wanted
+                + ",openMode=" + (openServers ? "true" : "false")
+                + ",ownerTap=" + (openServers && interactiveSource ? "true" : "false") + ";"
                 + "function clean(v){return String(v||'').replace(/[⭐★☆]/g,'').replace(/\\s+/g,' ').trim();}"
                 + "function norm(v){return clean(v).toLowerCase();}"
                 + "function bad(t){t=norm(t);return !t||/^(watch now|play|play now|home|movies|select server|trailer|download|settings|view details)$/.test(t);}"
                 + "function known(t){t=norm(t);return /^(vidsrc\\.mov|vidsrc\\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix|peachify)$/.test(t);}"
-                + "function serverEls(){var all=[].slice.call(document.querySelectorAll('button,a,[role=button],[data-server],[data-src],[data-url],[data-embed]'));"
-                + "return all.filter(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');if(bad(t)||t.length>48)return false;"
+                + "var SEL='button,a,[role=button],[data-server],[data-src],[data-url],[data-embed]';"
+                + "function label(e){return clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');}"
+                + "function legacyEls(){var all=[].slice.call(document.querySelectorAll(SEL));"
+                + "return all.filter(function(e){var t=label(e);if(bad(t)||t.length>48)return false;"
                 + "if(e.hasAttribute('data-server'))return true;"
                 + "if((e.hasAttribute('data-src')||e.hasAttribute('data-url')||e.hasAttribute('data-embed'))&&known(t))return true;"
                 + "return known(t);});}"
+                // 322.3.98 open mode: the server grid is found by STRUCTURE, not by name.
+                // Any known server marks its container; every short button in that
+                // container is a server too (new names like «VIP (No ADS)», MappleTV…).
+                // With no known name at all, the largest group of sibling buttons wins.
+                + "function serverEls(){var base=legacyEls();if(!openMode)return base;"
+                + "var all=[].slice.call(document.querySelectorAll(SEL)).filter(function(e){var t=label(e);return t.length>=2&&t.length<=48&&!bad(t);});"
+                + "var boxes=[];base.forEach(function(e){var b=e.parentElement;if(!b)return;"
+                + "var n=all.filter(function(x){return b.contains(x);}).length;if(n<3&&b.parentElement)b=b.parentElement;"
+                + "if(boxes.indexOf(b)<0)boxes.push(b);});"
+                + "if(!boxes.length){var best=null,bn=0,seen=[];all.forEach(function(x){var p=x.parentElement;if(!p||seen.indexOf(p)>=0)return;seen.push(p);"
+                + "var n=all.filter(function(y){return y.parentElement===p;}).length;if(n>bn){bn=n;best=p;}});if(best&&bn>=4)boxes.push(best);}"
+                + "var out=[];all.forEach(function(x){if(out.indexOf(x)<0&&boxes.some(function(b){return b.contains(x);}))out.push(x);});"
+                + "base.forEach(function(x){if(out.indexOf(x)<0)out.push(x);});return out;}"
                 + "function sendList(){try{var names=[],seen={};serverEls().forEach(function(e){var t=clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');var k=norm(t);if(k&&!seen[k]){seen[k]=1;names.push(t);}});"
                 + "if(names.length&&window.SubHubSourceChoice&&window.SubHubSourceChoice.serverPage)window.SubHubSourceChoice.serverPage(bridgeToken,String(location.href||''));"
                 + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.servers(bridgeToken,JSON.stringify(names));}catch(_){}}"
@@ -1128,6 +1161,16 @@ public final class DirectStreamPlayer {
                 + "try{hit.click();}catch(_){}"
                 + "setTimeout(function(){if(reportFrame(lab))return;var p=point(hit);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.autoPick)window.SubHubSourceChoice.autoPick(bridgeToken,lab,p[0],p[1]);},180);"
                 + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);return true;}catch(_){return false;}}"
+                // 322.3.98 open mode, owner only: a tap on ANY server button of the page
+                // (Web Video Caster style) is recorded like a choice from the list, so
+                // it can be saved. Capture phase: the page's own handler still runs.
+                + "if(ownerTap&&!window.__subhubOpenTapV3298){window.__subhubOpenTapV3298=1;"
+                + "document.addEventListener('click',function(ev){try{var t=ev.target&&ev.target.closest?ev.target.closest(SEL):null;"
+                + "if(!t||serverEls().indexOf(t)<0)return;var lab=label(t);if(!lab||!window.SubHubSourceChoice)return;"
+                + "if(window.SubHubSourceChoice.serverPage)window.SubHubSourceChoice.serverPage(bridgeToken,String(location.href||''));"
+                + "window.SubHubSourceChoice.picked(bridgeToken,lab);"
+                + "var d=direct(t);if(d){window.SubHubSourceChoice.resolved(bridgeToken,lab,d);return;}"
+                + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);}catch(_){}},true);}"
                 + "window.__subhubSelectProvider=activate;"
                 + "window.__subhubRequestServerList=function(){sendList();var n=0,t=setInterval(function(){n++;sendList();if(n>=8)clearInterval(t);},350);};"
                 + "sendList();"
@@ -1253,7 +1296,9 @@ public final class DirectStreamPlayer {
 
     private void beginCapture() {
         if (interactiveSource) {
-            showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+            showStage(openServers
+                    ? "ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط أي سيرفر في الصفحة — أو «جلب السيرفرات»."
+                    : "ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
         } else {
             if (subscriberStartupAttempt == 0) subscriberStartupAttempt = 1;
             if (subscriberStartupAttempt > 1) showSubscriberStage("جارٍ إعادة المحاولة");
@@ -1312,7 +1357,9 @@ public final class DirectStreamPlayer {
                     }
                 } else {
                     if (interactiveSource) {
-                        showStage("ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
+                        showStage(openServers
+                    ? "ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط أي سيرفر في الصفحة — أو «جلب السيرفرات»."
+                    : "ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
                     } else {
                         startSubscriberStartupTimer(2);
                     }

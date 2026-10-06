@@ -67,8 +67,8 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.97";
-    private static final int NATIVE_VERSION_CODE = 106;
+    private static final String NATIVE_VERSION = "322.3.98";
+    private static final int NATIVE_VERSION_CODE = 107;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -262,6 +262,8 @@ public class MainActivity extends Activity {
                 + readAsset("moviesmod_stream.js") + "\n"
                 + readAsset("vsm_stream.js") + "\n"
                 + readAsset("vidnest_stream.js") + "\n"
+                + readAsset("open1_stream.js") + "\n"
+                + readAsset("open2_stream.js") + "\n"
                 + readAsset("series_stream.js") + "\n"
                 + readAsset("r2_upload.js");
 
@@ -1803,9 +1805,17 @@ public class MainActivity extends Activity {
                     // 322.3.84: "vidnest" (teal card) is a full copy of the purple flow for the
                     // Vidnest server only, with its own capture rules in DirectStreamPlayer.
                     final boolean vidnestMode = "vidnest".equals(mode);
-                    final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode) || vidnestMode;
+                    // 322.3.98: "open1"/"open2" — open-server cards. Same owner/subscriber flow
+                    // as the purple card, but the server is whatever the owner taps on the
+                    // Moviesmod page (no built-in list of server names).
+                    final boolean openMode = "open1".equals(mode) || "open2".equals(mode);
+                    final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode)
+                            || vidnestMode || openMode;
                     final String jsPrefix = "vsm".equals(mode) ? "window.__subhubVsm"
-                            : vidnestMode ? "window.__subhubVidnest" : "window.__subhubMoviesmod";
+                            : vidnestMode ? "window.__subhubVidnest"
+                            : "open1".equals(mode) ? "window.__subhubOpen1"
+                            : "open2".equals(mode) ? "window.__subhubOpen2"
+                            : "window.__subhubMoviesmod";
                     String directEmbedUrl = "";
                     if (moviesmodFlow) {
                         String tmdbId = config.optString("tmdbId");
@@ -1831,7 +1841,7 @@ public class MainActivity extends Activity {
                         }
                         sourceUrl = resolvedSourceUrl;
                         allowedHost = "moviesmod.gd";
-                        resumeKey = (vidnestMode ? "vidnest_" : "moviesmod_") + stableKey;
+                        resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
                         preferredServerKey = config.optString("serverKey", "").trim();
                         preferredServerLabel = config.optString("serverLabel", "").trim();
                         interactiveSource = config.optBoolean("interactiveSource", false);
@@ -1871,7 +1881,7 @@ public class MainActivity extends Activity {
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
                             sourceUrl, catalog, resumeKey, allowedHost,
                             preferredServerKey, preferredServerLabel, interactiveSource,
-                            ownerMode, openChooser, directEmbedUrl, vidnestMode,
+                            ownerMode, openChooser, directEmbedUrl, vidnestMode, openMode,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
