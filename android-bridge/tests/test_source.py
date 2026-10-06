@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 109" in gradle
-assert "versionName '322.3.100'" in gradle
+assert "versionCode 110" in gradle
+assert "versionName '322.3.101'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -858,3 +858,9 @@ assert "if (mode === 'vidnest') return compact === 'vidnest';" in ser100
 assert "function isSubscriber() {\n    return !isOwner();\n  }" in ser100
 assert main.index('readAsset("open2_stream.js")') < main.index('readAsset("series_stream.js")')   # film handlers first
 print('322.3.100 series five app cards checks OK')
+
+# 322.3.101: owner sheet of an episode server gets a fourth «إلغاء» button.
+ser101 = (ROOT / 'app/src/main/assets/series_stream.js').read_text(encoding='utf-8') if 'ROOT' in globals() else open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert "grid-template-columns:1fr 1fr 1fr 1fr" in ser101
+assert "row.appendChild(btn('إلغاء'" in ser101
+print('322.3.101 sheet cancel checks OK')
