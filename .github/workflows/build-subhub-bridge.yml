@@ -3,7 +3,7 @@ name: Build TEST SubHub 322.3.103 sync window
 on:
   push:
     branches:
-      - 'test/sync-tap-322.3.103'
+      - 'test/sync2-322.3.103'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
