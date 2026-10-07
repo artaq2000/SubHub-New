@@ -882,7 +882,10 @@
       #embedPlayerModal #subhub-vidsrc-takeover-v3222.controls-hidden .sh-v3222-center{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       #embedPlayerModal .video-modal-box.sh-v3251-quality #subhub-vidsrc-takeover-v3222,
       #embedPlayerModal .video-modal-box.sh-v3251-quality #vidsrcWakeV374{display:none!important}
-      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{font-size:13px!important;width:46px!important;min-width:46px!important;max-width:46px!important;height:46px!important;padding:0!important;flex:0 0 46px!important;border-radius:999px!important;background:rgba(8,12,18,.76)!important}
+      /* 322.3.102: زر ✕ البديل يبقى في الشريط بعد الخروج من VidSrc أو من ملء الشاشة؛
+         بلا توسيط كان يرث justify-content:flex-start من .video-top-btn فتخرج علامة ✕
+         عن دائرتها، وكان أكبر (46) من بقية الأزرار (38). داخل VidSrc تبقى قاعدة 46 الأقوى. */
+      #embedPlayerModal #embedTopBar .subhub-provider-shortcut-v3231{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:0!important;font-size:16px!important;line-height:1!important;width:38px!important;min-width:38px!important;max-width:38px!important;height:38px!important;padding:0!important;margin:0!important;flex:0 0 38px!important;box-sizing:border-box!important;border-radius:999px!important;background:rgba(0,0,0,.55)!important}
       #embedPlayerModal #embedTopBar .subhub-provider-close-hidden-v3233{display:none!important}
       #subhub-vidsrc-subtitle-gesture-v3229{z-index:2147483502!important}
       #embedPlayerModal .video-modal-box[data-subhub-vidsrc="1"] #embedUiTrigger,

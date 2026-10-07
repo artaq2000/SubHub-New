@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 110" in gradle
-assert "versionName '322.3.101'" in gradle
+assert "versionCode 111" in gradle
+assert "versionName '322.3.102'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -864,3 +864,8 @@ ser101 = (ROOT / 'app/src/main/assets/series_stream.js').read_text(encoding='utf
 assert "grid-template-columns:1fr 1fr 1fr 1fr" in ser101
 assert "row.appendChild(btn('إلغاء'" in ser101
 print('322.3.101 sheet cancel checks OK')
+
+# 322.3.102: the replacement ✕ in the embed bar is centred and sized like the other buttons.
+sb102 = open('app/src/main/assets/site_bridge.js', encoding='utf-8').read()
+assert "#embedTopBar .subhub-provider-shortcut-v3231{display:inline-flex!important;align-items:center!important;justify-content:center!important" in sb102
+print('322.3.102 centered close checks OK')
