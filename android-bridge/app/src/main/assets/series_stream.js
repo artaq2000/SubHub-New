@@ -438,6 +438,44 @@
       return false;
     };
 
+    // 322.3.103: owner pins only the timing of THIS episode on this card.
+    const prevSyncPin = window[prefix + 'SyncPinNow'];
+    window[prefix + 'SyncPinNow'] = async function (session, rawOffsetMs) {
+      const state = active;
+      if (!state || state.session !== session) {
+        if (typeof prevSyncPin === 'function') return prevSyncPin.apply(this, arguments);
+        return false;
+      }
+      const offset = clampOffset(rawOffsetMs);
+      function syncReport(ok, text) {
+        try {
+          const b = window.SubHubAndroidBridge;
+          if (b && typeof b.directStreamSyncPinned === 'function') b.directStreamSyncPinned(token, session, !!ok, text, offset);
+          else report(session, ok, text);
+        } catch (_) {}
+      }
+      if (!state.owner || !isOwner()) { syncReport(false, 'تعذّر تثبيت التوقيت'); return false; }
+      try {
+        if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) { syncReport(false, 'تعذّر تثبيت التوقيت'); return false; }
+        const key = epKey(state.season, state.episode);
+        await db.collection('subtitles').doc(state.movieId).set({
+          seriesAppSources: { [key]: { [mode]: { subtitleOffsetMs: offset, updatedAt: Date.now() } } }
+        }, { merge: true });
+        const map = movieDoc().seriesAppSources || {};
+        const prevEntry = (map[key] && map[key][mode]) || {};
+        syncLocal(state.movieId, key, mode, Object.assign({}, prevEntry, { subtitleOffsetMs: offset }));
+        state.subtitleOffsetMs = offset;
+        if (state.pending) state.pending.subtitleOffsetMs = offset;
+        const secs = (Math.abs(offset) / 1000).toFixed(1);
+        const words = Math.abs(offset) < 50 ? 'بلا تعديل' : (offset > 0 ? 'مؤخَّرة ' + secs + ' ث' : 'مقدَّمة ' + secs + ' ث');
+        syncReport(true, 'تم تثبيت توقيت الحلقة ' + state.episode + ' ✓ ' + words);
+        return true;
+      } catch (_) {
+        syncReport(false, 'تعذّر تثبيت التوقيت');
+        return false;
+      }
+    };
+
     const prevReopen = window[prefix + 'ReopenManual'];
     window[prefix + 'ReopenManual'] = function (rawPageUrl) {
       const last = lastClosed;

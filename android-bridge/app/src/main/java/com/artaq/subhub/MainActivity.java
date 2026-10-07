@@ -67,7 +67,7 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.102";
+    private static final String NATIVE_VERSION = "322.3.103";
     private static final int NATIVE_VERSION_CODE = 109;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
@@ -1817,6 +1817,9 @@ public class MainActivity extends Activity {
                             : "open2".equals(mode) ? "window.__subhubOpen2"
                             : "window.__subhubMoviesmod";
                     String directEmbedUrl = "";
+                    // 322.3.103: ⏱ timing saved on this device belongs to this film
+                    // (or episode) on this card only.
+                    String syncScopeValue = "";
                     if (moviesmodFlow) {
                         String tmdbId = config.optString("tmdbId");
                         String kind = config.optString("kind", "movie");
@@ -1842,6 +1845,7 @@ public class MainActivity extends Activity {
                         sourceUrl = resolvedSourceUrl;
                         allowedHost = "moviesmod.gd";
                         resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
+                        syncScopeValue = mode + "_" + stableKey;
                         preferredServerKey = config.optString("serverKey", "").trim();
                         preferredServerLabel = config.optString("serverLabel", "").trim();
                         interactiveSource = config.optBoolean("interactiveSource", false);
@@ -1929,8 +1933,16 @@ public class MainActivity extends Activity {
                                     + JSONObject.quote(session) + "," + index + ")";
                             webView.evaluateJavascript(js, null);
                         }
+                        public void syncPinRequested(long subtitleOffsetMs) {
+                            if (!moviesmodFlow || webView == null) return;
+                            String js = jsPrefix + "SyncPinNow && " + jsPrefix + "SyncPinNow("
+                                    + JSONObject.quote(session) + ","
+                                    + DirectStreamPlayer.clampSync(subtitleOffsetMs) + ")";
+                            webView.evaluateJavascript(js, null);
+                        }
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
+                    directStreamPlayer.setSyncScope(syncScopeValue);
                     directStreamPlayer.selectDefault(config.optInt("defaultIndex", -1));
                 } catch (Exception ignored) {
                     Toast.makeText(MainActivity.this, "تعذّر فتح المشغّل المباشر", Toast.LENGTH_LONG).show();
@@ -1982,6 +1994,19 @@ public class MainActivity extends Activity {
             ui.post(() -> {
                 if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session)) {
                     directStreamPlayer.showSaveResult(ok, safe);
+                }
+            });
+        }
+
+        // 322.3.103: result of «📌 تثبيت التوقيت» (owner, this film on this card).
+        @JavascriptInterface
+        public void directStreamSyncPinned(String token, String session, boolean ok, String message, double offsetMs) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            final String safe = message == null ? "" : message.substring(0, Math.min(160, message.length()));
+            final long pinned = Double.isNaN(offsetMs) ? 0L : DirectStreamPlayer.clampSync(Math.round(offsetMs));
+            ui.post(() -> {
+                if (isTrustedHomePage() && directStreamPlayer != null && directStreamSession.equals(session)) {
+                    directStreamPlayer.showSyncPinResult(ok, safe, pinned);
                 }
             });
         }

@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.102 centered close button
+name: Build TEST SubHub 322.3.103 sync window
 
 on:
   push:
     branches:
-      - 'test/close-center-322.3.102'
+      - 'test/sync-tap-322.3.103'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -75,6 +75,9 @@ jobs:
 
       - name: Test independent stream sessions
         run: node tests/direct_stream.test.cjs
+
+      - name: Test owner timing pin per film and episode
+        run: node tests/sync_pin.test.cjs
 
       - name: Test exclusive subtitle pieces in app players
         run: |

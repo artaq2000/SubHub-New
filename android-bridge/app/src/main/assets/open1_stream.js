@@ -589,6 +589,57 @@
     return !!ok;
   };
 
+  // 322.3.103: owner pins ONLY the subtitle timing for this film on this card
+  // (⏱ window in the native player). The saved server and the pinned subtitle
+  // are untouched; other films on the same server keep their own timing.
+  window.__subhubOpen1SyncPinNow = async function (session, rawOffsetMs) {
+    const state = active;
+    const bridge = window.SubHubAndroidBridge;
+    function report(ok, text, value) {
+      try {
+        if (bridge && typeof bridge.directStreamSyncPinned === 'function') {
+          bridge.directStreamSyncPinned(token, session, !!ok, text, Number(value || 0));
+        } else if (bridge && typeof bridge.directStreamSaveResult === 'function') {
+          bridge.directStreamSaveResult(token, session, !!ok, text);
+        }
+      } catch (_) {}
+    }
+    const raw = Number(rawOffsetMs);
+    const offset = Number.isFinite(raw) ? Math.max(-600000, Math.min(600000, Math.round(raw))) : 0;
+    if (!state || state.session !== session || !state.owner || !state.movieId || !isOwner()) {
+      report(false, 'تعذّر تثبيت التوقيت', offset);
+      return false;
+    }
+    try {
+      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) {
+        report(false, 'تعذّر تثبيت التوقيت', offset);
+        return false;
+      }
+      await db.collection('subtitles').doc(state.movieId).set({
+        open1SubtitleOffsetMs: offset,
+        open1UpdatedAt: Date.now()
+      }, { merge: true });
+      state.subtitleOffsetMs = offset;
+      if (pendingChoice && pendingChoice.movieId === state.movieId) pendingChoice.subtitleOffsetMs = offset;
+      if (serverState.movieId === state.movieId) serverState.subtitleOffsetMs = offset;
+      try {
+        const c = current();
+        if (c && String(c.id || '') === state.movieId) {
+          const merged = Object.assign({}, movieDoc(), { open1SubtitleOffsetMs: offset });
+          window._lastRenderedMovieDoc = merged;
+          if (typeof _mdocPut === 'function') _mdocPut(state.movieId, merged);
+        }
+      } catch (_) {}
+      const secs = (Math.abs(offset) / 1000).toFixed(1);
+      const words = Math.abs(offset) < 50 ? 'بلا تعديل' : (offset > 0 ? 'مؤخَّرة ' + secs + ' ث' : 'مقدَّمة ' + secs + ' ث');
+      report(true, 'تم تثبيت التوقيت للجميع ✓ ' + words, offset);
+      return true;
+    } catch (_) {
+      report(false, 'تعذّر تثبيت التوقيت', offset);
+      return false;
+    }
+  };
+
   // 322.3.82: owner pins the selected subtitle to this server (toggle).
   window.__subhubOpen1PinNow = async function (session, index) {
     const state = active;

@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 111" in gradle
-assert "versionName '322.3.102'" in gradle
+assert "versionCode 112" in gradle
+assert "versionName '322.3.103'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -869,3 +869,22 @@ print('322.3.101 sheet cancel checks OK')
 sb102 = open('app/src/main/assets/site_bridge.js', encoding='utf-8').read()
 assert "#embedTopBar .subhub-provider-shortcut-v3231{display:inline-flex!important;align-items:center!important;justify-content:center!important" in sb102
 print('322.3.102 centered close checks OK')
+
+# 322.3.103: ⏱ sync window replaces −.5/+.5; timing is per film/episode per card.
+d103 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m103 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+assert 'addCompactQuick("⏱ توقيت", this::openSyncPanel)' in d103
+assert 'addCompactQuick("−.5"' not in d103 and 'addCompactQuick("+.5"' not in d103
+assert 'void syncPinRequested(long subtitleOffsetMs);' in d103
+assert 'static long syncOffsetFor(long positionMs, double cueStartSec)' in d103
+assert '"sync_offset_" + syncScope' in d103
+assert 'syncScopeValue = mode + "_" + stableKey;' in m103
+assert 'directStreamPlayer.setSyncScope(syncScopeValue);' in m103
+assert 'public void directStreamSyncPinned(' in m103
+for f, w in [('moviesmod','Moviesmod'),('vsm','Vsm'),('vidnest','Vidnest'),('open1','Open1'),('open2','Open2')]:
+    src = open('app/src/main/assets/%s_stream.js' % f, encoding='utf-8').read()
+    assert 'window.__subhub%sSyncPinNow = async function' % w in src
+    assert '%sSubtitleOffsetMs: offset,' % f in src
+s103 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert "window[prefix + 'SyncPinNow'] = async function" in s103
+print('322.3.103 sync window checks OK')

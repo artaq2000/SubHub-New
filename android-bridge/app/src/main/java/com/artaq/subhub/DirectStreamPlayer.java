@@ -76,6 +76,9 @@ public final class DirectStreamPlayer {
         void pinRequested(int index);
         // 322.3.92: exclusive subtitles — ask JS for the 4-second piece at this time.
         void segmentRequested(int index, double time);
+        // 322.3.103: owner pins only the subtitle timing for this film (or episode)
+        // on this card — the saved server and the pinned subtitle stay untouched.
+        void syncPinRequested(long subtitleOffsetMs);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -414,8 +417,11 @@ public final class DirectStreamPlayer {
         addCompactQuick("A+", () -> adjustSubtitleSize(2));
         addCompactQuick("↑", () -> adjustSubtitlePosition(4));
         addCompactQuick("↓", () -> adjustSubtitlePosition(-4));
-        addCompactQuick("−.5", () -> adjustSync(500));
-        addCompactQuick("+.5", () -> adjustSync(-500));
+        // 322.3.103: one ⏱ button opens the sync window (replaces −.5 / +.5).
+        TextView syncQuick = addCompactQuick("⏱ توقيت", this::openSyncPanel);
+        LinearLayout.LayoutParams syncQuickLp = (LinearLayout.LayoutParams) syncQuick.getLayoutParams();
+        syncQuickLp.width = dp(78);
+        syncQuick.setLayoutParams(syncQuickLp);
         addCompactQuick("◐−", () -> adjustSubtitleBackground(-SUBTITLE_BG_STEP));
         addCompactQuick("◐+", () -> adjustSubtitleBackground(SUBTITLE_BG_STEP));
         addCompactQuick("🎨", this::showColorOptions);
@@ -2480,6 +2486,7 @@ public final class DirectStreamPlayer {
 
     private void hidePanel() {
         panelOpen = false;
+        syncPanelOpen = false;
         panel.setVisibility(View.GONE);
         enterImmersive();
     }
@@ -2760,13 +2767,6 @@ public final class DirectStreamPlayer {
         positionSubtitle();
     }
 
-    private void adjustSync(long deltaMs) {
-        subtitleOffsetMs = Math.max(-600000L, Math.min(600000L, subtitleOffsetMs + deltaMs));
-        double seconds = subtitleOffsetMs / 1000.0;
-        String sign = seconds > 0 ? "+" : "";
-        showTransientValue("مزامنة " + sign + String.format(Locale.US, "%.1f", seconds) + " ث", 850);
-    }
-
     private void requestSave() {
         if (!ownerMode) return;
         listener.saveRequested(subtitleOffsetMs);
@@ -2782,7 +2782,384 @@ public final class DirectStreamPlayer {
     }
 
     public void setSubtitleOffsetMs(long value) {
-        subtitleOffsetMs = Math.max(-600000L, Math.min(600000L, value));
+        subtitleOffsetMs = clampSync(value);
+        syncBaselineMs = subtitleOffsetMs;
+    }
+
+    // ---------------------------------------------------------------------
+    // 322.3.103: ⏱ sync window. The viewer pauses the film the moment the
+    // actor speaks the line shown here and taps 🎯 — the app computes the
+    // offset itself, so nobody has to guess whether to add or subtract.
+    // Scope: this film (or this episode) on this card only.
+    //   owner      → «📌 تثبيت التوقيت» saves it in SubHub for everyone;
+    //   any viewer → «💾 حفظ على جهازي» keeps it on this device, or closes
+    //                without saving (the change lasts for this viewing only).
+    // Positive offset = the subtitle appears later than in the file.
+    // ---------------------------------------------------------------------
+    private boolean syncPanelOpen = false;
+    private String syncScope = "";
+    private long syncBaselineMs = 0L;
+    private double syncRefStartSec = Double.NaN;
+    private TextView syncClockView;
+    private TextView syncStateView;
+    private TextView syncLineView;
+    private TextView syncLineTimeView;
+    private TextView syncTapButton;
+    private TextView syncPlayButton;
+    private TextView syncSaveButton;
+    private TextView syncRevertButton;
+
+    static long clampSync(long value) {
+        return Math.max(-600000L, Math.min(600000L, value));
+    }
+
+    // Called right after setSubtitleOffsetMs: a timing this viewer saved on
+    // this device for this film/episode on this card wins over SubHub's.
+    public void setSyncScope(String scope) {
+        syncScope = scope == null ? "" : scope.trim();
+        if (syncScope.length() > 140) syncScope = syncScope.substring(0, 140);
+        if (hasLocalSync()) subtitleOffsetMs = clampSync(prefs.getLong(syncPrefKey(), 0L));
+    }
+
+    private String syncPrefKey() {
+        return syncScope.isEmpty() ? "" : "sync_offset_" + syncScope;
+    }
+
+    private boolean hasLocalSync() {
+        String key = syncPrefKey();
+        return !key.isEmpty() && prefs.contains(key);
+    }
+
+    static String syncClockText(long ms) {
+        long safe = Math.max(0L, ms);
+        long s = safe / 1000L;
+        long h = s / 3600L, m = (s % 3600L) / 60L, sec = s % 60L;
+        String base = h > 0
+                ? String.format(Locale.US, "%d:%02d:%02d", h, m, sec)
+                : String.format(Locale.US, "%02d:%02d", m, sec);
+        return base + "." + ((safe % 1000L) / 100L);
+    }
+
+    static String syncSecondsText(long ms) {
+        return String.format(Locale.US, "%.1f", Math.abs(ms) / 1000.0);
+    }
+
+    static String syncDescribe(long offsetMs) {
+        if (Math.abs(offsetMs) < 50L) return "✓ بلا تعديل — توقيت ملف الترجمة الأصلي";
+        return offsetMs > 0
+                ? "الترجمة مؤخَّرة " + syncSecondsText(offsetMs) + " ث عن الملف"
+                : "الترجمة مقدَّمة " + syncSecondsText(offsetMs) + " ث عن الملف";
+    }
+
+    // Offset that makes a line which starts at cueStartSec in the file
+    // appear exactly at the current film position.
+    static long syncOffsetFor(long positionMs, double cueStartSec) {
+        return clampSync(positionMs - Math.round(cueStartSec * 1000.0));
+    }
+
+    private double cueStartAt(int i) {
+        JSONObject c = cues.optJSONObject(i);
+        if (c == null) return Double.NaN;
+        double v = c.optDouble("start", Double.NaN);
+        return Double.isInfinite(v) ? Double.NaN : v;
+    }
+
+    private int[] syncSortedCues() {
+        ArrayList<Integer> idx = new ArrayList<>();
+        for (int i = 0; i < cues.length(); i++) if (!Double.isNaN(cueStartAt(i))) idx.add(i);
+        java.util.Collections.sort(idx, (a, b) -> Double.compare(cueStartAt(a), cueStartAt(b)));
+        int[] out = new int[idx.size()];
+        for (int i = 0; i < out.length; i++) out[i] = idx.get(i);
+        return out;
+    }
+
+    // Position (inside the sorted list) of the line nearest to targetSec.
+    private int syncNearest(int[] order, double targetSec) {
+        int best = -1;
+        double bestGap = Double.MAX_VALUE;
+        for (int i = 0; i < order.length; i++) {
+            double gap = Math.abs(cueStartAt(order[i]) - targetSec);
+            if (gap < bestGap) { bestGap = gap; best = i; }
+        }
+        return best;
+    }
+
+    private long syncPositionMs() {
+        return player == null ? 0L : Math.max(0L, player.getContentPosition());
+    }
+
+    private boolean syncHasLines() {
+        return captions && selectedSubtitle >= 0 && cues.length() > 0;
+    }
+
+    // The reference line: the one chosen with السابق/التالي, otherwise the
+    // line nearest to where the film is now (in file time).
+    private JSONObject syncReferenceCue() {
+        if (!syncHasLines()) return null;
+        int[] order = syncSortedCues();
+        if (order.length == 0) return null;
+        double target = Double.isNaN(syncRefStartSec)
+                ? (syncPositionMs() - subtitleOffsetMs) / 1000.0
+                : syncRefStartSec;
+        int at = syncNearest(order, target);
+        return at < 0 ? null : cues.optJSONObject(order[at]);
+    }
+
+    private void syncStep(int direction) {
+        if (!syncHasLines()) return;
+        int[] order = syncSortedCues();
+        if (order.length == 0) return;
+        double target = Double.isNaN(syncRefStartSec)
+                ? (syncPositionMs() - subtitleOffsetMs) / 1000.0
+                : syncRefStartSec;
+        int at = syncNearest(order, target);
+        int next = Math.max(0, Math.min(order.length - 1, at + direction));
+        syncRefStartSec = cueStartAt(order[next]);
+        updateSyncPanelTexts();
+    }
+
+    private void syncTapNow() {
+        if (player == null) {
+            showTransientValue("انتظر حتى يبدأ الفيديو", 1300);
+            return;
+        }
+        JSONObject cue = syncReferenceCue();
+        if (cue == null) {
+            showTransientValue("اختر ترجمة من CC أولاً", 1500);
+            return;
+        }
+        setSyncOffset(syncOffsetFor(syncPositionMs(), cue.optDouble("start", 0d)));
+        syncRefStartSec = cue.optDouble("start", Double.NaN);
+        showTransientValue("تم ✓ " + syncDescribe(subtitleOffsetMs), 1600);
+    }
+
+    private void setSyncOffset(long value) {
+        subtitleOffsetMs = clampSync(value);
+        updateSyncPanelTexts();
+    }
+
+    private void syncTogglePlay() {
+        if (player == null) return;
+        if (player.isPlaying()) player.pause(); else player.play();
+        updateSyncPanelTexts();
+    }
+
+    private void syncSaveLocal() {
+        String key = syncPrefKey();
+        if (key.isEmpty()) {
+            showTransientValue("تعذّر الحفظ لهذا الفيلم", 1500);
+            return;
+        }
+        prefs.edit().putLong(key, subtitleOffsetMs).apply();
+        showTransientValue("💾 حُفظ على جهازك لهذا الفيلم", 1500);
+        hidePanel();
+    }
+
+    private void syncRevert() {
+        String key = syncPrefKey();
+        if (!ownerMode && !key.isEmpty()) prefs.edit().remove(key).apply();
+        syncRefStartSec = Double.NaN;
+        setSyncOffset(syncBaselineMs);
+        showTransientValue(ownerMode ? "رجعنا للتوقيت المثبّت" : "رجعنا لتوقيت SubHub", 1300);
+    }
+
+    private void syncPinForEveryone() {
+        if (!ownerMode) return;
+        listener.syncPinRequested(subtitleOffsetMs);
+        showTransientValue("جارٍ تثبيت التوقيت…", 1000);
+    }
+
+    // Result of «📌 تثبيت التوقيت» from SubHub (does not touch the save bar).
+    public void showSyncPinResult(boolean ok, String text, long pinnedMs) {
+        if (closed) return;
+        String value = text == null ? "" : text.trim();
+        if (value.isEmpty()) value = ok ? "تم تثبيت التوقيت ✓" : "تعذّر تثبيت التوقيت";
+        if (ok) {
+            syncBaselineMs = clampSync(pinnedMs);
+            updateSyncPanelTexts();
+        }
+        showTransientValue(value, ok ? 1700 : 2200);
+    }
+
+    private TextView syncText(float sizeSp, int color) {
+        TextView v = new TextView(activity);
+        v.setTextColor(color);
+        v.setTextSize(sizeSp);
+        v.setGravity(Gravity.CENTER);
+        v.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
+        v.setLineSpacing(0, 1.12f);
+        return v;
+    }
+
+    private LinearLayout syncRow() {
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        return row;
+    }
+
+    private TextView addSyncRowChip(LinearLayout row, String text, Runnable action) {
+        TextView v = chip(text, 13, action);
+        v.setPadding(dp(3), 0, dp(3), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+        lp.setMargins(dp(2), 0, dp(2), 0);
+        row.addView(v, lp);
+        return v;
+    }
+
+    private void addSyncBlock(LinearLayout list, View v, int topDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.setMargins(0, dp(topDp), 0, 0);
+        list.addView(v, lp);
+    }
+
+    private void openSyncPanel() {
+        hideColorStrip();
+        syncRefStartSec = Double.NaN;
+        panelTitle.setText("⏱ توقيت الترجمة");
+        panelBody.removeAllViews();
+
+        ScrollView scroll = new ScrollView(activity);
+        LinearLayout list = new LinearLayout(activity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(6), dp(2), dp(6), dp(14));
+
+        syncClockView = syncText(15, Color.WHITE);
+        addSyncBlock(list, syncClockView, 0);
+
+        syncStateView = syncText(14, GOLD);
+        addSyncBlock(list, syncStateView, 4);
+
+        TextView hint = syncText(12, 0xffaecbe0);
+        hint.setText("أوقف الفيديو لحظة ينطق الممثل السطر الظاهر هنا، ثم اضغط 🎯");
+        addSyncBlock(list, hint, 8);
+
+        LinearLayout lineBox = new LinearLayout(activity);
+        lineBox.setOrientation(LinearLayout.VERTICAL);
+        lineBox.setPadding(dp(10), dp(8), dp(10), dp(8));
+        lineBox.setBackground(round(PANEL_2, BORDER, 1, 12));
+        syncLineView = syncText(16, Color.WHITE);
+        syncLineView.setMaxLines(4);
+        lineBox.addView(syncLineView, new LinearLayout.LayoutParams(-1, -2));
+        syncLineTimeView = syncText(12, 0xff9fb6c8);
+        lineBox.addView(syncLineTimeView, new LinearLayout.LayoutParams(-1, -2));
+        addSyncBlock(list, lineBox, 6);
+
+        LinearLayout nav = syncRow();
+        addSyncRowChip(nav, "→ السطر السابق", () -> syncStep(-1));
+        addSyncRowChip(nav, "السطر التالي ←", () -> syncStep(1));
+        addSyncBlock(list, nav, 6);
+
+        // Play/pause lives inside the window: in portrait it sits over the
+        // video's own controls, and the pause must land on the spoken word.
+        LinearLayout playRow = syncRow();
+        addSyncRowChip(playRow, "⏪ رجوع ٣ ث", () -> {
+            if (player != null) player.seekTo(Math.max(0L, player.getCurrentPosition() - 3000L));
+        });
+        syncPlayButton = addSyncRowChip(playRow, "⏸ إيقاف", this::syncTogglePlay);
+        addSyncBlock(list, playRow, 8);
+
+        syncTapButton = listRow(chip("🎯  الممثل نطق هذا السطر الآن", 15, this::syncTapNow));
+        syncTapButton.setBackground(round(0xff3a2f12, GOLD, 2, 14));
+        addSyncBlock(list, syncTapButton, 8);
+
+        TextView fineLabel = syncText(12, 0xffaecbe0);
+        fineLabel.setText("ضبط يدوي — أخّر: تظهر الترجمة بعد · قدّم: تظهر قبل");
+        addSyncBlock(list, fineLabel, 12);
+
+        LinearLayout fine = syncRow();
+        addSyncRowChip(fine, "أخّر ١ ث", () -> setSyncOffset(subtitleOffsetMs + 1000L));
+        addSyncRowChip(fine, "أخّر ٠٫١", () -> setSyncOffset(subtitleOffsetMs + 100L));
+        addSyncRowChip(fine, "قدّم ٠٫١", () -> setSyncOffset(subtitleOffsetMs - 100L));
+        addSyncRowChip(fine, "قدّم ١ ث", () -> setSyncOffset(subtitleOffsetMs - 1000L));
+        addSyncBlock(list, fine, 4);
+
+        if (ownerMode) {
+            syncSaveButton = listRow(chip("📌  تثبيت هذا التوقيت لهذا الفيلم — للجميع", 14,
+                    this::syncPinForEveryone));
+            syncSaveButton.setBackground(round(0xff3a2f12, GOLD, 2, 14));
+            addSyncBlock(list, syncSaveButton, 14);
+        } else {
+            syncSaveButton = listRow(chip("💾  حفظ على جهازي لهذا الفيلم", 14, this::syncSaveLocal));
+            syncSaveButton.setBackground(round(0xff1d4d33, 0xff4ade80, 2, 14));
+            addSyncBlock(list, syncSaveButton, 14);
+
+            TextView noSave = listRow(chip("إغلاق بدون حفظ", 14, this::hidePanel));
+            addSyncBlock(list, noSave, 6);
+
+            TextView noSaveHint = syncText(11, 0xff8aa0b2);
+            noSaveHint.setText("بدون حفظ: يبقى التعديل لهذه المشاهدة فقط");
+            addSyncBlock(list, noSaveHint, 2);
+        }
+
+        syncRevertButton = listRow(chip(ownerMode ? "↺  رجوع للتوقيت المثبّت" : "↺  رجوع لتوقيت SubHub",
+                13, this::syncRevert));
+        addSyncBlock(list, syncRevertButton, 8);
+
+        scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
+        panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+
+        showPanel(true);
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) panel.getLayoutParams();
+        boolean landscape = root.getWidth() > root.getHeight();
+        // Portrait: stay in the black band above the video so the picture and
+        // the subtitle under it remain visible while timing.
+        lp.height = landscape
+                ? Math.max(dp(220), root.getHeight() - dp(84))
+                : Math.min(dp(470), Math.max(dp(250), (int) (root.getHeight() * 0.40f) - dp(72)));
+        panel.setLayoutParams(lp);
+
+        syncPanelOpen = true;
+        updateSyncPanelTexts();
+        handler.removeCallbacks(syncRefresh);
+        handler.postDelayed(syncRefresh, 250);
+    }
+
+    private final Runnable syncRefresh = new Runnable() {
+        @Override public void run() {
+            if (closed || !syncPanelOpen) return;
+            updateSyncPanelTexts();
+            handler.postDelayed(this, 250);
+        }
+    };
+
+    private void updateSyncPanelTexts() {
+        if (!syncPanelOpen || syncClockView == null) return;
+        syncClockView.setText("⏱ وقت الفيديو الآن: " + syncClockText(syncPositionMs()));
+        syncPlayButton.setText(player != null && player.isPlaying() ? "⏸ إيقاف" : "▶ تشغيل");
+        syncStateView.setText(syncDescribe(subtitleOffsetMs));
+        syncStateView.setTextColor(Math.abs(subtitleOffsetMs) < 50L ? 0xff4ade80 : GOLD);
+
+        JSONObject cue = syncReferenceCue();
+        if (cue == null) {
+            syncLineView.setText(player == null ? "انتظر حتى يبدأ الفيديو"
+                    : "اختر ترجمة من زر CC أولاً");
+            syncLineTimeView.setText("");
+            syncTapButton.setAlpha(0.45f);
+        } else {
+            String t = cue.optString("text", "").trim();
+            syncLineView.setText(t.isEmpty() ? "…" : t);
+            double start = cue.optDouble("start", 0d);
+            long shown = Math.round(start * 1000.0) + subtitleOffsetMs;
+            syncLineTimeView.setText("وقته في الملف " + syncClockText(Math.round(start * 1000.0))
+                    + "  ·  يظهر الآن عند " + syncClockText(shown));
+            syncTapButton.setAlpha(1f);
+        }
+
+        boolean changed = Math.abs(subtitleOffsetMs - syncBaselineMs) >= 50L;
+        if (ownerMode) {
+            syncSaveButton.setText(changed
+                    ? "📌  تثبيت هذا التوقيت لهذا الفيلم — للجميع"
+                    : "✓  هذا هو التوقيت المثبّت للجميع");
+            syncRevertButton.setVisibility(changed ? View.VISIBLE : View.GONE);
+        } else {
+            boolean savedHere = hasLocalSync()
+                    && prefs.getLong(syncPrefKey(), Long.MIN_VALUE) == subtitleOffsetMs;
+            syncSaveButton.setText(savedHere
+                    ? "✓  محفوظ على جهازك لهذا الفيلم"
+                    : "💾  حفظ على جهازي لهذا الفيلم");
+            syncRevertButton.setVisibility(changed || hasLocalSync() ? View.VISIBLE : View.GONE);
+        }
     }
 
     // 322.3.95: ten clear steps (10%..100%). Saved odd values from older
