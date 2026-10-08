@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 113" in gradle
-assert "versionName '322.3.104'" in gradle
+assert "versionCode 114" in gradle
+assert "versionName '322.3.105'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -907,3 +907,19 @@ assert 'function ownMovieDoc(movieId)' in s104
 assert 'if (!own && !isCurrent) return;' in s104
 assert "if (own && typeof _mdocPut === 'function') _mdocPut(movieId, doc);" in s104
 print('322.3.104 film doc isolation checks OK')
+
+# 322.3.105: an episode's CC list = official subtitle + the episode's member
+# (community) subtitles; start = server pin → episode default → official;
+# the owner can pin a subtitle per server per episode.
+s105 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert "_seriesMemberSubsForV393(season, episode)" in s105
+assert "async function ensureEpisodeMembers(movieId)" in s105
+assert "await ensureEpisodeMembers(selected.id);" in s105
+assert "const defaultIndex = applyDefaults(catalog, mode, season, episode);" in s105
+assert "defaultIndex: defaultIndex" in s105
+assert "pinned: x.pinned === true" in s105
+assert "movieDoc().seriesSubDefaults" in s105
+assert "seriesAppSources: { [key]: { [mode]: { subtitlePin: value } } }" in s105
+assert "window[prefix + 'PinNow'] = async function (session, index)" in s105
+assert "'ترجمة الحلقة هي الافتراضية تلقائياً'" not in s105
+print('322.3.105 episode subtitle checks OK')

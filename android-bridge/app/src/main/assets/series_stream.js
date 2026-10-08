@@ -166,29 +166,136 @@
     return 'https://moviesmod.gd/watch/tv/' + encodeURIComponent(tmdbId) + '/' + Number(season) + '/' + Number(episode);
   }
 
-  // Only the episode's own subtitle (the film catalog does not apply to episodes).
-  function episodeCatalog(season, episode) {
+  // 322.3.105: the episode's CC list = its official subtitle + every member
+  // (community) subtitle uploaded for THIS episode — the same sources the
+  // site lists under «ترجمات كل الحلقات». Before, only ep.subtitleUrl was
+  // used, so an episode with only a community subtitle showed «بدون ترجمة».
+  function episodeOfficial(season, episode) {
     try {
-      const ep = (typeof _seriesEpisode === 'function' && typeof _seriesDoc === 'function')
+      return (typeof _seriesEpisode === 'function' && typeof _seriesDoc === 'function')
         ? _seriesEpisode(_seriesDoc(), season, episode) : null;
+    } catch (_) { return null; }
+  }
+  function memberUrl(x) {
+    const u = String((x && x.url) || '').trim();
+    if (u) return u;
+    const k = String((x && x.key) || '').trim();
+    try { if (k && typeof expandR2Key === 'function') return String(expandR2Key(k) || ''); } catch (_) {}
+    return '';
+  }
+  function locked(x) {
+    try { return typeof isSubLocked === 'function' && isSubLocked(x, 'w'); } catch (_) { return false; }
+  }
+  function episodeCatalog(season, episode) {
+    const out = [];
+    const ek = epKey(season, episode);
+    try {
+      const ep = episodeOfficial(season, episode);
       const url = String((ep && ep.subtitleUrl) || '').trim();
-      if (!url) return [];
-      const lang = String((ep && ep.subtitleLabel) || 'AR');
-      return [{
-        id: 'series::' + epKey(season, episode) + '::' + url,
-        url: url,
-        name: 'ترجمة الحلقة ' + Number(episode) + ' (' + lang + ')',
-        lang: lang,
-        kind: 'official',
-        approved: true,
-        isDefault: true,
-        pinned: false,
-        ref: 'series_' + epKey(season, episode),
-        sign: true,
-        key: '',
-        cacheKey: 'official:' + url
-      }];
-    } catch (_) { return []; }
+      if (url) {
+        const lang = String((ep && ep.subtitleLabel) || 'AR');
+        out.push({
+          id: 'series::' + ek + '::' + url,
+          url: url,
+          name: 'ترجمة الحلقة ' + Number(episode) + ' (' + lang + ')',
+          lang: lang,
+          kind: 'official',
+          approved: true,
+          isDefault: false,
+          pinned: false,
+          ref: 'series_' + ek,
+          sign: true,
+          key: '',
+          cacheKey: 'official:' + url
+        });
+      }
+    } catch (_) {}
+    try {
+      const members = typeof _seriesMemberSubsForV393 === 'function'
+        ? (_seriesMemberSubsForV393(season, episode) || []) : [];
+      const rows = [];
+      members.forEach(function (x, i) {
+        if (!x || locked(x)) return;
+        const url = memberUrl(x);
+        const key = String(x.key || '');
+        if (!url || !key) return;
+        const release = String(x.releaseName || x.sourceFilename || x.filename || '')
+          .replace(/\.(srt|vtt|ass|ssa|sub|txt)$/i, '').trim();
+        const person = String(x.contributorName || x.translatorName || '').trim() || 'مترجم';
+        rows.push({
+          id: 'member::' + key,
+          url: url,
+          name: person + (release ? ' — ' + release : ''),
+          lang: String(x.lang || 'AR'),
+          kind: 'member',
+          approved: x.approved === true || String(x.status || '') === 'approved',
+          isDefault: false,
+          pinned: false,
+          ref: key,
+          sign: true,
+          key: key,
+          cacheKey: 'member:' + key
+        });
+      });
+      // approved community subtitles first, upload order otherwise
+      rows.sort(function (a, b) { return (a.approved === b.approved) ? 0 : (a.approved ? -1 : 1); });
+      rows.forEach(function (r) { out.push(r); });
+    } catch (_) {}
+    return out;
+  }
+
+  // Community subtitles are fetched by the page after it draws; if the player
+  // is opened before that finishes, wait for them briefly (max ~4 s).
+  async function ensureEpisodeMembers(movieId) {
+    const id = String(movieId || '');
+    if (!id || typeof _seriesLoadContribsV393 !== 'function') return;
+    function ready() {
+      try { return _seriesContribV393 && _seriesContribV393.id === id && _seriesContribV393.loaded; }
+      catch (_) { return true; }
+    }
+    if (ready()) return;
+    try { _seriesLoadContribsV393(id, false); } catch (_) {}
+    for (let i = 0; i < 20 && !ready(); i++) await new Promise(function (r) { setTimeout(r, 200); });
+  }
+
+  function rawEntry(mode, season, episode) {
+    try {
+      const map = movieDoc().seriesAppSources;
+      const e = map && typeof map === 'object' ? (map[epKey(season, episode)] || {}) : {};
+      return (e && typeof e[mode] === 'object' && e[mode]) || {};
+    } catch (_) { return {}; }
+  }
+  function cleanRef(v) {
+    const kind = v && (v.kind === 'member' || v.kind === 'official') ? v.kind : '';
+    const ref = String((v && v.ref) || '').trim();
+    return kind && ref ? { kind: kind, ref: ref } : null;
+  }
+  function findRef(catalog, v) {
+    if (!v) return -1;
+    return catalog.findIndex(function (x) { return x.kind === v.kind && String(x.ref) === v.ref; });
+  }
+  // Start subtitle: (1) the one pinned to this server for this episode,
+  // (2) the owner's «الافتراضية للمشغّل» choice for this episode,
+  // (3) otherwise the episode's official subtitle (as before). A community
+  // subtitle never starts by itself unless the owner chose it.
+  function applyDefaults(catalog, mode, season, episode) {
+    const pin = cleanRef(rawEntry(mode, season, episode).subtitlePin);
+    const pinIndex = findRef(catalog, pin);
+    if (pinIndex >= 0) {
+      catalog[pinIndex].pinned = true;
+      catalog[pinIndex].isDefault = true;
+      return pinIndex;
+    }
+    let def = null;
+    try {
+      const map = movieDoc().seriesSubDefaults;
+      def = cleanRef(map && typeof map === 'object' ? map[epKey(season, episode)] : null);
+    } catch (_) {}
+    const defIndex = findRef(catalog, def);
+    if (defIndex >= 0) { catalog[defIndex].isDefault = true; return defIndex; }
+    const off = catalog.findIndex(function (x) { return x.kind === 'official'; });
+    if (off >= 0) catalog[off].isDefault = true;
+    return off;
   }
 
   async function open(info, mode, forceManual, overridePageUrl) {
@@ -217,7 +324,10 @@
       if (current() !== selected) return;
 
       try { if (typeof setSubServerKeyV382 === 'function') setSubServerKeyV382('series_' + mode); } catch (_) {}
+      await ensureEpisodeMembers(selected.id);
+      if (current() !== selected) return;
       const catalog = episodeCatalog(season, episode);
+      const defaultIndex = applyDefaults(catalog, mode, season, episode);
       if (typeof stopInlinePlayersV265 === 'function') stopInlinePlayersV265();
       if (typeof closeEmbedPlayer === 'function') closeEmbedPlayer();
 
@@ -256,8 +366,8 @@
         serverPageUrl: startPage,
         embedUrl: (mode === 'vsm' && auto) ? saved.embedUrl : '',
         subtitleOffsetMs: Number(saved.subtitleOffsetMs || 0),
-        catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub'), pinned: false })),
-        defaultIndex: catalog.length ? 0 : -1
+        catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub'), pinned: x.pinned === true })),
+        defaultIndex: defaultIndex
       }));
     } catch (_) {
       active = null;
@@ -267,7 +377,9 @@
     }
   }
 
-  function syncLocal(movieId, key, mode, value) {
+  // 322.3.105: a saved server keeps this episode's timing/pin (Firestore
+  // merges them too); `replace` writes the given entry as-is.
+  function syncLocal(movieId, key, mode, value, replace) {
     try {
       const own = ownMovieDoc(movieId);
       const cur = current();
@@ -276,7 +388,8 @@
       const doc = Object.assign({}, own || movieDoc());
       const map = Object.assign({}, doc.seriesAppSources || {});
       const entry = Object.assign({}, map[key] || {});
-      if (value) entry[mode] = value; else delete entry[mode];
+      if (value) entry[mode] = replace ? value : Object.assign({}, entry[mode] || {}, value);
+      else delete entry[mode];
       map[key] = entry;
       doc.seriesAppSources = map;
       if (isCurrent) window._lastRenderedMovieDoc = doc;
@@ -444,15 +557,48 @@
     };
 
     const prevPin = window[prefix + 'PinNow'];
-    window[prefix + 'PinNow'] = async function (session) {
+    window[prefix + 'PinNow'] = async function (session, index) {
       const state = active;
       if (!state || state.session !== session) {
         if (typeof prevPin === 'function') return prevPin.apply(this, arguments);
         return false;
       }
-      // Each episode has a single subtitle, so pinning does not apply here.
-      report(session, false, 'ترجمة الحلقة هي الافتراضية تلقائياً');
-      return false;
+      // 322.3.105: owner pins a subtitle to THIS server for THIS episode
+      // (versions differ between servers and episodes). Tapping the pinned
+      // one again removes the pin.
+      const entry = Number.isInteger(index) ? state.catalog[index] : null;
+      if (!state.owner || !isOwner() || !entry || (entry.kind !== 'official' && entry.kind !== 'member')) {
+        report(session, false, 'تعذّر التثبيت');
+        return false;
+      }
+      try {
+        if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) { report(session, false, 'التثبيت للمالك فقط'); return false; }
+        const key = epKey(state.season, state.episode);
+        const prev = rawEntry(mode, state.season, state.episode);
+        const cur = cleanRef(prev.subtitlePin);
+        const was = !!(cur && cur.kind === entry.kind && cur.ref === String(entry.ref));
+        const value = was
+          ? firebase.firestore.FieldValue.delete()
+          : { kind: entry.kind, ref: String(entry.ref), updatedAt: Date.now() };
+        await db.collection('subtitles').doc(state.movieId).set({
+          seriesAppSources: { [key]: { [mode]: { subtitlePin: value } } }
+        }, { merge: true });
+        const next = Object.assign({}, prev);
+        if (was) delete next.subtitlePin; else next.subtitlePin = { kind: entry.kind, ref: String(entry.ref) };
+        syncLocal(state.movieId, key, mode, next, true);
+        state.catalog.forEach(function (x, i) { x.pinned = !was && i === index; });
+        report(session, true, was
+          ? 'أُلغي تثبيت الترجمة لهذا السيرفر في الحلقة ' + state.episode
+          : '📌 ثُبّتت الترجمة لهذا السيرفر في الحلقة ' + state.episode);
+        try {
+          const b = window.SubHubAndroidBridge;
+          if (b && typeof b.directStreamPinned === 'function') b.directStreamPinned(token, session, index, !was);
+        } catch (_) {}
+        return true;
+      } catch (_) {
+        report(session, false, 'تعذّر حفظ التثبيت');
+        return false;
+      }
     };
 
     // 322.3.103: owner pins only the timing of THIS episode on this card.
