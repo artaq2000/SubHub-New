@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 112" in gradle
-assert "versionName '322.3.103'" in gradle
+assert "versionCode 113" in gradle
+assert "versionName '322.3.104'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -888,3 +888,22 @@ for f, w in [('moviesmod','Moviesmod'),('vsm','Vsm'),('vidnest','Vidnest'),('ope
 s103 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
 assert "window[prefix + 'SyncPinNow'] = async function" in s103
 print('322.3.103 sync window checks OK')
+
+# 322.3.104: a new film must never inherit the previous film's doc. While the
+# site prepares the next page window._lastRenderedMovieDoc is still the old
+# film; the cards fall back to THIS film's cached doc only, treat "no
+# Firestore document" as empty, and never write a doc under another film's id.
+for f in ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2']:
+    src = open('app/src/main/assets/%s_stream.js' % f, encoding='utf-8').read()
+    assert 'function ownMovieDoc(movieId)' in src, f
+    assert "return normalizeSaved(ownMovieDoc(movieId || currentMovieId()) || {});" in src, f
+    assert 'let saved = fallbackSaved(movieId);' in src, f
+    assert 'else if (snap) saved = normalizeSaved({});' in src, f
+    assert 'const own = ownMovieDoc(movieId);\n      if (!own) return;' in src, f
+    assert 'return normalizeSaved(movieDoc());' not in src, f
+    assert 'Object.assign({}, movieDoc(), {\n' not in src, f
+s104 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert 'function ownMovieDoc(movieId)' in s104
+assert 'if (!own && !isCurrent) return;' in s104
+assert "if (own && typeof _mdocPut === 'function') _mdocPut(movieId, doc);" in s104
+print('322.3.104 film doc isolation checks OK')

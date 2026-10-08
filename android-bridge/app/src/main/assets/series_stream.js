@@ -26,6 +26,19 @@
     try { return window._lastRenderedMovieDoc || {}; }
     catch (_) { return {}; }
   }
+  // 322.3.104: the cached page doc of THIS title only (keyed by id). Never
+  // merge a save into another title's doc or cache entry.
+  function ownMovieDoc(movieId) {
+    const id = String(movieId || '');
+    if (!id) return null;
+    try {
+      if (typeof _mdocLoad === 'function') {
+        const hit = (_mdocLoad() || {})[id];
+        if (hit && hit.d && typeof hit.d === 'object') return hit.d;
+      }
+    } catch (_) {}
+    return null;
+  }
   function isOwner() {
     try { return typeof isLoggedIn !== 'undefined' && !!isLoggedIn; }
     catch (_) { return false; }
@@ -256,14 +269,18 @@
 
   function syncLocal(movieId, key, mode, value) {
     try {
-      const doc = Object.assign({}, movieDoc());
+      const own = ownMovieDoc(movieId);
+      const cur = current();
+      const isCurrent = !!cur && String(cur.id || '') === String(movieId);
+      if (!own && !isCurrent) return;
+      const doc = Object.assign({}, own || movieDoc());
       const map = Object.assign({}, doc.seriesAppSources || {});
       const entry = Object.assign({}, map[key] || {});
       if (value) entry[mode] = value; else delete entry[mode];
       map[key] = entry;
       doc.seriesAppSources = map;
-      window._lastRenderedMovieDoc = doc;
-      if (typeof _mdocPut === 'function') _mdocPut(movieId, doc);
+      if (isCurrent) window._lastRenderedMovieDoc = doc;
+      if (own && typeof _mdocPut === 'function') _mdocPut(movieId, doc);
     } catch (_) {}
     try {
       const c = current();

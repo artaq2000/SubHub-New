@@ -39,6 +39,28 @@
     catch (_) { return {}; }
   }
 
+  // 322.3.104: the cached page doc of THIS film only (the site's cache is keyed
+  // by film id). window._lastRenderedMovieDoc can still hold the PREVIOUS film
+  // while the site prepares the next page, so it must never be read as, or
+  // written under, another film's id — that made a new film open with the old
+  // film's links, trailer and servers.
+  function ownMovieDoc(movieId) {
+    const id = String(movieId || '');
+    if (!id) return null;
+    try {
+      if (typeof _mdocLoad === 'function') {
+        const hit = (_mdocLoad() || {})[id];
+        if (hit && hit.d && typeof hit.d === 'object') return hit.d;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function currentMovieId() {
+    const c = current();
+    return c ? String(c.id || '') : '';
+  }
+
   function isOwner() {
     try { return typeof isLoggedIn !== 'undefined' && !!isLoggedIn; }
     catch (_) { return false; }
@@ -121,8 +143,9 @@
     };
   }
 
-  function fallbackSaved() {
-    return normalizeSaved(movieDoc());
+  // 322.3.104: fallback = this film's own cached doc, never the last page drawn.
+  function fallbackSaved(movieId) {
+    return normalizeSaved(ownMovieDoc(movieId || currentMovieId()) || {});
   }
 
   function savedServer() {
@@ -155,7 +178,11 @@
 
   function syncMovieDocCache(movieId, next) {
     try {
-      const merged = Object.assign({}, movieDoc(), {
+      // 322.3.104: merge only into THIS film's cached doc. No cached doc yet
+      // (page not drawn) → nothing to update; the site reads Firestore itself.
+      const own = ownMovieDoc(movieId);
+      if (!own) return;
+      const merged = Object.assign({}, own, {
         open2Enabled: !!next.enabled,
         open2ServerKey: next.key || '',
         open2ServerLabel: next.label || '',
@@ -164,7 +191,7 @@
         open2SubtitleOffsetMs: Number(next.subtitleOffsetMs || 0),
         open2UpdatedAt: Date.now()
       });
-      window._lastRenderedMovieDoc = merged;
+      if (currentMovieId() === String(movieId)) window._lastRenderedMovieDoc = merged;
       if (typeof _mdocPut === 'function') _mdocPut(String(movieId), merged);
     } catch (_) {}
   }
@@ -213,11 +240,13 @@
     };
 
     loadPromise = (async function () {
-      let saved = fallbackSaved();
+      let saved = fallbackSaved(movieId);
       try {
         if (typeof db !== 'undefined' && db && db.collection) {
           const snap = await db.collection('subtitles').doc(movieId).get();
           if (snap && snap.exists) saved = normalizeSaved(snap.data() || {});
+          // 322.3.104: no document = a new film with nothing saved yet.
+          else if (snap) saved = normalizeSaved({});
         }
       } catch (_) {
         // Keep the page cache as a fallback, but never erase a known saved server
@@ -625,9 +654,11 @@
       try {
         const c = current();
         if (c && String(c.id || '') === state.movieId) {
-          const merged = Object.assign({}, movieDoc(), { open2SubtitleOffsetMs: offset });
+          // 322.3.104: the cache is updated only on this film's own entry.
+          const own = ownMovieDoc(state.movieId);
+          const merged = Object.assign({}, own || movieDoc(), { open2SubtitleOffsetMs: offset });
           window._lastRenderedMovieDoc = merged;
-          if (typeof _mdocPut === 'function') _mdocPut(state.movieId, merged);
+          if (own && typeof _mdocPut === 'function') _mdocPut(state.movieId, merged);
         }
       } catch (_) {}
       const secs = (Math.abs(offset) / 1000).toFixed(1);
