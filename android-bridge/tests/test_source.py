@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 114" in gradle
-assert "versionName '322.3.105'" in gradle
+assert "versionCode 115" in gradle
+assert "versionName '322.3.106'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -539,7 +539,8 @@ assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
 assert 'subscriberStartupPhase <= 4 && probe != null' in direct
 assert 'if (phase == 4) timeoutMs = 30000L' in direct
 assert 'root.post(this::applySubscriberProbePreviewLayout)' in direct
-assert 'probe.setAlpha(interactiveSource ? 0.02f : 1.0f)' in direct
+# 322.3.106: verify cards keep the page visible while the owner chooses.
+assert 'probe.setAlpha(interactiveSource && !verifyFirst ? 0.02f : 1.0f)' in direct
 
 
 # 322.3.73: subscriber sees only the focused player, and the WebView receives real touches.
@@ -852,8 +853,8 @@ print('322.3.99 open system for purple and yellow checks OK')
 
 # 322.3.100: series episodes get all five app cards, for everyone.
 ser100=(root/'app/src/main/assets/series_stream.js').read_text(encoding='utf-8')
-assert "const SERIES_MODES = ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2'];" in ser100
-assert "['Open1', 'open1'], ['Open2', 'open2']].forEach" in ser100 and "['Vidnest', 'vidnest']," in ser100
+assert "const SERIES_MODES = ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2', 'open3', 'open4'];" in ser100   # 322.3.106: + verify cards
+assert "['Open1', 'open1'], ['Open2', 'open2'], ['Open3', 'open3'], ['Open4', 'open4']].forEach" in ser100 and "['Vidnest', 'vidnest']," in ser100
 assert "if (mode === 'vidnest') return compact === 'vidnest';" in ser100
 assert "function isSubscriber() {\n    return !isOwner();\n  }" in ser100
 assert main.index('readAsset("open2_stream.js")') < main.index('readAsset("series_stream.js")')   # film handlers first
@@ -923,3 +924,34 @@ assert "seriesAppSources: { [key]: { [mode]: { subtitlePin: value } } }" in s105
 assert "window[prefix + 'PinNow'] = async function (session, index)" in s105
 assert "'ترجمة الحلقة هي الافتراضية تلقائياً'" not in s105
 print('322.3.105 episode subtitle checks OK')
+
+# 322.3.106: verify-first cards «مفتوح ٣/٤ — تحقّق» + fixed card order.
+order106 = open('app/src/main/assets/app_cards_order.js', encoding='utf-8').read()
+assert "moviesmod: 1" in order106 and "vsm: 2" in order106 and "open1: 3" in order106
+assert "vidnest: 4" in order106 and "open2: 5" in order106 and "open3: 6" in order106 and "open4: 7" in order106
+for f in ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2', 'open3', 'open4']:
+    src = open('app/src/main/assets/%s_stream.js' % f, encoding='utf-8').read()
+    assert "window.__subhubPlaceAppCardV3106(grid, card, '%s');" % f in src, f
+    assert "window.__subhubPlaceAppCardV3106(grid, subscriberButton(), '%s');" % f in src, f
+for n in ('3', '4'):
+    src = open('app/src/main/assets/open%s_stream.js' % n, encoding='utf-8').read()
+    assert "mode: 'open%s'" % n in src
+    assert "window.__subhubOpen%sSaveNow" % n in src
+    assert "open%sServerPageUrl" % n in src and "open2" not in src
+    assert "if (ok && !state.ownerAuto) state.reopenAfterSave = true;" in src
+    assert "closing.reopenAfterSave" in src
+m106 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+assert m106.index('readAsset("app_cards_order.js")') < m106.index('readAsset("moviesmod_stream.js")')
+assert m106.index('readAsset("open4_stream.js")') < m106.index('readAsset("series_stream.js")')
+assert 'final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode);' in m106
+assert '"open3".equals(mode) ? "window.__subhubOpen3"' in m106
+d106 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+assert '&& !(verifyFirst && interactiveSource)) {' in d106          # no capture while verifying
+assert 'private void saveVerifiedServer()' in d106
+assert 'private String scrollGuardScript()' in d106
+assert 'if (verifyFirst) { showVerifyBar(); return; }' in d106
+s106 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert "const VERIFY_MODES = ['open3', 'open4'];" in s106
+assert "['Open3', 'open3'], ['Open4', 'open4']" in s106
+assert "if (result.ok && state.verify) state.reopenAfterSave = true;" in s106
+print('322.3.106 verify cards checks OK')

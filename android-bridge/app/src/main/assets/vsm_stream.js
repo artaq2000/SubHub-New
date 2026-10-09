@@ -905,10 +905,13 @@
       if (!grid) return;
 
       const card = ownerCard(selected, saved);
-      // Same place the old yellow button used: right after the VidSrc card.
-      const anchor = document.getElementById('vidsrcOwnerTrialV355');
-      if (anchor && anchor.parentElement === grid) anchor.insertAdjacentElement('afterend', card);
-      else grid.appendChild(card);
+      // 322.3.106: fixed slot (see app_cards_order.js) — the order no longer
+      // depends on which card's timer fires first after a redraw.
+      if (typeof window.__subhubPlaceAppCardV3106 === 'function') {
+        window.__subhubPlaceAppCardV3106(grid, card, 'vsm');
+      } else {
+        grid.appendChild(card);
+      }
       return;
     }
 
@@ -920,7 +923,11 @@
 
     const grid = document.querySelector('.watch-pills:not(.owner-watch-pills)');
     if (!grid) return;
-    grid.appendChild(subscriberButton());
+    if (typeof window.__subhubPlaceAppCardV3106 === 'function') {
+      window.__subhubPlaceAppCardV3106(grid, subscriberButton(), 'vsm');
+    } else {
+      grid.appendChild(subscriberButton());
+    }
   }
 
   install();

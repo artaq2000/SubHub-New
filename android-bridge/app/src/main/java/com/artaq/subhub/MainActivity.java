@@ -67,7 +67,7 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.105";
+    private static final String NATIVE_VERSION = "322.3.106";
     private static final int NATIVE_VERSION_CODE = 109;
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
@@ -259,11 +259,15 @@ public class MainActivity extends Activity {
         siteBridgeScript = readAsset("site_bridge.js") + "\n"
                 + readAsset("segment_pump.js") + "\n"
                 + readAsset("direct_stream.js") + "\n"
+                // 322.3.106: fixed slots for the app cards — must load before them.
+                + readAsset("app_cards_order.js") + "\n"
                 + readAsset("moviesmod_stream.js") + "\n"
                 + readAsset("vsm_stream.js") + "\n"
                 + readAsset("vidnest_stream.js") + "\n"
                 + readAsset("open1_stream.js") + "\n"
                 + readAsset("open2_stream.js") + "\n"
+                + readAsset("open3_stream.js") + "\n"
+                + readAsset("open4_stream.js") + "\n"
                 + readAsset("series_stream.js") + "\n"
                 + readAsset("r2_upload.js");
 
@@ -1808,13 +1812,19 @@ public class MainActivity extends Activity {
                     // 322.3.98: "open1"/"open2" — open-server cards. Same owner/subscriber flow
                     // as the purple card, but the server is whatever the owner taps on the
                     // Moviesmod page (no built-in list of server names).
-                    final boolean openMode = "open1".equals(mode) || "open2".equals(mode);
+                    // 322.3.106: "open3"/"open4" — verify-first open cards: while the owner
+                    // chooses, a tapped server only plays in the page's own player (no
+                    // capture); «💾 حفظ هذا السيرفر» saves it. Playback is the same.
+                    final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode);
+                    final boolean openMode = "open1".equals(mode) || "open2".equals(mode) || verifyFirst;
                     final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode)
                             || vidnestMode || openMode;
                     final String jsPrefix = "vsm".equals(mode) ? "window.__subhubVsm"
                             : vidnestMode ? "window.__subhubVidnest"
                             : "open1".equals(mode) ? "window.__subhubOpen1"
                             : "open2".equals(mode) ? "window.__subhubOpen2"
+                            : "open3".equals(mode) ? "window.__subhubOpen3"
+                            : "open4".equals(mode) ? "window.__subhubOpen4"
                             : "window.__subhubMoviesmod";
                     String directEmbedUrl = "";
                     // 322.3.103: ⏱ timing saved on this device belongs to this film
@@ -1888,6 +1898,7 @@ public class MainActivity extends Activity {
                             ownerMode, openChooser, directEmbedUrl, vidnestMode,
                             // 322.3.99: purple and yellow join the open system; teal stays Vidnest-only.
                             openMode || "moviesmod".equals(mode) || "vsm".equals(mode),
+                            verifyFirst,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;

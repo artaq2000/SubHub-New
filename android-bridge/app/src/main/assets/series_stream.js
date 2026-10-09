@@ -49,13 +49,18 @@
     return !isOwner();
   }
   // 322.3.100: the five app cards for series episodes (same as films).
-  const SERIES_MODES = ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2'];
+  // 322.3.106: + «مفتوح ٣/٤ — تحقّق» (verify-first: the owner checks the server
+  // in the page's own player, then saves it; playback is the same).
+  const SERIES_MODES = ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2', 'open3', 'open4'];
+  const VERIFY_MODES = ['open3', 'open4'];
   const MODE_STYLE = {
     moviesmod: { name: 'Moviesmod', title: '🎬 Moviesmod', border: '#7b68ee' },
     vsm: { name: 'المباشر التجريبي', title: '▶ مشغّل مباشر — تجريبي', border: '#e8b544' },
     vidnest: { name: 'Vidnest', title: '🎬 تجريبي — Vidnest', border: '#14b8a6' },
     open1: { name: 'مفتوح ١', title: '🎬 مفتوح ١ — تجريبي', border: '#f97316' },
-    open2: { name: 'مفتوح ٢', title: '🎬 مفتوح ٢ — تجريبي', border: '#ec4899' }
+    open2: { name: 'مفتوح ٢', title: '🎬 مفتوح ٢ — تجريبي', border: '#ec4899' },
+    open3: { name: 'مفتوح ٣', title: '🎬 مفتوح ٣ — تحقّق', border: '#3b82f6' },
+    open4: { name: 'مفتوح ٤', title: '🎬 مفتوح ٤ — تحقّق', border: '#84cc16' }
   };
   function notify(text, type) {
     try { if (typeof showToast === 'function') showToast(text, type || 'error'); } catch (_) {}
@@ -341,6 +346,8 @@
 
       active = {
         session, mode, owner, catalog, season, episode,
+        // 322.3.106: owner choosing a server on a verify card (no capture there).
+        verify: VERIFY_MODES.indexOf(mode) >= 0 && owner && !ownerAuto,
         info: { source: mode, movieId: String(selected.id || ''), season, episode },
         movieId: String(selected.id || ''),
         serverKey: auto ? saved.key : '',
@@ -510,7 +517,7 @@
   // Native callbacks: handle our own sessions, delegate everything else to the
   // film handlers installed earlier by moviesmod_stream.js / vsm_stream.js.
   [['Moviesmod', 'moviesmod'], ['Vsm', 'vsm'], ['Vidnest', 'vidnest'],
-   ['Open1', 'open1'], ['Open2', 'open2']].forEach(function (pair) {
+   ['Open1', 'open1'], ['Open2', 'open2'], ['Open3', 'open3'], ['Open4', 'open4']].forEach(function (pair) {
     const prefix = '__subhub' + pair[0];
     const mode = pair[1];
 
@@ -552,6 +559,8 @@
       }
       if (!state.owner) { report(session, false, 'تعذّر الحفظ'); return false; }
       const result = await savePending(state, rawOffsetMs);
+      // 322.3.106: saved from the verify page → reopen it in the SubHub player.
+      if (result.ok && state.verify) state.reopenAfterSave = true;
       report(session, result.ok, result.text);
       return result.ok;
     };
@@ -656,8 +665,12 @@
   const previousClosed = window.__subhubDirectClosed;
   window.__subhubDirectClosed = function (session) {
     if (active && active.session === session) {
-      lastClosed = { info: active.info, mode: active.mode, at: Date.now() };
+      const done = active;
+      lastClosed = { info: done.info, mode: done.mode, at: Date.now() };
       active = null;
+      if (done.reopenAfterSave && isOwner()) {
+        setTimeout(function () { open(done.info, done.mode, false, ''); }, 450);
+      }
     }
     if (typeof previousClosed === 'function') {
       try { return previousClosed(session); } catch (_) {}

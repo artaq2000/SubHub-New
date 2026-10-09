@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.105 episode subtitles
+name: Build TEST SubHub 322.3.106 verify cards
 
 on:
   push:
     branches:
-      - 'test/ep-subs-322.3.105'
+      - 'test/verify-322.3.106'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -93,6 +93,12 @@ jobs:
       - name: Validate Vidnest stream JavaScript
         run: node --check app/src/main/assets/vidnest_stream.js
 
+      - name: Validate verify cards and fixed card order JavaScript
+        run: |
+          node --check app/src/main/assets/app_cards_order.js
+          node --check app/src/main/assets/open3_stream.js
+          node --check app/src/main/assets/open4_stream.js
+
       - name: Test native playback mailbox
         run: |
           mkdir -p /tmp/subhub-playback-tests
@@ -144,8 +150,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='114'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.105'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='115'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.106'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -153,12 +159,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.105-epsubs.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.106-verify.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.105-epsubs
-          path: SubHub-322.3.105-epsubs.apk
+          name: SubHub-322.3.106-verify
+          path: SubHub-322.3.106-verify.apk
           retention-days: 7
 
       - name: Remove signing key from runner

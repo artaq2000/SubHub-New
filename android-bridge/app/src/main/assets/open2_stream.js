@@ -888,14 +888,13 @@
       if (!grid) return;
 
       const card = ownerCard(selected, saved);
-      // After the closest earlier app card that is present.
-      const prev = ['subhub-open1-stream-card', 'subhub-vidnest-stream-card', 'subhub-moviesmod-stream-card']
-        .map(function (id) { return document.getElementById(id); })
-        .find(function (el) { return el && el.parentElement === grid; });
-      const m3u = document.getElementById('m3uOwnerTrialV360');
-      if (prev) prev.insertAdjacentElement('afterend', card);
-      else if (m3u && m3u.parentElement === grid) grid.insertBefore(card, m3u);
-      else grid.appendChild(card);
+      // 322.3.106: fixed slot (see app_cards_order.js) — the order no longer
+      // depends on which card's timer fires first after a redraw.
+      if (typeof window.__subhubPlaceAppCardV3106 === 'function') {
+        window.__subhubPlaceAppCardV3106(grid, card, 'open2');
+      } else {
+        grid.appendChild(card);
+      }
       return;
     }
 
@@ -907,7 +906,11 @@
 
     const grid = document.querySelector('.watch-pills:not(.owner-watch-pills)');
     if (!grid) return;
-    grid.appendChild(subscriberButton());
+    if (typeof window.__subhubPlaceAppCardV3106 === 'function') {
+      window.__subhubPlaceAppCardV3106(grid, subscriberButton(), 'open2');
+    } else {
+      grid.appendChild(subscriberButton());
+    }
   }
 
   install();

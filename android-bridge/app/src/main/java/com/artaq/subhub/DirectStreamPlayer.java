@@ -126,6 +126,17 @@ public final class DirectStreamPlayer {
     // names: every server button on the Moviesmod page counts, and the owner
     // may tap one directly on the page instead of using the chooser.
     private final boolean openServers;
+    // 322.3.106: verify-first open cards (open3/open4). While the owner chooses,
+    // a tapped server plays in the Moviesmod page's own player — nothing is
+    // captured, so an empty or broken server never ends in a black screen.
+    // «💾 حفظ هذا السيرفر» saves the last server tapped; playback afterwards
+    // (owner test and viewers) is the normal capture path with subtitles.
+    private final boolean verifyFirst;
+    private String verifyLabel = "";
+    private String verifyEmbedUrl = "";
+    private boolean verifySaving = false;
+    private TextView verifySaveButton;
+    private LinearLayout verifyBar;
     private boolean vidnestProxyCaptured = false;
     private boolean vidnestCandidateIsProxy = false;
     private String vidnestFallbackUrl = null;
@@ -284,7 +295,20 @@ public final class DirectStreamPlayer {
                               boolean interactiveSource, boolean ownerMode,
                               boolean openChooser, String directEmbedUrl,
                               boolean vidnestMode, boolean openServers, Listener listener) {
+        this(activity, parent, source, catalog, resumeKey, allowedHost,
+                preferredServerKey, preferredServerLabel, interactiveSource,
+                ownerMode, openChooser, directEmbedUrl, vidnestMode, openServers, false, listener);
+    }
+
+    public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
+                              JSONArray catalog, String resumeKey, String allowedHost,
+                              String preferredServerKey, String preferredServerLabel,
+                              boolean interactiveSource, boolean ownerMode,
+                              boolean openChooser, String directEmbedUrl,
+                              boolean vidnestMode, boolean openServers, boolean verifyFirst,
+                              Listener listener) {
         this.vidnestMode = vidnestMode;
+        this.verifyFirst = verifyFirst && openServers && !vidnestMode;
         this.openServers = openServers && !vidnestMode;
         this.activity = activity;
         this.directEmbedUrl = (directEmbedUrl == null || interactiveSource) ? "" : directEmbedUrl.trim();
@@ -919,7 +943,11 @@ public final class DirectStreamPlayer {
         pendingServerKey = key;
         pendingServerLabel = label;
         pendingServerPickedAt = SystemClock.elapsedRealtime();
-        if (interactiveSource) {
+        if (interactiveSource && verifyFirst) {
+            verifyLabel = label;
+            updateVerifySaveButton();
+            showVerifyStage("السيرفر " + label + " — إن اشتغل الفيلم فعلاً اضغط «💾 حفظ هذا السيرفر».");
+        } else if (interactiveSource) {
             showStage("تم اختيار السيرفر " + label + "…");
         } else {
             startSubscriberStartupTimer(3);
@@ -1007,6 +1035,7 @@ public final class DirectStreamPlayer {
 
     private void showManualServerButton() {
         if (!interactiveSource || autoServer || closed || manualServerButton != null) return;
+        if (verifyFirst) { showVerifyBar(); return; }
         manualServerButton = chip("جلب السيرفرات", 15, this::requestServerList);
         manualServerButton.setBackground(round(0xee102a40, 0xff2f93c7, 1, 18));
         manualServerButton.setElevation(dp(28));
@@ -1018,12 +1047,103 @@ public final class DirectStreamPlayer {
         manualServerButton.bringToFront();
     }
 
+    // 322.3.106: verify cards keep their buttons in the app bar at the top, so
+    // nothing covers the server buttons of the page.
+    private void showVerifyBar() {
+        if (verifyBar != null || closed) return;
+        verifyBar = new LinearLayout(activity);
+        verifyBar.setOrientation(LinearLayout.HORIZONTAL);
+        verifyBar.setGravity(Gravity.CENTER_VERTICAL);
+        manualServerButton = chip("جلب السيرفرات", 13, this::requestServerList);
+        manualServerButton.setBackground(round(0xee102a40, 0xff2f93c7, 1, 14));
+        verifySaveButton = chip("💾 حفظ هذا السيرفر", 13, this::saveVerifiedServer);
+        LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(-2, dp(42));
+        LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(-2, dp(42));
+        b.leftMargin = dp(8);
+        verifyBar.addView(manualServerButton, a);
+        verifyBar.addView(verifySaveButton, b);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, dp(42), Gravity.TOP | Gravity.END);
+        lp.topMargin = dp(9);
+        lp.rightMargin = dp(10);
+        verifyBar.setElevation(dp(28));
+        root.addView(verifyBar, lp);
+        verifyBar.bringToFront();
+        updateVerifySaveButton();
+    }
+
+    private void updateVerifySaveButton() {
+        if (verifySaveButton == null) return;
+        boolean ready = !verifyLabel.isEmpty() && !verifySaving;
+        verifySaveButton.setText(verifySaving ? "جارٍ الحفظ…"
+                : verifyLabel.isEmpty() ? "💾 حفظ هذا السيرفر" : "💾 حفظ: " + verifyLabel);
+        verifySaveButton.setAlpha(ready ? 1.0f : 0.5f);
+        verifySaveButton.setBackground(ready
+                ? round(0xee10351f, 0xff22c55e, 1, 14)
+                : round(PANEL_2, BORDER, 1, 14));
+    }
+
+    private void saveVerifiedServer() {
+        if (closed || !verifyFirst || !interactiveSource || verifySaving) return;
+        if (verifyLabel.isEmpty()) {
+            showVerifyStage("اضغط سيرفراً في الصفحة أولاً، وتأكّد أن الفيلم يشتغل، ثم احفظه.");
+            return;
+        }
+        String key = serverKey(verifyLabel);
+        if (key.isEmpty()) return;
+        verifySaving = true;
+        updateVerifySaveButton();
+        showStage("جارٍ حفظ السيرفر " + verifyLabel + "…");
+        // The page the owner is on is the server page (fallback when the page
+        // did not report itself yet).
+        if (discoveredServerPageUrl == null || discoveredServerPageUrl.isEmpty()) {
+            try { if (probe != null) recordServerPage(probe.getUrl()); } catch (Exception ignored) {}
+        }
+        listener.serverSelected(key, verifyLabel, discoveredServerPageUrl, verifyEmbedUrl);
+        listener.saveRequested(subtitleOffsetMs);
+    }
+
+    // The hint hides itself after a few seconds so it does not cover the page.
+    private int verifyStageGeneration = 0;
+    private void showVerifyStage(String text) {
+        showStage(text);
+        final int g = ++verifyStageGeneration;
+        handler.postDelayed(() -> {
+            if (g == verifyStageGeneration && !closed && !playing) status.setVisibility(View.GONE);
+        }, 6000L);
+    }
+
+    // 322.3.106: while the owner chooses on a verify card, only a finger moves
+    // the page. Some Moviesmod pages (or the player inside them) keep pulling
+    // the view back up to the video; any scroll that does not follow a touch is
+    // undone at once.
+    private String scrollGuardScript() {
+        return "(function(){try{if(window.__subhubScrollGuardV3106)return;window.__subhubScrollGuardV3106=1;"
+                + "var touching=false,lastTouch=0,lastUser=0,keepX=scrollX,keepY=scrollY;"
+                + "var raw=window.scrollTo;"
+                + "function t(){lastTouch=Date.now();}"
+                + "addEventListener('touchstart',function(){touching=true;t();},{capture:true,passive:true});"
+                + "addEventListener('touchmove',t,{capture:true,passive:true});"
+                + "addEventListener('touchend',function(){touching=false;t();},{capture:true,passive:true});"
+                + "addEventListener('touchcancel',function(){touching=false;t();},{capture:true,passive:true});"
+                + "addEventListener('scroll',function(){var now=Date.now();"
+                + "if(touching||now-lastTouch<900||now-lastUser<160){lastUser=now;keepX=scrollX;keepY=scrollY;return;}"
+                + "if(Math.abs(scrollY-keepY)>3||Math.abs(scrollX-keepX)>3){try{raw.call(window,keepX,keepY);}catch(_){}}"
+                + "},{capture:true,passive:true});"
+                + "var noop=function(){};"
+                + "try{Element.prototype.scrollIntoView=function(){};}catch(_){}"
+                + "try{window.scrollTo=function(){if(touching||Date.now()-lastTouch<900)return raw.apply(window,arguments);};}catch(_){}"
+                + "try{window.scroll=window.scrollTo;window.scrollBy=noop;}catch(_){}"
+                + "try{var f=HTMLElement.prototype.focus;HTMLElement.prototype.focus=function(o){try{return f.call(this,Object.assign({},o||{},{preventScroll:true}));}catch(_){return f.call(this);}};}catch(_){}"
+                + "}catch(_){}})();";
+    }
+
     private void selectProviderServer(String rawLabel) {
         String label = normalizeServerLabel(rawLabel);
         if (probe == null || closed || playing || !isProviderServerLabel(label)) return;
         selectedProviderLabel = label;
-        if (manualServerButton != null) manualServerButton.setVisibility(View.GONE);
-        probe.setAlpha(interactiveSource ? 0.02f : 1.0f);
+        // 322.3.106: on a verify card the page stays visible and usable.
+        if (manualServerButton != null && !verifyFirst) manualServerButton.setVisibility(View.GONE);
+        probe.setAlpha(interactiveSource && !verifyFirst ? 0.02f : 1.0f);
         recordProviderChoice(label);
         showStage("جارٍ فتح السيرفر " + label + "…");
         String js = "window.__subhubSelectProvider && window.__subhubSelectProvider("
@@ -1049,6 +1169,19 @@ public final class DirectStreamPlayer {
         if (!label.isEmpty() && isProviderServerLabel(label)) {
             selectedProviderLabel = label;
             recordProviderChoice(label);
+        }
+        if (verifyFirst && interactiveSource) {
+            // 322.3.106: remember the server's player URL only. The page keeps
+            // playing it in its own player; nothing is opened or captured.
+            try {
+                Uri u = Uri.parse(rawUrl == null ? "" : rawUrl.trim());
+                String host = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
+                if ("https".equalsIgnoreCase(u.getScheme()) && !host.isEmpty()
+                        && !host.equals(allowedHost) && !host.endsWith("." + allowedHost)) {
+                    verifyEmbedUrl = u.toString();
+                }
+            } catch (Exception ignored) {}
+            return;
         }
         try {
             Uri u = Uri.parse(rawUrl == null ? "" : rawUrl.trim());
@@ -1301,7 +1434,9 @@ public final class DirectStreamPlayer {
     }
 
     private void beginCapture() {
-        if (interactiveSource) {
+        if (interactiveSource && verifyFirst) {
+            showVerifyStage("اضغط أي سيرفر في الصفحة — يشتغل هنا في مشغّل الموقع. إن اشتغل الفيلم فعلاً اضغط «💾 حفظ هذا السيرفر».");
+        } else if (interactiveSource) {
             showStage(openServers
                     ? "ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط أي سيرفر في الصفحة — أو «جلب السيرفرات»."
                     : "ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
@@ -1362,7 +1497,11 @@ public final class DirectStreamPlayer {
                         }, 180L);
                     }
                 } else {
-                    if (interactiveSource) {
+                    if (interactiveSource && verifyFirst) {
+                        if (verifyLabel.isEmpty()) showVerifyStage("اضغط أي سيرفر في الصفحة — يشتغل هنا في مشغّل الموقع. إن اشتغل الفيلم فعلاً اضغط «💾 حفظ هذا السيرفر».");
+                        // 322.3.106: the page cannot pull the view back to its player.
+                        try { v.evaluateJavascript(scrollGuardScript(), null); } catch (Exception ignored) {}
+                    } else if (interactiveSource) {
                         showStage(openServers
                     ? "ادخل إلى الفيلم وأغلق الإعلانات، ثم اضغط أي سيرفر في الصفحة — أو «جلب السيرفرات»."
                     : "ادخل يدوياً إلى الفيلم وأغلق الإعلانات، ثم اضغط «جلب السيرفرات».");
@@ -1396,7 +1535,9 @@ public final class DirectStreamPlayer {
                 String url = r.getUrl().toString();
                 if ("https".equals(r.getUrl().getScheme())
                         && url.toLowerCase(Locale.ROOT).contains(".m3u8")
-                        && ((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())) {
+                        && ((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())
+                        // 322.3.106: no capture while the owner verifies on the page.
+                        && !(verifyFirst && interactiveSource)) {
                     Map<String,String> headers = new HashMap<>(r.getRequestHeaders());
                     if (vidnestMode) {
                         if (isVidnestProxyPlaylist(r.getUrl())) {
@@ -1454,7 +1595,7 @@ public final class DirectStreamPlayer {
         }
 
         handler.postDelayed(() -> {
-            if (interactiveSource && !closed && !playing && !vidnestListShown && !vidnestEvaluating) {
+            if (interactiveSource && !verifyFirst && !closed && !playing && !vidnestListShown && !vidnestEvaluating) {
                 message("لم يُلتقط بث بعد. اختر سيرفراً آخر أو أعد المحاولة.");
                 if (!selectedProviderLabel.isEmpty()) showDecisionBar(false);
             }
@@ -2777,6 +2918,19 @@ public final class DirectStreamPlayer {
         if (closed) return;
         String value = text == null ? "" : text.trim();
         if (value.isEmpty()) value = ok ? "تم الحفظ" : "تعذّر الحفظ";
+        if (verifyFirst && interactiveSource && !playing) {
+            // 322.3.106: saved from the verify page → close it; the card reopens
+            // the saved server in the SubHub player at once (subtitles + timing).
+            verifySaving = false;
+            updateVerifySaveButton();
+            if (ok) {
+                showStage(value + " — جارٍ تشغيله في مشغّل التطبيق…");
+                handler.postDelayed(() -> { if (!closed) close(); }, 900L);
+            } else {
+                showVerifyStage(value);
+            }
+            return;
+        }
         if (ok) hideDecisionBar();
         showTransientValue(value, ok ? 1600 : 2200);
     }
