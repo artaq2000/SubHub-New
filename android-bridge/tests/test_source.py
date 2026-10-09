@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 116" in gradle
-assert "versionName '322.3.107'" in gradle
+assert "versionCode 117" in gradle
+assert "versionName '322.3.108'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -527,7 +527,7 @@ assert 'جارٍ جلب رابط الفيديو' in direct
 assert 'جارٍ تجهيز الفيديو' in direct
 assert 'جارٍ تشغيل الفيديو' in direct
 assert 'جارٍ إعادة المحاولة' in direct
-assert 'تعذّر الاتصال. حاول مرة أخرى.' in direct
+assert 'تعذّر تشغيل هذا السيرفر.' in direct   # 322.3.108: final message (was «تعذّر الاتصال. حاول مرة أخرى.»)
 
 
 # 322.3.72: keep the provider/player visible inside a touchable video-sized preview.
@@ -946,7 +946,7 @@ assert m106.index('readAsset("open4_stream.js")') < m106.index('readAsset("serie
 assert 'final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode)' in m106   # 322.3.107 adds || "list"
 assert '"open3".equals(mode) ? "window.__subhubOpen3"' in m106
 d106 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
-assert '&& !(verifyFirst && interactiveSource)) {' in d106          # no capture while verifying
+assert '&& !(verifyFirst && interactiveSource)' in d106          # no capture while verifying (322.3.108 adds && !fallbackMode)
 assert 'private void saveVerifiedServer()' in d106
 assert 'private String scrollGuardScript()' in d106
 assert 'if (verifyFirst) { showVerifyBar(); return; }' in d106
@@ -985,6 +985,43 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 116' in mv107
-assert "versionCode 116" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 117' in mv107
+assert "versionCode 117" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
+
+# 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
+# without subtitles). A saved server that fails keeps the black screen with one
+# message + «↩ اختر سيرفراً آخر»; only the owner sees the reason.
+d108 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+assert 'fallbackMode' not in d108 and 'startProviderFallback' not in d108 and 'fallbackPlayScript' not in d108
+assert 'static String playbackFailureReason(PlaybackException e)' in d108
+sf = d108[d108.index('private void showServerFailure(String reason)'):]
+sf = sf[:sf.index('\n    }\n')]
+assert 'اختر سيرفراً آخر أو زراً آخر أو مشغّلاً آخر.' in sf
+assert 'chip("↩ اختر سيرفراً آخر", 15, this::close)' in sf
+assert sf.index('if (ownerMode) {') < sf.index('سبب الفشل: ')      # reason: owner only
+assert sf.index('text.setText(') < sf.index('if (ownerMode) {')
+assert 'reason' not in sf[:sf.index('if (ownerMode) {')].replace('String reason', '')
+assert d108.count('showServerFailure(') >= 4                     # def + startup retry + player error + vidnest probe
+assert 'showServerFailure(firstFailureReason.isEmpty() ? "تعذّر الاتصال بالسيرفر مرتين" : firstFailureReason);' in d108
+assert 'showServerFailure(reason);' in d108
+assert 'subscriberStartupPhase <= 4 && probe != null && subscriberProviderVisible' in d108
+# subtitles: error or no answer -> message (both say what to do next)
+assert 'private void showSubtitleFailure(String ownerNote)' in d108
+assert 'جرّب زراً آخر أو مشغّلاً آخر' in d108
+assert d108.count('watchSubtitleAnswer(index);') == 2
+cu = d108[d108.index('public void setCues(int index, JSONArray value, String error)'):]
+cu = cu[:cu.index('\n    }\n')]
+assert 'subtitleAnsweredSeq = subtitleAskSeq;' in cu and 'showSubtitleFailure(error);' in cu
+print('322.3.108 failure message checks OK')
+
+# 322.3.108: the old cards become compact rows inside «📺 سيرفرات التطبيق».
+o108 = open('app/src/main/assets/app_cards_order.js', encoding='utf-8').read()
+assert "document.getElementById('subhub-applist-legacy-block')" in o108
+assert "function compact(card)" in o108 and "function placeLegacy(h, el, mode)" in o108
+assert "viewerReady(mode) ? h.saved : h.unused" in o108
+assert "'أزرار غير مستعملة ('" in o108
+l108 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert "'subhub-applist-legacy-block'" in l108 and 'الأزرار السابقة' in l108
+assert 'data-legacy' in l108
+print('322.3.108 compact rows checks OK')

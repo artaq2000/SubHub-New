@@ -39,9 +39,87 @@
     } catch (_) { return null; }
   }
 
+  // 322.3.108: for the owner the old cards live as compact rows inside the
+  // «📺 سيرفرات التطبيق» section (block built by app_list_stream.js): cards
+  // with a saved server under «الأزرار السابقة», the others folded under
+  // «أزرار غير مستعملة».
+  function ownerHosts() {
+    const block = document.getElementById('subhub-applist-legacy-block');
+    if (!block || !block.isConnected) return null;
+    const saved = block.querySelector('[data-legacy="saved"]');
+    const unused = block.querySelector('[data-legacy="unused"]');
+    if (!saved || !unused) return null;
+    return {
+      block: block,
+      saved: saved,
+      unused: unused,
+      details: block.querySelector('[data-legacy="details"]'),
+      count: block.querySelector('[data-legacy="count"]'),
+      savedHead: block.querySelector('[data-legacy="saved-head"]')
+    };
+  }
+  function viewerReady(mode) {
+    const r = (window.__subhubAppReadyV3107 || {})[mode];
+    return !!(r && r.movieId === currentId() && r.ready);
+  }
+  function compact(card) {
+    if (!card || card.getAttribute('data-compact') === '1') return;
+    card.setAttribute('data-compact', '1');
+    card.style.minHeight = '0';
+    card.style.padding = '8px 10px';
+    card.style.borderRadius = '12px';
+    card.style.gap = '6px';
+    card.style.width = '100%';
+    card.style.boxSizing = 'border-box';
+    card.style.margin = '0';
+    if (!card.style.position) card.style.position = 'relative';
+    for (let i = 0; i < card.children.length; i++) {
+      const c = card.children[i];
+      if (c.tagName === 'BUTTON') {
+        c.style.fontSize = '.8rem';
+        c.style.textAlign = 'start';
+        c.style.lineHeight = '1.45';
+        c.style.paddingInlineEnd = '50px';   // room for the 👁 badge
+        const sm = c.querySelector('small');
+        if (sm) sm.style.fontSize = '.6rem';
+      } else if (c.tagName === 'DIV' && !c.classList.contains('subhub-viewer-badge')) {
+        [].slice.call(c.querySelectorAll('button')).forEach(function (b) {
+          b.style.minHeight = '30px';
+          b.style.fontSize = '.62rem';
+        });
+      }
+    }
+  }
+  function insertOrdered(host, el, order) {
+    el.setAttribute('data-app-order', String(order));
+    const kids = [].slice.call(host.children).filter(function (c) { return c !== el; });
+    const later = kids.find(function (c) { return orderOf(c) > order; });
+    if (later) host.insertBefore(el, later); else host.appendChild(el);
+  }
+  function updateLegacyCounts(h) {
+    const nUnused = h.unused.children.length;
+    const nSaved = h.saved.children.length;
+    if (h.count) {
+      const t = 'أزرار غير مستعملة (' + arNum(nUnused) + ')';
+      if (h.count.textContent !== t) h.count.textContent = t;
+    }
+    if (h.details) h.details.style.display = nUnused ? '' : 'none';
+    if (h.savedHead) h.savedHead.style.display = (nSaved || nUnused) ? '' : 'none';
+  }
+  function placeLegacy(h, el, mode) {
+    compact(el);
+    insertOrdered(viewerReady(mode) ? h.saved : h.unused, el, ORDER[mode]);
+    updateLegacyCounts(h);
+  }
+
   // Inserts (or moves) `el` into `grid` at the slot of `mode` (or `orderOverride`).
   window.__subhubPlaceAppCardV3106 = function (grid, el, mode, orderOverride) {
     if (!grid || !el) return;
+    if (ORDER[mode] && !(Number(orderOverride) > 0)
+        && grid.classList && grid.classList.contains('owner-watch-pills')) {
+      const h = ownerHosts();
+      if (h) { placeLegacy(h, el, mode); return; }
+    }
     const order = Number(orderOverride) > 0 ? Number(orderOverride) : (ORDER[mode] || 99);
     el.setAttribute('data-app-order', String(order));
     const kids = [].slice.call(grid.children).filter(function (c) { return c !== el; });
@@ -80,14 +158,22 @@
   };
 
   // 322.3.107: a 👁 badge on each old owner card = its number for viewers.
+  // 322.3.108: also keeps each old card in the right part of the section.
   function decorate() {
     try {
       const grid = document.querySelector('.owner-watch-pills');
       if (!grid) return;
       const order = window.__subhubViewerAppOrderV3107();
+      const h = ownerHosts();
       Object.keys(ORDER).forEach(function (m) {
         const card = document.getElementById('subhub-' + m + '-stream-card');
-        if (!card || card.parentElement !== grid) return;
+        if (!card) return;
+        if (h) {
+          const target = viewerReady(m) ? h.saved : h.unused;
+          if (card.parentElement !== target) placeLegacy(h, card, m);
+        } else if (card.parentElement !== grid) {
+          return;
+        }
         const k = order.indexOf(m);
         const txt = k >= 0 ? '👁 ' + arNum(k + 1) : '👁 —';
         let b = null;
@@ -109,6 +195,7 @@
         }
         b.style.opacity = k >= 0 ? '1' : '.55';
       });
+      if (h) updateLegacyCounts(h);
     } catch (_) {}
   }
   setInterval(decorate, 900);

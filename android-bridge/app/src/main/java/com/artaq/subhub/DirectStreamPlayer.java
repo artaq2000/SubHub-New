@@ -253,6 +253,14 @@ public final class DirectStreamPlayer {
     private long subscriberStartupDeadlineMs = 0L;
     private boolean playbackReady = false;
     private boolean subscriberProviderVisible = false;
+    // 322.3.108: when a saved server does not play, the screen stays black and
+    // shows one clear way out (another server / button / player). Only the
+    // owner sees why it failed.
+    private String firstFailureReason = "";
+    private LinearLayout failurePanel;
+    // 322.3.108: a subtitle that never arrives is reported, not left silent.
+    private int subtitleAskSeq = 0;
+    private int subtitleAnsweredSeq = 0;
     private String subscriberStageBase = "";
     private int subscriberStageDots = 0;
     private int subscriberStageAnimationGeneration = 0;
@@ -609,6 +617,101 @@ public final class DirectStreamPlayer {
         if (decisionBar != null) decisionBar.setVisibility(View.GONE);
     }
 
+    // 322.3.108: owner-only wording of why the SubHub player could not play.
+    static String playbackFailureReason(PlaybackException e) {
+        try {
+            Throwable c = e;
+            while (c != null) {
+                if (c instanceof androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) {
+                    int code = ((androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException) c).responseCode;
+                    return "السيرفر رفض البث خارج صفحته (HTTP " + code + ")";
+                }
+                if (c instanceof androidx.media3.datasource.HttpDataSource.HttpDataSourceException) {
+                    return "تعذّر الوصول إلى البث (" + e.getErrorCodeName() + ")";
+                }
+                if (c instanceof androidx.media3.common.ParserException) {
+                    return "رابط البث ليس فيديو صالحاً (" + e.getErrorCodeName() + ")";
+                }
+                c = c.getCause();
+            }
+            return e.getErrorCodeName();
+        } catch (Exception ignored) {
+            return "خطأ غير معروف";
+        }
+    }
+
+    // 322.3.108: final failure of a saved server. The screen stays black; the
+    // viewer gets one message and a button back to the film page. The owner
+    // also gets the reason (the viewer never sees it).
+    private void showServerFailure(String reason) {
+        if (closed || root == null) return;
+        stopSubscriberStageAnimation();
+        status.setVisibility(View.GONE);
+        if (failurePanel != null) {
+            ViewGroup parent = (ViewGroup) failurePanel.getParent();
+            if (parent != null) parent.removeView(failurePanel);
+            failurePanel = null;
+        }
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(16), dp(14), dp(16), dp(14));
+        box.setBackground(round(0xee0b1725, 0xccF7BC3D, 1, 18));
+        box.setElevation(dp(28));
+        box.setClickable(true);
+
+        TextView text = new TextView(activity);
+        text.setTextColor(Color.WHITE);
+        text.setTextSize(15);
+        text.setGravity(Gravity.CENTER);
+        text.setLineSpacing(0f, 1.25f);
+        text.setTextDirection(View.TEXT_DIRECTION_FIRST_STRONG_RTL);
+        text.setText("تعذّر تشغيل هذا السيرفر.\n"
+                + "أغلق المشغّل وأعد المحاولة، وإن لم يعمل\n"
+                + "اختر سيرفراً آخر أو زراً آخر أو مشغّلاً آخر.");
+        text.setPadding(0, 0, 0, dp(12));
+        box.addView(text, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView back = chip("↩ اختر سيرفراً آخر", 15, this::close);
+        back.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
+        box.addView(back, new LinearLayout.LayoutParams(-1, dp(44)));
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(320), -2, Gravity.CENTER);
+        root.addView(box, lp);
+        failurePanel = box;
+        box.bringToFront();
+        menuButton.bringToFront();
+        if (ownerMode) {
+            failureDetail = "سبب الفشل: " + (reason == null || reason.trim().isEmpty() ? "غير معروف" : reason.trim())
+                    + "\n(المشترك لا يرى السبب — يرى الرسالة والزر فقط.)";
+            showDecisionBar(false);
+        }
+    }
+
+    // 322.3.108: the subtitle did not load (error, or no answer).
+    private void showSubtitleFailure(String ownerNote) {
+        if (closed) return;
+        String text = "تعذّر تحميل الترجمة هنا.\nاختر ترجمة أخرى من CC، أو جرّب زراً آخر أو مشغّلاً آخر.";
+        if (ownerMode && ownerNote != null && !ownerNote.trim().isEmpty()) text += "\n(" + ownerNote.trim() + ")";
+        showTransientValue(text, 7000L);
+    }
+
+    private void watchSubtitleAnswer(int index) {
+        final int seq = ++subtitleAskSeq;
+        handler.postDelayed(() -> checkSubtitleAnswer(seq, index), 25000L);
+    }
+
+    private void checkSubtitleAnswer(int seq, int index) {
+        if (closed || seq != subtitleAskSeq || subtitleAnsweredSeq >= seq || selectedSubtitle != index) return;
+        if (!playbackReady) {
+            // Judge it only once the video plays.
+            handler.postDelayed(() -> checkSubtitleAnswer(seq, index), 3000L);
+            return;
+        }
+        subtitleAnsweredSeq = seq;
+        showSubtitleFailure("لم يصل ملف الترجمة خلال ٢٥ ثانية");
+    }
+
     private void chooseAnotherServer() {
         if (closed || reopening) return;
         reopening = true;
@@ -826,11 +929,21 @@ public final class DirectStreamPlayer {
             return;
         }
 
-        if (subscriberStartupPhase <= 4 && probe != null) {
+        if (firstFailureReason.isEmpty()) {
+            firstFailureReason = "انتهت المهلة عند «" + startupStageText(subscriberStartupPhase) + "»";
+        }
+        // 322.3.108: asking to tap only makes sense when the server's player is
+        // visible; a hidden page means a black screen — retry, then the message.
+        if (subscriberStartupPhase <= 4 && probe != null && subscriberProviderVisible) {
             subscriberStartupGeneration++;
+            final int tapGeneration = subscriberStartupGeneration;
             stopSubscriberStageAnimation();
             removeDirectCover();
             showStage("اضغط داخل شاشة الفيديو للتشغيل.");
+            handler.postDelayed(() -> {
+                if (closed || interactiveSource || playbackReady || tapGeneration != subscriberStartupGeneration) return;
+                retrySubscriberStartup();
+            }, 45000L);
             return;
         }
 
@@ -888,8 +1001,7 @@ public final class DirectStreamPlayer {
             destroyProbe();
             removeDirectCover();
             subscriberStartupPhase = 0;
-            showStage("تعذّر الاتصال. حاول مرة أخرى.");
-            if (ownerMode) showDecisionBar(false);
+            showServerFailure(firstFailureReason.isEmpty() ? "تعذّر الاتصال بالسيرفر مرتين" : firstFailureReason);
             return;
         }
 
@@ -2403,8 +2515,7 @@ public final class DirectStreamPlayer {
             cleanupPlayerForRetry();
             destroyProbe();
             removeDirectCover();
-            showStage("تعذّر تشغيل الفيديو. حاول مرة أخرى.");
-            if (ownerMode) showDecisionBar(false);
+            showServerFailure("Vidnest · فحص الرابط فشل\n" + vidnestProbeReport);
         } else {
             message("تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة.");
             showDecisionBar(false);
@@ -2541,6 +2652,8 @@ public final class DirectStreamPlayer {
             @Override public void onPlayerError(PlaybackException error) {
                 final String vidnestDiag = (vidnestMode && ownerMode) ? vidnestDiagnostic(error) : "";
                 failureDetail = vidnestDiag;
+                final String reason = vidnestDiag.isEmpty() ? playbackFailureReason(error) : vidnestDiag;
+                if (firstFailureReason.isEmpty()) firstFailureReason = reason;
                 if (!interactiveSource && subscriberStartupAttempt < 2) {
                     retrySubscriberStartup();
                 } else if (!interactiveSource) {
@@ -2550,9 +2663,7 @@ public final class DirectStreamPlayer {
                     cleanupPlayerForRetry();
                     destroyProbe();
                     removeDirectCover();
-                    showStage(vidnestDiag.isEmpty() ? "تعذّر تشغيل الفيديو. حاول مرة أخرى."
-                            : "تعذّر تشغيل الفيديو.\n" + vidnestDiag);
-                    if (ownerMode) showDecisionBar(false);
+                    showServerFailure(reason);
                 } else {
                     message(vidnestDiag.isEmpty() ? "تعذّر تشغيل البث مباشرة. أغلق وأعد المحاولة."
                             : "تعذّر تشغيل البث.\n" + vidnestDiag);
@@ -2771,6 +2882,7 @@ public final class DirectStreamPlayer {
                 currentSubtitleText = "";
                 applySubtitleText("");
                 listener.subtitleRequested(index);
+                watchSubtitleAnswer(index);
                 hidePanel();
             }));
             if (captions && selectedSubtitle == index) markSelected(item);
@@ -2820,6 +2932,7 @@ public final class DirectStreamPlayer {
             resetSegment();
             captions = true;
             listener.subtitleRequested(index);
+            watchSubtitleAnswer(index);
         }
     }
 
@@ -2835,6 +2948,7 @@ public final class DirectStreamPlayer {
         if (closed || selectedSubtitle != index) return;
         resetSegment();
         segmentMode = true;
+        subtitleAnsweredSeq = subtitleAskSeq;
         cues = new JSONArray();
         if (notice != null && !notice.trim().isEmpty()) showTransientValue(notice.trim(), 4500);
     }
@@ -2862,8 +2976,10 @@ public final class DirectStreamPlayer {
 
     public void setCues(int index, JSONArray value, String error) {
         if (closed || selectedSubtitle != index) return;
+        subtitleAnsweredSeq = subtitleAskSeq;
         if (error != null && !error.isEmpty()) {
-            message(error);
+            // 322.3.108: say what to do next, and long enough to read it.
+            showSubtitleFailure(error);
             return;
         }
         cues = value;

@@ -717,6 +717,40 @@
     return b;
   }
 
+  // 322.3.108: the old app cards (Moviesmod, yellow, open 1…4, Vidnest) sit in
+  // this block as compact rows (moved here by app_cards_order.js). The block is
+  // kept across redraws of the section so the cards are never destroyed.
+  function legacyBlock() {
+    let b = document.getElementById('subhub-applist-legacy-block');
+    if (b) return b;
+    b = document.createElement('div');
+    b.id = 'subhub-applist-legacy-block';
+    b.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:4px;border-top:1px solid #1f3b4d;padding-top:10px';
+    const head = document.createElement('div');
+    head.setAttribute('data-legacy', 'saved-head');
+    head.style.cssText = 'font-weight:900;font-size:.8rem;color:#cbd5e1';
+    head.textContent = 'الأزرار السابقة';
+    const saved = document.createElement('div');
+    saved.setAttribute('data-legacy', 'saved');
+    saved.style.cssText = 'display:flex;flex-direction:column;gap:6px';
+    const details = document.createElement('details');
+    details.setAttribute('data-legacy', 'details');
+    details.style.cssText = 'border:1px dashed #2b4a5e;border-radius:12px;padding:6px 8px';
+    const summary = document.createElement('summary');
+    summary.setAttribute('data-legacy', 'count');
+    summary.style.cssText = 'cursor:pointer;font-size:.74rem;font-weight:800;color:#a9b7cb;padding:4px 2px';
+    summary.textContent = 'أزرار غير مستعملة';
+    const unused = document.createElement('div');
+    unused.setAttribute('data-legacy', 'unused');
+    unused.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:6px';
+    details.appendChild(summary);
+    details.appendChild(unused);
+    b.appendChild(head);
+    b.appendChild(saved);
+    b.appendChild(details);
+    return b;
+  }
+
   function buildSection(movieId) {
     const ctx = { movieId: movieId, kind: 'movie' };
     const sec = document.createElement('section');
@@ -786,6 +820,7 @@
       if (!add.disabled) openSession(ctx, null, true, '');
     });
     sec.appendChild(add);
+    sec.appendChild(legacyBlock());   // moves the existing block (with its cards) here
     return sec;
   }
 
