@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 115" in gradle
-assert "versionName '322.3.106'" in gradle
+assert "versionCode 116" in gradle
+assert "versionName '322.3.107'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -943,7 +943,7 @@ for n in ('3', '4'):
 m106 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
 assert m106.index('readAsset("app_cards_order.js")') < m106.index('readAsset("moviesmod_stream.js")')
 assert m106.index('readAsset("open4_stream.js")') < m106.index('readAsset("series_stream.js")')
-assert 'final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode);' in m106
+assert 'final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode)' in m106   # 322.3.107 adds || "list"
 assert '"open3".equals(mode) ? "window.__subhubOpen3"' in m106
 d106 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
 assert '&& !(verifyFirst && interactiveSource)) {' in d106          # no capture while verifying
@@ -955,3 +955,36 @@ assert "const VERIFY_MODES = ['open3', 'open4'];" in s106
 assert "['Open3', 'open3'], ['Open4', 'open4']" in s106
 assert "if (result.ok && state.verify) state.reopenAfterSave = true;" in s106
 print('322.3.106 verify cards checks OK')
+
+# 322.3.107: «سيرفرات التطبيق» list (up to 10 per film / episode) + viewer numbers.
+al = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert "const MAX = 10;" in al
+assert "mode: 'list'" in al
+assert "appServers: arr" in al and "seriesAppServers: { [ek]: arr }" in al
+for hook in ['ServerSelected', 'SaveNow', 'PinNow', 'SyncPinNow', 'ReopenManual']:
+    assert "window.__subhubAppList%s = " % hook in al, hook
+assert "if (r.ok && !st.auto) st.reopenSlot = r.id;" in al
+assert "pinSubtitleForServerV382(entry, 'as_' + st.slotId)" in al
+assert "raw && raw.source === 'list'" in al and "previousSeriesHook.apply(this, arguments)" in al
+order107 = open('app/src/main/assets/app_cards_order.js', encoding='utf-8').read()
+assert "window.__subhubViewerAppOrderV3107 = function ()" in order107
+assert "firstSiteAppPill(grid)" in order107 and "subhub-viewer-badge" in order107
+for f in ['moviesmod', 'vsm', 'vidnest', 'open1', 'open2', 'open3', 'open4']:
+    src = open('app/src/main/assets/%s_stream.js' % f, encoding='utf-8').read()
+    assert "(window.__subhubAppReadyV3107 = window.__subhubAppReadyV3107 || {})['%s']" % f in src, f
+s107 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert "window.__subhubSeriesHelpersV3107 = {" in s107
+m107 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+assert m107.index('readAsset("series_stream.js")') < m107.index('readAsset("app_list_stream.js")')
+assert '|| "list".equals(mode);' in m107 and '"list".equals(mode) ? "window.__subhubAppList"' in m107
+print('322.3.107 app servers list checks OK')
+
+# 322.3.107: the update check reads the installed APK's real version.
+mv107 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in mv107
+assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
+assert '"/latest?current=" + nativeVersionCode()' in mv107
+assert 'NATIVE_VERSION_CODE = 109' not in mv107
+assert 'NATIVE_VERSION_CODE_FALLBACK = 116' in mv107
+assert "versionCode 116" in open('app/build.gradle', encoding='utf-8').read()
+print('322.3.107 real version checks OK')

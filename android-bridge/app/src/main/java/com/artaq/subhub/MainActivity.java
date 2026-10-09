@@ -67,8 +67,32 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.106";
-    private static final int NATIVE_VERSION_CODE = 109;
+    private static final String NATIVE_VERSION = "322.3.107";
+    // 322.3.107: the update check now uses the version of the APK that is really
+    // installed (it was a fixed 109 for many builds, so an installed release could
+    // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
+    // still only what the owner publishes in R2 releases. These constants are the
+    // fallback if the package manager cannot answer.
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 116;
+    private int installedVersionCode = -1;
+    private String installedVersionName = null;
+
+    private int nativeVersionCode() {
+        if (installedVersionCode > 0) return installedVersionCode;
+        try {
+            android.content.pm.PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            long code = Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode;
+            if (code > 0 && code < Integer.MAX_VALUE) installedVersionCode = (int) code;
+            if (info.versionName != null && !info.versionName.trim().isEmpty()) installedVersionName = info.versionName.trim();
+        } catch (Exception ignored) {}
+        if (installedVersionCode <= 0) installedVersionCode = NATIVE_VERSION_CODE_FALLBACK;
+        return installedVersionCode;
+    }
+
+    private String nativeVersionName() {
+        nativeVersionCode();
+        return installedVersionName != null ? installedVersionName : NATIVE_VERSION;
+    }
     private static final int FILE_CHOOSER_REQUEST = 2207;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
@@ -269,6 +293,8 @@ public class MainActivity extends Activity {
                 + readAsset("open3_stream.js") + "\n"
                 + readAsset("open4_stream.js") + "\n"
                 + readAsset("series_stream.js") + "\n"
+                // 322.3.107: «سيرفرات التطبيق» list (films + episodes) — after series_stream.js.
+                + readAsset("app_list_stream.js") + "\n"
                 + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -1155,7 +1181,7 @@ public class MainActivity extends Activity {
     private boolean newerUpdate(JSONObject d) {
         return d.optBoolean("ok", false)
                 && getPackageName().equals(d.optString("packageName", ""))
-                && d.optInt("versionCode", 0) > NATIVE_VERSION_CODE;
+                && d.optInt("versionCode", 0) > nativeVersionCode();
     }
 
     private String nativeUpdateState() {
@@ -1164,7 +1190,7 @@ public class MainActivity extends Activity {
             JSONObject out = new JSONObject();
             out.put("available", newerUpdate(d));
             out.put("versionName", d.optString("versionName", ""));
-            out.put("currentVersion", NATIVE_VERSION);
+            out.put("currentVersion", nativeVersionName());
             out.put("busy", updateDownloadBusy);
             return out.toString();
         } catch (Exception e) { return "{}"; }
@@ -1187,7 +1213,7 @@ public class MainActivity extends Activity {
         updateCheckBusy = true;
         new Thread(() -> {
             try {
-                JSONObject d = workerJson("/latest?current=" + NATIVE_VERSION_CODE, null);
+                JSONObject d = workerJson("/latest?current=" + nativeVersionCode(), null);
                 if (d.optBoolean("ok", false) && getPackageName().equals(d.optString("packageName", ""))) {
                     nativePrefs.edit().putString(KEY_UPDATE_META, d.toString()).apply();
                 }
@@ -1214,7 +1240,7 @@ public class MainActivity extends Activity {
                 body.put("appSecret", appSecret());
                 JSONObject d = postWorkerJson("/update", body);
                 if (!d.optBoolean("ok", false)) throw new Exception(d.optString("error", "update-failed"));
-                if (d.optInt("versionCode", 0) <= NATIVE_VERSION_CODE) {
+                if (d.optInt("versionCode", 0) <= nativeVersionCode()) {
                     nativePrefs.edit().remove(KEY_UPDATE_META).apply();
                     ui.post(() -> Toast.makeText(this, "أنت تستخدم أحدث إصدار", Toast.LENGTH_SHORT).show());
                     return;
@@ -1815,7 +1841,8 @@ public class MainActivity extends Activity {
                     // 322.3.106: "open3"/"open4" — verify-first open cards: while the owner
                     // chooses, a tapped server only plays in the page's own player (no
                     // capture); «💾 حفظ هذا السيرفر» saves it. Playback is the same.
-                    final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode);
+                    // 322.3.107: "list" — one entry of the «سيرفرات التطبيق» list; same verify flow.
+                    final boolean verifyFirst = "open3".equals(mode) || "open4".equals(mode) || "list".equals(mode);
                     final boolean openMode = "open1".equals(mode) || "open2".equals(mode) || verifyFirst;
                     final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode)
                             || vidnestMode || openMode;
@@ -1825,6 +1852,7 @@ public class MainActivity extends Activity {
                             : "open2".equals(mode) ? "window.__subhubOpen2"
                             : "open3".equals(mode) ? "window.__subhubOpen3"
                             : "open4".equals(mode) ? "window.__subhubOpen4"
+                            : "list".equals(mode) ? "window.__subhubAppList"
                             : "window.__subhubMoviesmod";
                     String directEmbedUrl = "";
                     // 322.3.103: ⏱ timing saved on this device belongs to this film
@@ -2051,7 +2079,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getNativeVersion() {
-            return NATIVE_VERSION;
+            return nativeVersionName();
         }
 
         @JavascriptInterface

@@ -887,6 +887,14 @@
     const subscriber = isSubscriber();
     const saved = savedServer();
 
+    // 322.3.107: does a viewer see this card on this film? (owner 👁 badges)
+    try {
+      (window.__subhubAppReadyV3107 = window.__subhubAppReadyV3107 || {})['open3'] = {
+        movieId: movieId,
+        ready: !!(serverState.loaded && serverState.movieId === movieId && saved.enabled && saved.label && saved.pageUrl)
+      };
+    } catch (_) {}
+
     if (owner) {
       if (document.getElementById('subhub-open3-stream-card')) return;
 

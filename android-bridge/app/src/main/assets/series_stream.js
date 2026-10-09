@@ -284,7 +284,10 @@
   // (3) otherwise the episode's official subtitle (as before). A community
   // subtitle never starts by itself unless the owner chose it.
   function applyDefaults(catalog, mode, season, episode) {
-    const pin = cleanRef(rawEntry(mode, season, episode).subtitlePin);
+    return applyDefaultsWithPin(catalog, cleanRef(rawEntry(mode, season, episode).subtitlePin), season, episode);
+  }
+  // 322.3.107: same rules with a pin given directly (app-server list items).
+  function applyDefaultsWithPin(catalog, pin, season, episode) {
     const pinIndex = findRef(catalog, pin);
     if (pinIndex >= 0) {
       catalog[pinIndex].pinned = true;
@@ -495,6 +498,20 @@
     bg.addEventListener('click', function (e) { if (e.target === bg) bg.remove(); });
     document.body.appendChild(bg);
   }
+
+  // 322.3.107: shared with app_list_stream.js (the «سيرفرات التطبيق» list),
+  // so episodes on the list get the same TMDB page, CC list and defaults.
+  window.__subhubSeriesHelpersV3107 = {
+    epKey: epKey,
+    resolveTmdbTv: resolveTmdbTv,
+    episodePageUrl: episodePageUrl,
+    episodeCatalog: episodeCatalog,
+    ensureEpisodeMembers: ensureEpisodeMembers,
+    applyDefaultsWithPin: function (catalog, pin, season, episode) {
+      return applyDefaultsWithPin(catalog, cleanRef(pin), season, episode);
+    },
+    cleanRef: cleanRef
+  };
 
   // Entry point used by SubHub Web v383 (seriesPlayExtraV383).
   window.SubHubSeriesAppSourceV383 = function (raw) {
