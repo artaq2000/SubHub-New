@@ -91,6 +91,8 @@ public final class DirectStreamPlayer {
         // 322.3.111: where the viewer is now (every few seconds, on pause/close
         // and at the end), so the site can show «أكمل · 17:20» / «✓ تمت المشاهدة».
         void progress(long positionMs, long durationMs);
+        // 322.3.112: «الحلقة التالية» — countdown ended or «▶ شغّل الآن».
+        void nextEpisode();
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -144,6 +146,13 @@ public final class DirectStreamPlayer {
     // «💾 حفظ هذا السيرفر» saves the last server tapped; playback afterwards
     // (owner test and viewers) is the normal capture path with subtitles.
     private final boolean verifyFirst;
+    // 322.3.112: our own episode files in the same black screen («شاشة واحدة»).
+    //   OWN_FILE: a direct video link (R2 / mp4 / m3u8) — no page, plays at once.
+    //   OWN_PAGE: our player page (worker / StreamHG) opened hidden; its video
+    //             link is taken like a server's.
+    static final int OWN_NONE = 0, OWN_FILE = 1, OWN_PAGE = 2;
+    private final int ownKind;
+    private String ownReferer = "";
     private String verifyLabel = "";
     private String verifyEmbedUrl = "";
     private boolean verifySaving = false;
@@ -284,7 +293,23 @@ public final class DirectStreamPlayer {
     private int autoTotal = 0;
     private boolean autoMore = false;   // another server (or the site player) comes after this one
     private boolean autoReported = false;
-    static final long AUTO_STEP_MS = 8000L;
+    // 322.3.112: smart waiting instead of 8 s for every step (EpisodeTiming): a
+    // page that does not open at all is skipped at once; a server that is alive
+    // gets time to answer, and a server known to be slow gets twice its usual time.
+    private long autoExpectMs = 0L;
+    // 322.3.112: «الحلقة التالية» card — 10 s after the last subtitle line (the
+    // credits), or 40 s before the end when there is no usable subtitle.
+    static final int NEXT_COUNTDOWN_S = EpisodeTiming.NEXT_COUNTDOWN_S;
+    private String nextLabel = "";          // empty = no next episode
+    private boolean nextAuto = true;        // the owner may switch the countdown off
+    private boolean creditsReached = false; // the episode counts as watched
+    private boolean nextShown = false;
+    private boolean nextCancelled = false;
+    private int nextGeneration = 0;
+    private LinearLayout nextCard;
+    private TextView nextCount;
+    private JSONArray creditsCuesRef = null;
+    private long creditsLastCueMs = -1L;
     // 322.3.108: a subtitle that never arrives is reported, not left silent.
     private int subtitleAskSeq = 0;
     private int subtitleAnsweredSeq = 0;
@@ -342,6 +367,20 @@ public final class DirectStreamPlayer {
                               boolean openChooser, String directEmbedUrl,
                               boolean vidnestMode, boolean openServers, boolean verifyFirst,
                               Listener listener) {
+        this(activity, parent, source, catalog, resumeKey, allowedHost,
+                preferredServerKey, preferredServerLabel, interactiveSource,
+                ownerMode, openChooser, directEmbedUrl, vidnestMode, openServers, verifyFirst,
+                OWN_NONE, listener);
+    }
+
+    public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
+                              JSONArray catalog, String resumeKey, String allowedHost,
+                              String preferredServerKey, String preferredServerLabel,
+                              boolean interactiveSource, boolean ownerMode,
+                              boolean openChooser, String directEmbedUrl,
+                              boolean vidnestMode, boolean openServers, boolean verifyFirst,
+                              int ownKind, Listener listener) {
+        this.ownKind = (ownKind == OWN_FILE || ownKind == OWN_PAGE) && !interactiveSource ? ownKind : OWN_NONE;
         this.vidnestMode = vidnestMode;
         this.verifyFirst = verifyFirst && openServers && !vidnestMode;
         this.openServers = openServers && !vidnestMode;
@@ -562,8 +601,57 @@ public final class DirectStreamPlayer {
         });
 
         buildDecisionBar();
-        beginCapture();
+        // 322.3.112: a direct file starts after the activity has set the resume
+        // point and the search step (next loop turn); everything else captures.
+        if (this.ownKind == OWN_FILE) handler.post(this::beginOwnFile);
+        else beginCapture();
         handler.post(tick);
+    }
+
+    // 322.3.112: the page our own files are opened from (Referer).
+    public void setOwnReferer(String referer) {
+        ownReferer = referer == null ? "" : referer.trim();
+    }
+
+    private void beginOwnFile() {
+        if (closed || playing) return;
+        if (subscriberStartupAttempt == 0) subscriberStartupAttempt = 1;
+        candidate = source;
+        candidateHeaders = new HashMap<>();
+        if (!ownReferer.isEmpty()) candidateHeaders.put("Referer", ownReferer);
+        startStream();
+    }
+
+    // Our player pages hand the video over through these paths.
+    static boolean isOwnWorkerMedia(Uri u) {
+        if (u == null || u.getHost() == null || !"https".equalsIgnoreCase(u.getScheme())) return false;
+        String h = u.getHost().toLowerCase(Locale.ROOT);
+        String path = u.getPath() == null ? "" : u.getPath().toLowerCase(Locale.ROOT);
+        return h.endsWith(".workers.dev") && (path.startsWith("/hls") || path.startsWith("/stream"));
+    }
+
+    static boolean looksLikeHls(String url) {
+        if (url == null) return false;
+        String v = url.toLowerCase(Locale.ROOT);
+        if (v.contains(".m3u8") || v.contains("mpegurl")) return true;
+        try {
+            String path = Uri.parse(url).getPath();
+            return path != null && path.toLowerCase(Locale.ROOT).startsWith("/hls");
+        } catch (Exception ignored) { return false; }
+    }
+
+    // OWN_PAGE: a page that plays a plain file (no playlist) shows it in its
+    // <video>; read it from there.
+    private String ownPageMediaScript() {
+        String bridgeToken = JSONObject.quote(sourceChoiceToken);
+        return "(function(){try{if(window.__subhubOwnMedia)return;window.__subhubOwnMedia=1;"
+                + "var t=" + bridgeToken + ",n=0;var iv=setInterval(function(){n++;try{"
+                + "var vs=document.querySelectorAll('video');for(var i=0;i<vs.length;i++){"
+                + "var u=String(vs[i].currentSrc||vs[i].src||'');"
+                + "if(/^https:\\/\\//i.test(u)&&window.SubHubSourceChoice&&window.SubHubSourceChoice.mediaFound){"
+                + "window.SubHubSourceChoice.mediaFound(t,u);clearInterval(iv);return;}}"
+                + "var v=vs[0];if(v&&v.paused){try{v.muted=true;var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(_){}}"
+                + "}catch(_){}if(n>60)clearInterval(iv);},500);}catch(_){}})();";
     }
 
     // 322.3.77: owner decision bar shown while the video is playing:
@@ -678,19 +766,157 @@ public final class DirectStreamPlayer {
     private long lastProgressReported = -1L;
     private void reportProgress(long positionMs, long durationMs) {
         if (durationMs <= 0L || positionMs < 0L) return;
+        // 322.3.112: from the credits on, the episode stays «✓ تمت المشاهدة».
+        if (creditsReached) positionMs = Math.max(positionMs, durationMs);
         if (Math.abs(positionMs - lastProgressReported) < 1000L) return;
         lastProgressReported = positionMs;
         try { listener.progress(positionMs, durationMs); } catch (Exception ignored) {}
     }
 
+    // 322.3.112: the episode that comes after this one («الحلقة ٤» or
+    // «الموسم ٢ · الحلقة ١»); auto=false shows the card without a countdown.
+    public void setNextEpisode(String label, boolean auto) {
+        if (closed || interactiveSource) return;
+        String v = label == null ? "" : label.trim();
+        nextLabel = v.length() > 60 ? v.substring(0, 60) : v;
+        nextAuto = auto;
+    }
+
+    // End of the last line of the subtitle on screen (video time), -1 if unknown.
+    // Exclusive subtitles arrive in 4-second pieces: their end is not known.
+    private long lastSubtitleLineMs() {
+        if (segmentMode || cues == null) return -1L;
+        if (cues != creditsCuesRef) {
+            creditsCuesRef = cues;
+            double max = 0d;
+            for (int i = 0; i < cues.length(); i++) {
+                JSONObject c = cues.optJSONObject(i);
+                if (c != null) max = Math.max(max, c.optDouble("end", 0d));
+            }
+            creditsLastCueMs = max > 0d ? Math.round(max * 1000d) : -1L;
+        }
+        return creditsLastCueMs < 0L ? -1L : creditsLastCueMs + subtitleOffsetMs;
+    }
+
+    private void checkCredits() {
+        if (closed || interactiveSource || player == null || !playbackReady) return;
+        long duration = player.getDuration();
+        if (duration <= 0L || duration == C.TIME_UNSET) return;
+        long position = Math.max(0L, player.getContentPosition());
+        long at = EpisodeTiming.creditsAtMs(duration, lastSubtitleLineMs());
+        if (position >= at) {
+            if (!creditsReached) {
+                creditsReached = true;
+                reportProgress(duration, duration);
+                clearResumePosition();
+            }
+            if (!nextLabel.isEmpty() && !nextShown && !nextCancelled) showNextCard();
+        } else if (position < at - 30000L) {
+            // Went back well before the credits: the card may come again.
+            if (nextShown) hideNextCard();
+            nextShown = false;
+            nextCancelled = false;
+        }
+    }
+
+    private void showNextCard() {
+        if (closed || root == null) return;
+        nextShown = true;
+        if (nextCard == null) {
+            nextCard = new LinearLayout(activity);
+            nextCard.setOrientation(LinearLayout.VERTICAL);
+            nextCard.setPadding(dp(14), dp(10), dp(14), dp(12));
+            nextCard.setBackground(round(0xee0b1725, 0xccF7BC3D, 1, 18));
+            nextCard.setElevation(dp(28));
+            nextCard.setClickable(true);
+            TextView title = new TextView(activity);
+            title.setTag("next-title");
+            title.setTextColor(Color.WHITE);
+            title.setTextSize(16);
+            title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            title.setGravity(Gravity.RIGHT);
+            title.setTextDirection(View.TEXT_DIRECTION_RTL);
+            nextCard.addView(title, new LinearLayout.LayoutParams(-1, -2));
+            nextCount = new TextView(activity);
+            nextCount.setTextColor(Color.rgb(184, 197, 214));
+            nextCount.setTextSize(13);
+            nextCount.setGravity(Gravity.RIGHT);
+            nextCount.setTextDirection(View.TEXT_DIRECTION_RTL);
+            nextCount.setPadding(0, dp(2), 0, dp(8));
+            nextCard.addView(nextCount, new LinearLayout.LayoutParams(-1, -2));
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            TextView play = chip("▶ شغّل الآن", 14, this::goNextEpisode);
+            play.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
+            TextView cancel = chip("✕ إلغاء", 14, this::cancelNextEpisode);
+            LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, dp(42), 1.3f);
+            a.setMargins(dp(3), 0, dp(3), 0);
+            LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(0, dp(42), 1f);
+            b.setMargins(dp(3), 0, dp(3), 0);
+            row.addView(play, a);
+            row.addView(cancel, b);
+            nextCard.addView(row, new LinearLayout.LayoutParams(-1, -2));
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(290), -2, Gravity.BOTTOM | Gravity.RIGHT);
+            lp.bottomMargin = dp(96);
+            lp.rightMargin = dp(18);
+            root.addView(nextCard, lp);
+        }
+        View t = nextCard.findViewWithTag("next-title");
+        if (t instanceof TextView) ((TextView) t).setText("الحلقة التالية: " + nextLabel);
+        nextCard.setVisibility(View.VISIBLE);
+        nextCard.bringToFront();
+        final int gen = ++nextGeneration;
+        if (!nextAuto) {
+            nextCount.setText("التشغيل التلقائي متوقف");
+            return;
+        }
+        countdownNext(gen, NEXT_COUNTDOWN_S);
+    }
+
+    private void countdownNext(int gen, int left) {
+        if (closed || gen != nextGeneration || nextCard == null) return;
+        if (left <= 0) { goNextEpisode(); return; }
+        nextCount.setText("تبدأ بعد " + toArabicDigits(left));
+        handler.postDelayed(() -> countdownNext(gen, left - 1), 1000L);
+    }
+
+    private void hideNextCard() {
+        nextGeneration++;
+        if (nextCard != null) nextCard.setVisibility(View.GONE);
+    }
+
+    private void cancelNextEpisode() {
+        nextCancelled = true;
+        hideNextCard();
+    }
+
+    private void goNextEpisode() {
+        if (closed || nextLabel.isEmpty()) return;
+        nextCancelled = true;   // once
+        hideNextCard();
+        try { listener.nextEpisode(); } catch (Exception ignored) {}
+    }
+
     // 322.3.110: this player is one attempt of «مشاهدة تلقائية».
     public void setAutoAttempt(int index, int total, boolean more) {
+        setAutoAttempt(index, total, more, 0L);
+    }
+
+    // 322.3.112: + how long this server usually takes to start (0 = unknown).
+    public void setAutoAttempt(int index, int total, boolean more, long expectMs) {
         if (closed || interactiveSource || index < 0 || total <= 0) return;
         autoIndex = index;
         autoTotal = total;
         autoMore = more;
         autoReported = false;
+        autoExpectMs = Math.max(0L, Math.min(120000L, expectMs));
         if (!subscriberStageBase.isEmpty()) showSubscriberStage(subscriberStageBase);
+        // The step already running gets the new limit too.
+        if (more && subscriberStartupPhase > 0 && !playbackReady) {
+            subscriberStartupDeadlineMs = SystemClock.elapsedRealtime()
+                    + EpisodeTiming.autoPhaseLimitMs(subscriberStartupPhase, autoExpectMs);
+        }
     }
 
     private boolean autoActive() {
@@ -700,6 +926,14 @@ public final class DirectStreamPlayer {
     private String autoLine(int index) {
         return autoTotal > 1 && index < autoTotal
                 ? "السيرفر " + toArabicDigits(index + 1) + " من " + toArabicDigits(autoTotal) : "";
+    }
+
+    // 322.3.112: the probe page itself failed to open.
+    private void autoPageFailed(WebView v, String reason) {
+        if (closed || v != probe || playing || playbackReady || interactiveSource) return;
+        if (!(autoActive() && autoMore)) return;
+        if (firstFailureReason.isEmpty()) firstFailureReason = reason;
+        autoFail(reason);
     }
 
     // The server did not play: hand over to the next one quietly. False when this
@@ -1004,8 +1238,8 @@ public final class DirectStreamPlayer {
         else if (phase >= 5) timeoutMs = 15000L;
         else timeoutMs = 18000L;
         // 322.3.110: during the automatic search a server that makes no progress
-        // for 8 seconds gives way to the next one (owner's choice).
-        if (autoActive() && autoMore) timeoutMs = AUTO_STEP_MS;
+        // gives way to the next one. 322.3.112: the limit depends on the step.
+        if (autoActive() && autoMore) timeoutMs = EpisodeTiming.autoPhaseLimitMs(phase, autoExpectMs);
         subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + timeoutMs;
         subscriberStartupGeneration++;
         int generation = subscriberStartupGeneration;
@@ -1416,6 +1650,19 @@ public final class DirectStreamPlayer {
     }
 
     private final class SourceChoiceBridge {
+        // 322.3.112: OWN_PAGE — the video link found in the page's <video>.
+        @JavascriptInterface
+        public void mediaFound(String token, String rawUrl) {
+            if (!sourceChoiceToken.equals(token) || ownKind != OWN_PAGE || rawUrl == null || rawUrl.length() > 4000) return;
+            final String url = rawUrl.trim();
+            handler.post(() -> {
+                if (closed || playing || probe == null || candidate != null) return;
+                Map<String,String> h = new HashMap<>();
+                if (!resolvedProviderUrl.isEmpty()) h.put("Referer", resolvedProviderUrl);
+                capture(url, h);
+            });
+        }
+
         @JavascriptInterface
         public void serverPage(String token, String rawUrl) {
             if (!sourceChoiceToken.equals(token)) return;
@@ -1577,6 +1824,10 @@ public final class DirectStreamPlayer {
         long position = Math.max(0L, player.getContentPosition());
         long duration = player.getDuration();
         if (playbackReady) reportProgress(position, duration);
+        if (creditsReached) {   // 322.3.112: watched — the next time starts from the beginning
+            clearResumePosition();
+            return;
+        }
         if (player.getPlaybackState() == Player.STATE_ENDED
                 || (duration > 0L && position >= Math.max(0L, duration - 45000L))) {
             clearResumePosition();
@@ -1696,6 +1947,9 @@ public final class DirectStreamPlayer {
                     } else {
                         startSubscriberStartupTimer(4);
                         try { v.evaluateJavascript(providerFocusScript(), null); } catch (Exception ignored) {}
+                        if (ownKind == OWN_PAGE) {
+                            try { v.evaluateJavascript(ownPageMediaScript(), null); } catch (Exception ignored) {}
+                        }
                         handler.postDelayed(() -> {
                             if (closed || probe == null || v != probe) return;
                             subscriberProviderVisible = true;
@@ -1726,6 +1980,32 @@ public final class DirectStreamPlayer {
                 }
             }
 
+            // 322.3.112: during the automatic search a page that cannot open at all
+            // (no network answer, or «not found») gives way to the next server at
+            // once. 403/5xx are not judged: protection pages answer like that and
+            // then open by themselves.
+            @Override public void onReceivedError(WebView v, WebResourceRequest r,
+                                                  android.webkit.WebResourceError e) {
+                if (closed || v != probe || r == null || !r.isForMainFrame() || e == null) return;
+                // Only "no answer at all"; a load cut short by the next page is not a failure.
+                int code = e.getErrorCode();
+                if (code != ERROR_HOST_LOOKUP && code != ERROR_CONNECT && code != ERROR_TIMEOUT
+                        && code != ERROR_FAILED_SSL_HANDSHAKE) return;
+                String why = "الصفحة لم تفتح";
+                try { if (e != null && e.getDescription() != null) why += " (" + e.getDescription() + ")"; }
+                catch (Exception ignored) {}
+                final String reason = why;
+                handler.post(() -> autoPageFailed(v, reason));
+            }
+
+            @Override public void onReceivedHttpError(WebView v, WebResourceRequest r,
+                                                      WebResourceResponse resp) {
+                if (closed || v != probe || r == null || resp == null || !r.isForMainFrame()) return;
+                int code = resp.getStatusCode();
+                if (code != 404 && code != 410) return;
+                handler.post(() -> autoPageFailed(v, "الصفحة غير موجودة (" + code + ")"));
+            }
+
             @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 String host = u.getHost();
@@ -1742,7 +2022,8 @@ public final class DirectStreamPlayer {
                     WebView v, WebResourceRequest r) {
                 String url = r.getUrl().toString();
                 if ("https".equals(r.getUrl().getScheme())
-                        && url.toLowerCase(Locale.ROOT).contains(".m3u8")
+                        && (url.toLowerCase(Locale.ROOT).contains(".m3u8")
+                            || (ownKind == OWN_PAGE && isOwnWorkerMedia(r.getUrl())))
                         && ((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())
                         // 322.3.106: no capture while the owner verifies on the page.
                         && !(verifyFirst && interactiveSource)) {
@@ -2749,6 +3030,8 @@ public final class DirectStreamPlayer {
                 } else if (state == Player.STATE_ENDED) {
                     if (player != null) reportProgress(Math.max(0L, player.getDuration()), player.getDuration());
                     clearResumePosition();
+                    // 322.3.112: the end came before the card (short credits): go on.
+                    if (!nextLabel.isEmpty() && nextAuto && !nextCancelled && !interactiveSource) goNextEpisode();
                 }
             }
 
@@ -2784,7 +3067,13 @@ public final class DirectStreamPlayer {
         // 322.3.87: Vidnest plays a clean master given as a data: URI.
         androidx.media3.datasource.DataSource.Factory sourceFactory =
                 vidnestMode ? new DefaultDataSource.Factory(activity, data) : data;
-        player.setMediaSource(new HlsMediaSource.Factory(sourceFactory).createMediaSource(item));
+        // 322.3.112: our own plain files (R2 / mp4) are not playlists.
+        if (ownKind != OWN_NONE && !looksLikeHls(candidate)) {
+            player.setMediaSource(new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(sourceFactory)
+                    .createMediaSource(MediaItem.fromUri(candidate)));
+        } else {
+            player.setMediaSource(new HlsMediaSource.Factory(sourceFactory).createMediaSource(item));
+        }
         player.prepare();
         if (pendingResumeMs >= 5000L) player.seekTo(pendingResumeMs);
         player.play();
@@ -3879,6 +4168,7 @@ public final class DirectStreamPlayer {
 
             applySubtitleText(text);
             subtitle.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
+            checkCredits();
             persistResume(false);
             handler.postDelayed(this, 100);
         }

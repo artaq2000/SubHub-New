@@ -40,7 +40,7 @@ function makeEnv() {
   const e = makeEnv();
   e.win.__subhubAutoChainV3110({ movieId: 'tt1', season: 1, episode: 2, keys: ['list:b2', 'list:b1', 'open3'], fallback: '' });
   assert.deepStrictEqual(e.calls, ['1:2:list:b2']);
-  assert.deepStrictEqual(e.arms[0], { chain: e.arms[0].chain, index: 0, total: 3, more: true });
+  assert.deepStrictEqual(e.arms[0], { chain: e.arms[0].chain, index: 0, total: 3, more: true, expectMs: 0 });
   const id = e.arms[0].chain;
   e.win.__subhubAutoOpenedV3110(id, 0);
   e.win.__subhubAutoNextV3110(id); e.flush(200);
@@ -102,4 +102,59 @@ function makeEnv() {
   assert.deepStrictEqual(stats, [['tt1', 'VidCore', false, true], ['tt1', 'APIPlayer', true, true]]);
   assert.deepStrictEqual(e.oks, []);                       // the old episode memory is not needed
 }
-console.log('auto chain: order, hand-over, remember (by name), fallback, skip, cancel — OK');
+// 6) 322.3.112: each server's usual start time goes to the player
+{
+  const e = makeEnv();
+  e.win.__subhubAutoChainV3110({ movieId: 'tt1', season: 1, episode: 1, keys: ['a', 'b'], names: ['A', 'B'], ms: [12000, 'x'], fallback: '' });
+  assert.strictEqual(e.arms[0].expectMs, 12000);
+  e.win.__subhubAutoOpenedV3110(e.arms[0].chain, 0);
+  e.win.__subhubAutoNextV3110(e.arms[0].chain); e.flush(200);
+  assert.strictEqual(e.arms[1].expectMs, 0);
+}
+
+(async function () {
+  const tick = () => new Promise(r => setImmediate(r));
+  // 7) 322.3.112: our own files come first (own:<slot>); one that cannot open is skipped at once
+  {
+    const e = makeEnv();
+    const own = [];
+    e.win.SubHubSeriesOwnSourceV3112 = (raw) => { own.push(raw.slot + '@' + raw.season + ':' + raw.episode); return Promise.resolve(raw.slot === 'free'); };
+    e.win.__subhubAutoChainV3110({ movieId: 'tt1', season: 1, episode: 5, keys: ['own:r2', 'own:free', 'list:x'], names: ['SubHub VIP', 'SubHub', 'APIPlayer'], fallback: '' });
+    await tick(); e.flush(200); await tick(); e.flush(200);
+    assert.deepStrictEqual(own, ['r2@1:5', 'free@1:5']);       // VIP refused → the free file at once
+    assert.deepStrictEqual(e.calls, []);                       // no app server yet
+    assert.strictEqual(e.arms[1].index, 1);
+    e.win.__subhubAutoOpenedV3110(e.arms[1].chain, 1);
+    e.win.__subhubAutoNextV3110(e.arms[1].chain); e.flush(200);  // our file did not play → next
+    assert.deepStrictEqual(e.calls, ['1:5:list:x']);
+  }
+  // 8) older app (no own function): own keys are passed over
+  {
+    const e = makeEnv();
+    e.win.__subhubAutoChainV3110({ movieId: 'tt1', season: 1, episode: 6, keys: ['own:free', 'list:y'], fallback: '' });
+    e.flush(200);
+    assert.deepStrictEqual(e.calls, ['1:6:list:y']);
+  }
+  // 9) «الحلقة التالية»: select the episode, then «مشاهدة تلقائية» for it
+  {
+    const e = makeEnv();
+    const sel = [];
+    e.win.seriesSelectEpisodeV403 = (sn, en) => sel.push(sn + ':' + en);
+    e.win.seriesAutoWatchV400 = (sn, en) => e.win.__subhubAutoChainV3110({ movieId: 'tt1', season: sn, episode: en, keys: ['list:z'], fallback: '' });
+    assert.strictEqual(e.win.__subhubNextEpisodeV3112('tt1', 2, 1), true);
+    assert.deepStrictEqual(sel, ['2:1']);
+    e.flush(500);
+    assert.deepStrictEqual(e.calls, ['2:1:list:z']);
+    assert.strictEqual(e.ends.length, 0);                      // the black screen stays for the search
+    // nothing to play → the black screen ends
+    const f = makeEnv();
+    f.win.seriesAutoWatchV400 = () => {};
+    f.win.__subhubNextEpisodeV3112('tt1', 1, 3); f.flush(500);
+    assert.strictEqual(f.ends.length, 1);
+    // another title open → no search
+    const g = makeEnv();
+    assert.strictEqual(g.win.__subhubNextEpisodeV3112('other', 1, 3), false);
+    assert.strictEqual(g.ends.length, 1);
+  }
+  console.log('auto chain: order, hand-over, remember (by name), fallback, skip, cancel, own files first, usual time, next episode — OK');
+})().catch(e => { console.error(e); process.exit(1); });

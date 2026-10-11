@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.111 episode progress
+name: Build TEST SubHub 322.3.112 one screen + next episode
 
 on:
   push:
     branches:
-      - 'test/progress-322.3.111'
+      - 'test/onescreen-322.3.112'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -120,6 +120,12 @@ jobs:
           javac -d /tmp/subhub-localsub-tests app/src/main/java/com/artaq/subhub/LocalSubtitleParser.java tests/LocalSubtitleParserTest.java
           java -cp /tmp/subhub-localsub-tests com.artaq.subhub.LocalSubtitleParserTest
 
+      - name: Test episode timing (next episode + smart waiting)
+        run: |
+          mkdir -p /tmp/subhub-timing-tests
+          javac -d /tmp/subhub-timing-tests app/src/main/java/com/artaq/subhub/EpisodeTiming.java tests/EpisodeTimingTest.java
+          java -cp /tmp/subhub-timing-tests EpisodeTimingTest
+
       - name: Build signed TEST APK
         run: gradle assembleRelease --no-daemon --stacktrace
 
@@ -159,8 +165,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='120'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.111'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='121'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.112'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -168,12 +174,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.111-progress.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.112-onescreen.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.111-progress
-          path: SubHub-322.3.111-progress.apk
+          name: SubHub-322.3.112-onescreen
+          path: SubHub-322.3.112-onescreen.apk
           retention-days: 7
 
       - name: Remove signing key from runner

@@ -20,8 +20,8 @@ android {
         applicationId 'com.artaq.subhub.bridge'
         minSdk 26
         targetSdk 35
-        versionCode 120
-        versionName '322.3.111'
+        versionCode 121
+        versionName '322.3.112'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 

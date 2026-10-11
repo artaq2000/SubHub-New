@@ -373,6 +373,9 @@
         episodeKey: ctx.kind === 'tv' ? ekOf(ctx) : '',
         // 322.3.111: episodes only — where the viewer stops, kept by the site.
         progress: ctx.kind === 'tv' ? episodeProgress(ctx.movieId, ctx.season, ctx.episode) : null,
+        // 322.3.112: «الحلقة التالية» card for episodes (viewers / owner playing a saved server).
+        next: (ctx.kind === 'tv' && !(owner && !auto) && typeof H().nextInfo === 'function')
+          ? H().nextInfo(ctx.movieId, ctx.season, ctx.episode) : null,
         interactiveSource: owner && !auto,
         ownerMode: owner,
         openChooser: owner && !auto && !!startPage,

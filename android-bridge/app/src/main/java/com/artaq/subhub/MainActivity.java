@@ -67,13 +67,13 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.111";
+    private static final String NATIVE_VERSION = "322.3.112";
     // 322.3.107: the update check now uses the version of the APK that is really
     // installed (it was a fixed 109 for many builds, so an installed release could
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 120;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 121;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2131,7 +2131,11 @@ public class MainActivity extends Activity {
                     final boolean openMode = "open1".equals(mode) || "open2".equals(mode) || verifyFirst;
                     final boolean moviesmodFlow = "moviesmod".equals(mode) || "vsm".equals(mode)
                             || vidnestMode || openMode;
-                    final String jsPrefix = "vsm".equals(mode) ? "window.__subhubVsm"
+                    // 322.3.112: our own episode files in the same black screen.
+                    // "ownfile" = a direct video link; "ownpage" = our player page.
+                    final boolean ownFlow = "ownfile".equals(mode) || "ownpage".equals(mode);
+                    final String jsPrefix = ownFlow ? "window.__subhubOwn"
+                            : "vsm".equals(mode) ? "window.__subhubVsm"
                             : vidnestMode ? "window.__subhubVidnest"
                             : "open1".equals(mode) ? "window.__subhubOpen1"
                             : "open2".equals(mode) ? "window.__subhubOpen2"
@@ -2146,7 +2150,41 @@ public class MainActivity extends Activity {
                     // 322.3.109: a subtitle file added from this device belongs to this
                     // film (or episode) whatever button opened it.
                     String localSubtitleKeyValue = "";
-                    if (moviesmodFlow) {
+                    if (ownFlow) {
+                        String ownUrl = config.optString("ownUrl", "").trim();
+                        String stableKey = config.optString("resumeKey", id);
+                        if (ownUrl.isEmpty() || ownUrl.length() > 4000
+                                || !stableKey.matches("[A-Za-z0-9_.-]{1,100}")) return;
+                        Uri ou = Uri.parse(ownUrl);
+                        String oh = ou.getHost();
+                        if (!"https".equalsIgnoreCase(ou.getScheme()) || oh == null || oh.isEmpty()) return;
+                        if ("ownfile".equals(mode)) {
+                            sourceUrl = ou.toString();
+                            allowedHost = oh.toLowerCase(Locale.ROOT);
+                        } else {
+                            // The page is opened as from SubHub; its own host is the provider.
+                            if (HOME_HOST.equalsIgnoreCase(oh)) return;
+                            sourceUrl = HOME_URL;
+                            allowedHost = HOME_HOST;
+                            directEmbedUrl = ou.toString();
+                        }
+                        resumeKey = "own_" + stableKey;
+                        syncScopeValue = "own_" + stableKey;
+                        String ownTmdb = config.optString("tmdbId", "");
+                        String ownEpisodeKey = config.optString("episodeKey", "").trim();
+                        // Same key as the app servers of this episode (a device subtitle
+                        // follows the episode on every server).
+                        if (ownTmdb.matches("[0-9]{1,12}") && ownEpisodeKey.matches("s[0-9]{1,3}e[0-9]{1,4}")) {
+                            localSubtitleKeyValue = "tv_" + ownTmdb + "_" + ownEpisodeKey;
+                        } else {
+                            localSubtitleKeyValue = "own_" + stableKey;
+                        }
+                        preferredServerKey = "own";
+                        preferredServerLabel = "SubHub";
+                        interactiveSource = false;
+                        ownerMode = false;
+                        openChooser = false;
+                    } else if (moviesmodFlow) {
                         String tmdbId = config.optString("tmdbId");
                         String kind = config.optString("kind", "movie");
                         String stableKey = config.optString("resumeKey", id);
@@ -2213,7 +2251,7 @@ public class MainActivity extends Activity {
                     }
 
                     // 322.3.110: an attempt of «مشاهدة تلقائية» armed by the page just before.
-                    final JSONObject autoAttempt = (moviesmodFlow && !interactiveSource && pendingAuto != null
+                    final JSONObject autoAttempt = ((moviesmodFlow || ownFlow) && !interactiveSource && pendingAuto != null
                             && SystemClock.elapsedRealtime() - pendingAutoAt < 30000L) ? pendingAuto : null;
                     pendingAuto = null;
                     final String autoChain = autoAttempt == null ? "" : autoAttempt.optString("chain", "");
@@ -2224,6 +2262,16 @@ public class MainActivity extends Activity {
                     final int progEpisode = prog == null ? 0 : prog.optInt("episode", 0);
                     final boolean progValid = progMovie.matches("[A-Za-z0-9_.-]{1,120}") && progSeason > 0 && progEpisode > 0;
                     final long progResumeMs = prog == null ? 0L : Math.max(0L, prog.optLong("resumeMs", 0L));
+                    // 322.3.112: the episode after this one, for «الحلقة التالية».
+                    JSONObject nxt = config.optJSONObject("next");
+                    final String nextMovie = nxt == null ? "" : nxt.optString("movieId", "");
+                    final int nextSeason = nxt == null ? 0 : nxt.optInt("season", 0);
+                    final int nextEpisodeNo = nxt == null ? 0 : nxt.optInt("episode", 0);
+                    final String nextLabel = nxt == null ? "" : nxt.optString("label", "").trim();
+                    final boolean nextAuto = nxt == null || nxt.optBoolean("auto", true);
+                    final boolean nextValid = !interactiveSource
+                            && nextMovie.matches("[A-Za-z0-9_.-]{1,120}") && nextSeason > 0 && nextEpisodeNo > 0
+                            && !nextLabel.isEmpty() && nextLabel.length() <= 60;
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     final String localSubtitleKey = localSubtitleKeyValue;
@@ -2236,6 +2284,8 @@ public class MainActivity extends Activity {
                             // 322.3.99: purple and yellow join the open system; teal stays Vidnest-only.
                             openMode || "moviesmod".equals(mode) || "vsm".equals(mode),
                             verifyFirst,
+                            "ownfile".equals(mode) ? DirectStreamPlayer.OWN_FILE
+                                    : "ownpage".equals(mode) ? DirectStreamPlayer.OWN_PAGE : DirectStreamPlayer.OWN_NONE,
                             new DirectStreamPlayer.Listener() {
                         public void closed() {
                             directStreamPlayer = null;
@@ -2320,6 +2370,21 @@ public class MainActivity extends Activity {
                                         + String.format(Locale.US, "%.1f", durationMs / 1000.0) + ")", null);
                             });
                         }
+                        // 322.3.112: «الحلقة التالية» — black screen, close this player, and the
+                        // page starts «مشاهدة تلقائية» for the next episode.
+                        public void nextEpisode() {
+                            if (!nextValid || webView == null) return;
+                            ui.post(() -> {
+                                showAutoCover("جارٍ تجهيز الحلقة التالية…\n" + nextLabel);
+                                if (directStreamPlayer != null && directStreamSession.equals(session)) directStreamPlayer.close();
+                                ui.postDelayed(() -> {
+                                    if (webView == null || !isTrustedHomePage()) { hideAutoCover(); return; }
+                                    webView.evaluateJavascript("(window.__subhubNextEpisodeV3112 ? window.__subhubNextEpisodeV3112("
+                                            + JSONObject.quote(nextMovie) + "," + nextSeason + "," + nextEpisodeNo + ") : false)",
+                                            v -> { if (!"true".equals(v)) hideAutoCover(); });
+                                }, 300L);
+                            });
+                        }
                         public void autoSucceeded() {
                             if (autoChain.isEmpty() || webView == null) return;
                             webView.evaluateJavascript("window.__subhubAutoOkV3110 && window.__subhubAutoOkV3110("
@@ -2328,6 +2393,8 @@ public class MainActivity extends Activity {
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
+                    if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);
+                    if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);
                     // 322.3.111: continue the episode from where the site says the viewer stopped.
                     if (progValid && progResumeMs > 0L) directStreamPlayer.setResumeFromMs(progResumeMs);
                     final int defaultIndex = config.optInt("defaultIndex", -1);
@@ -2340,7 +2407,9 @@ public class MainActivity extends Activity {
                     }
                     if (autoAttempt != null) {
                         directStreamPlayer.setAutoAttempt(autoAttempt.optInt("index", 0),
-                                autoAttempt.optInt("total", 1), autoAttempt.optBoolean("more", false));
+                                autoAttempt.optInt("total", 1), autoAttempt.optBoolean("more", false),
+                                // 322.3.112: this server's usual start time on this device.
+                                autoAttempt.optLong("expectMs", 0L));
                         webView.evaluateJavascript("window.__subhubAutoOpenedV3110 && window.__subhubAutoOpenedV3110("
                                 + JSONObject.quote(autoChain) + "," + autoAttempt.optInt("index", 0) + ")", null);
                     }

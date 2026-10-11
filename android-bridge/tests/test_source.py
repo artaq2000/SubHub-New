@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 120" in gradle
-assert "versionName '322.3.111'" in gradle
+assert "versionCode 121" in gradle
+assert "versionName '322.3.112'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 120' in mv107
-assert "versionCode 120" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 121' in mv107
+assert "versionCode 121" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1078,7 +1078,7 @@ assert 'readAsset("auto_chain.js")' in m110
 assert m110.index('readAsset("app_list_stream.js")') < m110.index('readAsset("auto_chain.js")')
 assert 'public void directStreamAutoArm(String token, String raw)' in m110
 assert 'public void directStreamAutoEnd(String token)' in m110
-assert 'final JSONObject autoAttempt = (moviesmodFlow && !interactiveSource && pendingAuto != null' in m110
+assert 'final JSONObject autoAttempt = ((moviesmodFlow || ownFlow) && !interactiveSource && pendingAuto != null' in m110   # 322.3.112: + own files
 assert 'directStreamPlayer.setAutoAttempt(' in m110 and 'window.__subhubAutoNextV3110' in m110
 assert 'private void showAutoCover(String text)' in m110 and 'cancelAutoChain();' in m110
 assert "window.__subhubAutoChainV3110 = function (req)" in a110
@@ -1088,7 +1088,8 @@ assert 'node tests/auto_chain.test.cjs' in wf and 'node --check app/src/main/ass
 print('322.3.110 automatic server search checks OK')
 d110 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
 a110 = open('app/src/main/assets/auto_chain.js', encoding='utf-8').read()
-assert 'static final long AUTO_STEP_MS = 8000L;' in d110 and 'if (autoActive() && autoMore) timeoutMs = AUTO_STEP_MS;' in d110
+# 322.3.112: the fixed 8 s became smart waiting (checked below)
+assert 'if (autoActive() && autoMore) timeoutMs = EpisodeTiming.autoPhaseLimitMs(phase, autoExpectMs);' in d110
 assert 'if (autoActive() && autoMore) return;   // 322.3.110: the next server comes instead' in d110
 assert 'window.__subhubServerStatV401(c.movieId, name, ok, ms);' in a110 and 'record(chain, false);' in a110
 print('322.3.110 by-name learning + 8 s checks OK')
@@ -1112,3 +1113,59 @@ for js in (s111, l111):
 assert 'progress: episodeProgress(selected.id, season, episode),' in s111
 assert "progress: ctx.kind === 'tv' ? episodeProgress(ctx.movieId, ctx.season, ctx.episode) : null," in l111
 print('322.3.111 episode progress checks OK')
+
+# 322.3.112: one screen for our own files + «الحلقة التالية» + smart waiting.
+d112 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m112 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+s112 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+l112 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+a112 = open('app/src/main/assets/auto_chain.js', encoding='utf-8').read()
+# smart waiting
+assert 'AUTO_STEP_MS' not in d112
+t112 = open('app/src/main/java/com/artaq/subhub/EpisodeTiming.java', encoding='utf-8').read()
+for c in ('AUTO_PAGE_MS = 10000L', 'AUTO_SERVER_MS = 12000L', 'AUTO_LINK_MS = 20000L', 'AUTO_START_MS = 15000L', 'AUTO_MAX_MS = 30000L'):
+    assert 'public static final long ' + c + ';' in t112, c
+assert 'base = Math.max(base, Math.min(AUTO_MAX_MS, expectMs * 2L));' in t112
+assert 'timeoutMs = EpisodeTiming.autoPhaseLimitMs(phase, autoExpectMs);' in d112
+wf112 = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+assert 'java -cp /tmp/subhub-timing-tests EpisodeTimingTest' in wf112
+assert 'public void setAutoAttempt(int index, int total, boolean more, long expectMs)' in d112
+assert 'autoAttempt.optLong("expectMs", 0L)' in m112
+assert "expectMs: Math.max(0, Math.min(120000, Number(c.ms[i]) || 0))" in a112
+oe = d112[d112.index('public void onReceivedError(WebView v, WebResourceRequest r,'):]
+oe = oe[:oe.index('public boolean shouldOverrideUrlLoading')]
+assert 'code != ERROR_HOST_LOOKUP && code != ERROR_CONNECT && code != ERROR_TIMEOUT' in oe
+assert 'if (code != 404 && code != 410) return;' in oe          # 403/5xx are not judged
+ap = d112[d112.index('private void autoPageFailed(WebView v, String reason)'):]
+ap = ap[:ap.index('\n    }\n')]
+assert 'if (!(autoActive() && autoMore)) return;' in ap          # never the last server / normal mode
+# own files
+assert 'static final int OWN_NONE = 0, OWN_FILE = 1, OWN_PAGE = 2;' in d112
+assert 'if (this.ownKind == OWN_FILE) handler.post(this::beginOwnFile);' in d112
+assert '(ownKind == OWN_PAGE && isOwnWorkerMedia(r.getUrl()))' in d112
+assert 'ProgressiveMediaSource.Factory(sourceFactory)' in d112 and 'if (ownKind != OWN_NONE && !looksLikeHls(candidate))' in d112
+assert 'public void mediaFound(String token, String rawUrl)' in d112
+assert 'final boolean ownFlow = "ownfile".equals(mode) || "ownpage".equals(mode);' in m112
+assert 'if (HOME_HOST.equalsIgnoreCase(oh)) return;' in m112
+assert '((moviesmodFlow || ownFlow) && !interactiveSource && pendingAuto != null' in m112
+assert 'if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);' in m112
+assert 'window.SubHubSeriesOwnSourceV3112 = function (raw) { return openOwn(raw || {}); };' in s112
+assert "mode: src.kind === 'file' ? 'ownfile' : 'ownpage'," in s112
+assert "const OWN_KEY = /^own:[a-z0-9]{1,12}$/;" in a112 and 'window.SubHubSeriesOwnSourceV3112' in a112
+# next episode
+assert 'void nextEpisode();' in d112 and 'public static final int NEXT_COUNTDOWN_S = 5;' in t112
+assert 'NEXT_AFTER_LAST_LINE_MS = 10000L' in t112 and 'NEXT_NO_SUBTITLE_MS = 40000L' in t112
+assert 'lastLineEndMs > durationMs * 8L / 10L' in t112 and 'if (durationMs < SHORT_VIDEO_MS) return durationMs;' in t112
+assert 'long at = EpisodeTiming.creditsAtMs(duration, lastSubtitleLineMs());' in d112
+assert 'if (segmentMode || cues == null) return -1L;' in d112
+assert 'if (creditsReached) positionMs = Math.max(positionMs, durationMs);' in d112
+assert 'checkCredits();' in d112
+assert 'if (!nextLabel.isEmpty() && nextAuto && !nextCancelled && !interactiveSource) goNextEpisode();' in d112
+assert 'window.__subhubNextEpisodeV3112' in m112 and 'if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);' in m112
+assert 'final boolean nextValid = !interactiveSource' in m112
+assert 'function nextInfo(mid, season, episode)' in s112
+assert 'next: (owner && !ownerAuto) ? null : nextInfo(selected.id, season, episode),' in s112
+assert 'next: nextInfo(selected.id, season, episode),' in s112
+assert "H().nextInfo(ctx.movieId, ctx.season, ctx.episode)" in l112
+assert 'window.__subhubNextEpisodeV3112 = function (movieId, season, episode)' in a112
+print('322.3.112 one screen + next episode + smart waiting checks OK')

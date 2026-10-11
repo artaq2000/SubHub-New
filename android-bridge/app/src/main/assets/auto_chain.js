@@ -11,20 +11,32 @@
   // Site v401 also sends the servers' names: each try is recorded by NAME for
   // this series (worked + how fast it started, or failed), so the same server
   // is tried first in the other episodes too.
-  //   site → window.__subhubAutoChainV3110({movieId, season, episode, keys, fallback})
+  // 322.3.112 (site v403):
+  //  - our own files of the episode come first, in the same black screen
+  //    (keys "own:<slot>", opened by SubHubSeriesOwnSourceV3112);
+  //  - each server's usual start time (ms) goes to the player, which waits
+  //    longer for a server known to be slow (smart waiting);
+  //  - «الحلقة التالية»: the player asks for the next episode and the search
+  //    starts again for it (__subhubNextEpisodeV3112).
+  //   site → window.__subhubAutoChainV3110({movieId, season, episode, keys, names, ms, fallback})
   //   app  → __subhubAutoOpenedV3110(chain, index) / __subhubAutoNextV3110(chain)
-  //          / __subhubAutoOkV3110(chain)
+  //          / __subhubAutoOkV3110(chain) / __subhubNextEpisodeV3112(movieId, season, episode)
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   const OPEN_WAIT_MS = 10000;   // a server that never opens the player is skipped
+  const OWN_KEY = /^own:[a-z0-9]{1,12}$/;
   let chain = null;
   let openTimer = 0;
 
   function bridge() { return window.SubHubAndroidBridge; }
   function arm(c, i) {
     const more = i < c.keys.length - 1 || !!c.fallback;
-    try { bridge().directStreamAutoArm(token, JSON.stringify({ chain: c.id, index: i, total: c.keys.length, more: more })); }
-    catch (_) {}
+    try {
+      bridge().directStreamAutoArm(token, JSON.stringify({
+        chain: c.id, index: i, total: c.keys.length, more: more,
+        expectMs: Math.max(0, Math.min(120000, Number(c.ms[i]) || 0))
+      }));
+    } catch (_) {}
   }
   function endCover() {
     try { bridge().directStreamAutoEnd(token); } catch (_) {}
@@ -45,16 +57,20 @@
       } catch (_) {}
     }
   }
-  function stillHere(c) {
-    try { return typeof currentMovie !== 'undefined' && currentMovie && String(currentMovie.id) === c.movieId; }
+  function stillHere(movieId) {
+    try { return typeof currentMovie !== 'undefined' && currentMovie && String(currentMovie.id) === String(movieId); }
     catch (_) { return false; }
+  }
+  // This try never opened a player: go on with the next one.
+  function skip(c, at) {
+    if (chain === c && c.i === at && !c.opened[at]) { clearTimeout(openTimer); record(c, false); c.i++; attempt(); }
   }
 
   function attempt() {
     const c = chain;
     if (!c) return;
     clearTimeout(openTimer);
-    if (!stillHere(c)) { chain = null; endCover(); return; }
+    if (!stillHere(c.movieId)) { chain = null; endCover(); return; }
     if (c.i >= c.keys.length) {
       chain = null;
       endCover();
@@ -65,26 +81,35 @@
     }
     arm(c, c.i);
     c.t0 = Date.now();
-    try { window.seriesPlayExtraV383(c.season, c.episode, c.keys[c.i]); }
-    catch (_) { c.i++; setTimeout(attempt, 150); return; }
+    const at = c.i, key = c.keys[at];
+    try {
+      if (OWN_KEY.test(key)) {
+        // 322.3.112: our own file (R2 / direct link / our player page).
+        const own = window.SubHubSeriesOwnSourceV3112;
+        if (typeof own !== 'function') { c.i++; setTimeout(attempt, 150); return; }
+        Promise.resolve(own({ movieId: c.movieId, season: c.season, episode: c.episode, slot: key.slice(4) }))
+          .then(function (ok) { if (!ok) skip(c, at); }, function () { skip(c, at); });
+      } else {
+        window.seriesPlayExtraV383(c.season, c.episode, key);
+      }
+    } catch (_) { c.i++; setTimeout(attempt, 150); return; }
     // The server's script may stop before opening the player (missing page,
     // network): then go on with the next one.
-    const at = c.i;
-    openTimer = setTimeout(function () {
-      if (chain === c && c.i === at && !c.opened[at]) { record(c, false); c.i++; attempt(); }
-    }, OPEN_WAIT_MS);
+    openTimer = setTimeout(function () { skip(c, at); }, OPEN_WAIT_MS);
   }
 
   window.__subhubAutoChainV3110 = function (req) {
     if (!req || !Array.isArray(req.keys) || !req.keys.length) return;
     clearTimeout(openTimer);
+    const keys = req.keys.map(String).slice(0, 20);
     chain = {
       id: 'auto_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
       movieId: String(req.movieId || ''),
       season: Number(req.season),
       episode: Number(req.episode),
-      keys: req.keys.map(String).slice(0, 20),
+      keys: keys,
       names: (Array.isArray(req.names) ? req.names : []).map(function (x) { return String(x || ''); }).slice(0, 20),
+      ms: keys.map(function (_, i) { return Array.isArray(req.ms) ? (Number(req.ms[i]) || 0) : 0; }),
       fallback: String(req.fallback || ''),
       i: 0,
       opened: {}
@@ -110,5 +135,26 @@
   window.__subhubAutoCancelV3110 = function () {
     chain = null;
     clearTimeout(openTimer);
+  };
+
+  // 322.3.112: «الحلقة التالية» from the player (countdown or «▶ شغّل الآن»).
+  // The player is already closed behind the black screen; select the episode on
+  // the page and start «مشاهدة تلقائية» for it. Nothing to play → the black
+  // screen goes away and the page shows its own message.
+  window.__subhubNextEpisodeV3112 = function (movieId, season, episode) {
+    const mid = String(movieId || ''), sn = Number(season), en = Number(episode);
+    if (!stillHere(mid) || !(sn > 0) || !(en > 0)) { endCover(); return false; }
+    try { if (typeof window.seriesSelectEpisodeV403 === 'function') window.seriesSelectEpisodeV403(sn, en); } catch (_) {}
+    setTimeout(function () {
+      let started = false;
+      try {
+        if (stillHere(mid) && typeof window.seriesAutoWatchV400 === 'function') {
+          window.seriesAutoWatchV400(sn, en);
+          started = !!chain;
+        }
+      } catch (_) {}
+      if (!started) endCover();
+    }, 400);
+    return true;
   };
 })();

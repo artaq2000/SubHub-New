@@ -83,6 +83,22 @@
   function epKey(season, episode) {
     return 's' + Number(season) + 'e' + Number(episode);
   }
+  // 322.3.112: the episode after this one, for the player's «الحلقة التالية»
+  // card (null on the last episode, or when the next one has nothing to play).
+  function nextInfo(mid, season, episode) {
+    try {
+      if (typeof _seriesNextEpisode !== 'function' || typeof _seriesDoc !== 'function') return null;
+      const s = _seriesDoc();
+      const n = _seriesNextEpisode(s, Number(season), Number(episode), 1);
+      if (!n || !n.se || !n.ep) return null;
+      const sn = Number(n.se.number), en = Number(n.ep.number);
+      if (!(sn > 0) || !(en > 0)) return null;
+      if (typeof window.__subhubEpisodeWatchableV403 === 'function' && !window.__subhubEpisodeWatchableV403(sn, en)) return null;
+      const AD = function (v) { try { return typeof arabicDigitsV369 === 'function' ? arabicDigitsV369(v) : String(v); } catch (_) { return String(v); } };
+      const label = sn === Number(season) ? 'الحلقة ' + AD(en) : 'الموسم ' + AD(sn) + ' · الحلقة ' + AD(en);
+      return { movieId: String(mid || ''), season: sn, episode: en, label: label, auto: !(s && s.autoNext === false) };
+    } catch (_) { return null; }
+  }
   function modeName(mode) {
     return (MODE_STYLE[mode] || MODE_STYLE.moviesmod).name;
   }
@@ -149,11 +165,20 @@
     const m = String(v || '').match(/(?:19|20)\d{2}/);
     return m ? m[0] : '';
   }
+  // 322.3.112: one TMDB lookup per series (the automatic search opens many players).
+  const tmdbMemo = {};
   async function resolveTmdbTv(info) {
     const sel = current() || {};
     const rawId = String(sel.id || info.movieId || '').trim();
     const stored = rawId.match(/^tmdb_tv_(\d{1,12})$/i);
     if (stored) return stored[1];
+    const memoKey = rawId + '|' + String(sel.title || '') + '|' + String(sel.year || '');
+    if (tmdbMemo[memoKey]) return tmdbMemo[memoKey];
+    const found = await resolveTmdbTvUncached(sel, rawId);
+    if (/^\d{1,12}$/.test(found)) tmdbMemo[memoKey] = found;
+    return found;
+  }
+  async function resolveTmdbTvUncached(sel, rawId) {
     if (typeof TMDB_API_KEY === 'undefined' || typeof TMDB_BASE === 'undefined'
         || !TMDB_API_KEY || String(TMDB_API_KEY).includes('ضع_مفتاحك')) {
       throw new Error('tmdb unavailable');
@@ -382,6 +407,8 @@
         // 322.3.111: the player reports where the viewer stops on this episode
         // (site list: «أكمل · 17:20» / «✓ تمت المشاهدة») and continues from there.
         progress: episodeProgress(selected.id, season, episode),
+        // 322.3.112: «الحلقة التالية» card (viewers only; not while the owner chooses).
+        next: (owner && !ownerAuto) ? null : nextInfo(selected.id, season, episode),
         interactiveSource: owner && !ownerAuto,
         ownerMode: owner,
         openChooser: owner && !ownerAuto && !!startPage,
@@ -513,10 +540,77 @@
     document.body.appendChild(bg);
   }
 
+  // 322.3.112: our own file of an episode (R2 / direct link / our player page)
+  // in the app player — the same black screen as the app servers. The site
+  // (v403) says what the file is (window.__subhubOwnSourceV403 → {kind, url},
+  // R2 links already signed). Resolves true when the player was asked to open.
+  async function openOwn(raw) {
+    if (opening || active) return false;
+    const selected = current();
+    if (!selected || String(selected.id || '') !== String((raw && raw.movieId) || '')) return false;
+    const season = Number(raw.season), episode = Number(raw.episode), slot = String(raw.slot || '');
+    if (!(season > 0) || !(episode > 0) || !/^[a-z0-9]{1,12}$/.test(slot)) return false;
+    if (typeof window.__subhubOwnSourceV403 !== 'function') return false;
+    opening = true;
+    try {
+      const bridge = window.SubHubAndroidBridge;
+      if (!bridge || typeof bridge.openDirectStream !== 'function') return false;
+      const src = await window.__subhubOwnSourceV403(season, episode, slot);
+      if (!src || !src.url || (src.kind !== 'file' && src.kind !== 'page') || current() !== selected) return false;
+      let tmdbId = '';
+      try { tmdbId = await resolveTmdbTv({ movieId: selected.id }); } catch (_) {}
+      await ensureEpisodeMembers(selected.id);
+      if (current() !== selected) return false;
+      const catalog = episodeCatalog(season, episode);
+      const defaultIndex = applyDefaultsWithPin(catalog, null, season, episode);
+      if (typeof stopInlinePlayersV265 === 'function') stopInlinePlayersV265();
+      if (typeof closeEmbedPlayer === 'function') closeEmbedPlayer();
+      const stableKey = (String(selected.id || 'series').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 80) + '_' + epKey(season, episode)).slice(0, 100);
+      const session = 'series_own_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      active = {
+        session, mode: 'own', owner: false, catalog, season, episode,
+        verify: false,
+        info: { source: 'own', movieId: String(selected.id || ''), season, episode },
+        movieId: String(selected.id || ''),
+        serverKey: 'own_' + slot, serverLabel: 'SubHub', serverPageUrl: '', embedUrl: '',
+        pending: null, subtitleOffsetMs: 0
+      };
+      bridge.openDirectStream(token, JSON.stringify({
+        mode: src.kind === 'file' ? 'ownfile' : 'ownpage',
+        session: session,
+        movieId: stableKey,
+        resumeKey: stableKey,
+        tmdbId: /^\d{1,12}$/.test(tmdbId) ? tmdbId : '',
+        kind: 'tv',
+        episodeKey: epKey(season, episode),
+        ownUrl: String(src.url),
+        progress: episodeProgress(selected.id, season, episode),
+        next: nextInfo(selected.id, season, episode),
+        interactiveSource: false,
+        ownerMode: false,
+        openChooser: false,
+        serverKey: 'own_' + slot,
+        serverLabel: 'SubHub',
+        serverPageUrl: '',
+        subtitleOffsetMs: 0,
+        catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub'), pinned: x.pinned === true })),
+        defaultIndex: defaultIndex
+      }));
+      return true;
+    } catch (_) {
+      active = null;
+      return false;
+    } finally {
+      opening = false;
+    }
+  }
+  window.SubHubSeriesOwnSourceV3112 = function (raw) { return openOwn(raw || {}); };
+
   // 322.3.107: shared with app_list_stream.js (the «سيرفرات التطبيق» list),
   // so episodes on the list get the same TMDB page, CC list and defaults.
   window.__subhubSeriesHelpersV3107 = {
     epKey: epKey,
+    nextInfo: nextInfo,
     resolveTmdbTv: resolveTmdbTv,
     episodePageUrl: episodePageUrl,
     episodeCatalog: episodeCatalog,
