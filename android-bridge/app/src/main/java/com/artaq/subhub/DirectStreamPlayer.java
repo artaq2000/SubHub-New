@@ -993,52 +993,98 @@ public final class DirectStreamPlayer {
         }
     }
 
+    // 322.3.115: responsive episode drawer. Never pause playback or change the quick toolbar.
+    private FrameLayout episodeDrawer;
+
+    private void dismissEpisodeDrawer() {
+        if (episodeDrawer == null) return;
+        root.removeView(episodeDrawer);
+        episodeDrawer = null;
+    }
+
     private void chooseEpisode() {
         if (episodeItems == null || closed) return;
-        panelTitle.setText("الحلقات");
-        panelBody.removeAllViews();
+        dismissEpisodeDrawer();
+        final boolean landscape = root.getWidth() > root.getHeight();
+        final int width = landscape ? Math.min(dp(340), Math.max(dp(220), root.getWidth() * 42 / 100)) : -1;
+        final int height = landscape ? -1 : Math.min(dp(430), Math.max(dp(220), root.getHeight() * 65 / 100));
+        FrameLayout shade = new FrameLayout(activity);
+        episodeDrawer = shade;
+        shade.setBackgroundColor(0x55000000);
+        root.addView(shade, new FrameLayout.LayoutParams(-1, -1));
+        shade.setOnClickListener(v -> dismissEpisodeDrawer());
+
+        LinearLayout sheet = new LinearLayout(activity);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setPadding(dp(12), dp(12), dp(12), dp(8));
+        sheet.setBackground(round(PANEL, BORDER, 1, 18));
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(width, height,
+                landscape ? Gravity.RIGHT | Gravity.TOP : Gravity.BOTTOM);
+        shade.addView(sheet, slp);
+        sheet.setOnClickListener(v -> {});
+
+        LinearLayout header = new LinearLayout(activity);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        TextView close = chip("✕", 16, this::dismissEpisodeDrawer);
+        header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(42)));
+        TextView title = new TextView(activity);
+        title.setText("المواسم والحلقات");
+        title.setTextSize(19);
+        title.setTextColor(Color.WHITE);
+        title.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, dp(42), 1f));
+        sheet.addView(header);
+
         ScrollView scroll = new ScrollView(activity);
         LinearLayout list = new LinearLayout(activity);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(4), dp(4), dp(4), dp(12));
+        list.setPadding(dp(2), dp(4), dp(2), dp(14));
         View current = null;
         for (int i = 0; i < episodeItems.length(); i++) {
             JSONObject it = episodeItems.optJSONObject(i);
             if (it == null) continue;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(0, dp(2), 0, dp(2));
             String head = it.optString("h", "");
             if (!head.isEmpty()) {
-                TextView h = new TextView(activity);
-                h.setText(head);
-                h.setTextColor(GOLD);
-                h.setTextSize(14);
-                h.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                h.setGravity(Gravity.RIGHT);
-                h.setTextDirection(View.TEXT_DIRECTION_RTL);
-                h.setPadding(dp(8), dp(8), dp(8), dp(2));
-                list.addView(h, lp);
+                TextView heading = new TextView(activity);
+                heading.setText(head);
+                heading.setTextColor(GOLD);
+                heading.setTextSize(15);
+                heading.setGravity(Gravity.RIGHT);
+                heading.setPadding(dp(8), dp(12), dp(8), dp(8));
+                list.addView(heading, new LinearLayout.LayoutParams(-1, -2));
                 continue;
             }
             final int sn = it.optInt("s", 0), en = it.optInt("e", 0);
             if (sn <= 0 || en <= 0) continue;
+            final boolean cur = it.optBoolean("cur", false);
+            final boolean ok = it.optBoolean("ok", true);
             String st = it.optString("st", "");
-            boolean cur = it.optBoolean("cur", false), ok = it.optBoolean("ok", true);
-            String mark = cur ? "  ▶ الآن" : "done".equals(st) ? "  ✓" : "progress".equals(st) ? "  ●" : (ok ? "" : "  · قريباً");
-            TextView row = listRow(chip(it.optString("t", "الحلقة " + toArabicDigits(en)) + mark, 15, () -> {
-                if (cur || !ok) { hidePanel(); return; }
+            String mark = cur ? "  ▶ الآن" : "done".equals(st) ? "  ✓ تمت المشاهدة" :
+                    "progress".equals(st) ? "  ● أكمل" : (ok ? "" : "  · قريباً");
+            TextView item = chip(it.optString("t", "الحلقة " + toArabicDigits(en)) + mark, 15, () -> {
+                if (!ok) return;
+                if (cur) { dismissEpisodeDrawer(); return; }
+                dismissEpisodeDrawer();
                 collapseMenu();
                 try { listener.episodeChosen(sn, en); } catch (Exception ignored) {}
-            }));
-            if (cur) { markSelected(row); current = row; }
-            if (!ok && !cur) row.setAlpha(0.45f);
-            list.addView(row, lp);
+            });
+            item.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            item.setPadding(dp(14), dp(8), dp(14), dp(8));
+            item.setMinHeight(dp(52));
+            if (cur) { item.setBackground(round(0xFF473919, GOLD, 2, 12)); current = item; }
+            if (!ok) item.setAlpha(0.45f);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(-1, -2);
+            ilp.setMargins(0, dp(3), 0, dp(3));
+            list.addView(item, ilp);
         }
-        scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
-        panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
-        showPanel(true);
+        scroll.addView(list);
+        sheet.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
         final View target = current;
-        if (target != null) scroll.post(() -> scroll.scrollTo(0, Math.max(0, target.getTop() - dp(40))));
+        if (target != null) scroll.post(() -> scroll.scrollTo(0, Math.max(0, target.getTop() - dp(80))));
+        shade.bringToFront();
+        enterImmersive();
     }
 
     // 322.3.110: this player is one attempt of «مشاهدة تلقائية».
