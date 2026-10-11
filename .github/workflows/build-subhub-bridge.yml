@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.114 next episode strip + episodes list
+name: Build TEST SubHub 322.3.115 episodes under the progress line
 
 on:
   push:
     branches:
-      - 'test/episodes-322.3.114'
+      - 'test/bottombar-322.3.115'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -165,8 +165,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='123'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.114'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='124'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.115'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -174,12 +174,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.114-episodes.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.115-bottombar.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.114-episodes
-          path: SubHub-322.3.114-episodes.apk
+          name: SubHub-322.3.115-bottombar
+          path: SubHub-322.3.115-bottombar.apk
           retention-days: 7
 
       - name: Remove signing key from runner

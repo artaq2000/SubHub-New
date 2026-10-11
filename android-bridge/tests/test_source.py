@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 123" in gradle
-assert "versionName '322.3.114'" in gradle
+assert "versionCode 124" in gradle
+assert "versionName '322.3.115'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 123' in mv107
-assert "versionCode 123" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 124' in mv107
+assert "versionCode 124" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1208,10 +1208,27 @@ assert 'new FrameLayout.LayoutParams(-1, dp(46), Gravity.BOTTOM)' in b          
 assert 'new FrameLayout.LayoutParams(dp(290), -2, Gravity.BOTTOM | Gravity.RIGHT)' in b  # portrait as before
 assert 'if (nextShown) handler.post(this::nextCardOrientationCheck);' in d114
 assert 'void episodeChosen(int season, int episode);' in d114
-assert 'public void setEpisodes(JSONArray items)' in d114 and 'episodesQuick = chip("حلقات", 13, this::chooseEpisode);' in d114
+assert 'public void setEpisodes(JSONArray items)' in d114   # 322.3.115: shown under the progress line (checked below)
 assert 'private void playOtherEpisode(String session, String movieId, int season, int episode, String coverText)' in m114
 assert '!episodeAllowed.contains(season + "x" + episode)' in m114
 assert 'if (episodeItems.length() > 1) directStreamPlayer.setEpisodes(episodeItems);' in m114
 assert 'function episodeList(mid, season, episode)' in s114 and 'episodes: episodeList(selected.id, season, episode),' in s114
 assert "H().episodeList(ctx.movieId, ctx.season, ctx.episode) : []," in l114
 print('322.3.114 next-episode strip + episodes list checks OK')
+
+# 322.3.115: «☰ الحلقات» / «⏭ التالية» under the progress line, episode cards, ⚙ in ⋮.
+d115 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+assert 'chooseEpisode' not in d115 and 'episodesQuick' not in d115           # no longer in the ⋮ strip
+assert 'getIdentifier("exo_settings", "id", activity.getPackageName())' in d115
+assert 'getIdentifier("exo_time", "id", activity.getPackageName())' in d115 and 'lp.gravity = Gravity.CENTER;' in d115
+assert 'playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {' in d115
+assert 'bottomNext = chip("⏭ التالية", 13, this::goNextEpisode);' in d115
+assert 'bottomEpisodes = chip("☰ الحلقات", 13, this::openEpisodePicker);' in d115
+u = d115[d115.index('private void updateBottomRow()'):]
+u = u[:u.index('\n    }\n')]
+assert 'nextCardLandscape' in u and 'controllerShown && playbackReady && !cardHere' in u   # the card takes this place at the credits
+assert 'HorizontalScrollView scroll = new HorizontalScrollView(activity);' in d115[d115.index('private void buildEpisodePicker()'):]
+assert 'lp.bottomMargin = dp(72);   // above the progress line' in d115
+assert 'addCompactQuick("⚙", this::openSettings);' in d115 and 'player.setPlaybackSpeed(v);' in d115
+assert 'customizeControls();' in d115
+print('322.3.115 bottom row + episode cards + settings checks OK')

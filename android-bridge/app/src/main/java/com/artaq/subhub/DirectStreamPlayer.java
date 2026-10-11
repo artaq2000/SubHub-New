@@ -519,6 +519,8 @@ public final class DirectStreamPlayer {
         addCompactQuick("✕", this::close);
         addCompactQuick("HD", this::quality);
         addCompactQuick("CC", this::chooseSubtitle);
+        // 322.3.115: the player's gear (speed / audio) lives here now.
+        addCompactQuick("⚙", this::openSettings);
         if (this.ownerMode) addCompactQuick("حفظ", this::requestSave);
         addCompactQuick("A−", () -> adjustSubtitleSize(-2));
         addCompactQuick("A+", () -> adjustSubtitleSize(2));
@@ -791,6 +793,7 @@ public final class DirectStreamPlayer {
         String v = label == null ? "" : label.trim();
         nextLabel = v.length() > 60 ? v.substring(0, 60) : v;
         nextAuto = auto;
+        updateBottomRow();
     }
 
     // End of the last dialogue line of the subtitle on screen (video time), -1 if
@@ -931,6 +934,7 @@ public final class DirectStreamPlayer {
         buildNextCard(landscape);
         refreshNextCount();
         nextCard.bringToFront();
+        updateBottomRow();
     }
 
     private void showNextCard() {
@@ -942,6 +946,7 @@ public final class DirectStreamPlayer {
         if (t instanceof TextView) ((TextView) t).setText("الحلقة التالية: " + nextLabel);
         nextCard.setVisibility(View.VISIBLE);
         nextCard.bringToFront();
+        updateBottomRow();
         final int gen = ++nextGeneration;
         nextLeft = NEXT_COUNTDOWN_S;
         refreshNextCount();
@@ -960,6 +965,7 @@ public final class DirectStreamPlayer {
     private void hideNextCard() {
         nextGeneration++;
         if (nextCard != null) nextCard.setVisibility(View.GONE);
+        updateBottomRow();
     }
 
     private void cancelNextEpisode() {
@@ -974,71 +980,309 @@ public final class DirectStreamPlayer {
         try { listener.nextEpisode(); } catch (Exception ignored) {}
     }
 
-    // 322.3.114: «حلقات» in the ⋮ menu — the episodes of the series, any one of
-    // them opens with «مشاهدة تلقائية». Entries {s, e, t, st, cur, ok} or {h}.
+    // 322.3.115: «☰ الحلقات» and «⏭ التالية» under the progress line (with the
+    // player's controls; the time sits between them, ⚙ moved to the ⋮ strip).
+    // «☰ الحلقات» opens the episodes as cards above the line, swiped sideways.
+    // Entries {s, e, t, st, cur, ok} or {h}.
     private JSONArray episodeItems = null;
-    private TextView episodesQuick;
+    private TextView bottomNext, bottomEpisodes;
+    private boolean controllerShown = false;
+    private LinearLayout episodePicker;
+    private int pickerSeason = -1;
 
     public void setEpisodes(JSONArray items) {
         if (closed || interactiveSource || items == null || items.length() < 2) return;
         episodeItems = items;
-        if (episodesQuick == null) {
-            episodesQuick = chip("حلقات", 13, this::chooseEpisode);
-            episodesQuick.setMinWidth(0);
-            episodesQuick.setMinimumWidth(0);
-            episodesQuick.setPadding(dp(5), 0, dp(5), 0);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(36));
-            lp.setMargins(dp(2), 0, dp(2), 0);
-            quickRow.addView(episodesQuick, Math.min(3, quickRow.getChildCount()), lp);
+        updateBottomRow();
+    }
+
+    // Our controls on the player's own bar: the gear leaves (⚙ is in ⋮ now), the
+    // time moves to the middle, and our two buttons follow the bar in and out.
+    private void customizeControls() {
+        if (playerView == null) return;
+        try {
+            int gear = activity.getResources().getIdentifier("exo_settings", "id", activity.getPackageName());
+            View g = gear == 0 ? null : playerView.findViewById(gear);
+            if (g != null) g.setVisibility(View.GONE);
+        } catch (Exception ignored) {}
+        try {
+            int time = activity.getResources().getIdentifier("exo_time", "id", activity.getPackageName());
+            View t = time == 0 ? null : playerView.findViewById(time);
+            if (t != null && t.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) t.getLayoutParams();
+                lp.gravity = Gravity.CENTER;
+                t.setLayoutParams(lp);
+            }
+        } catch (Exception ignored) {}
+        try {
+            playerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
+                controllerShown = visibility == View.VISIBLE;
+                updateBottomRow();
+            });
+        } catch (Exception ignored) {}
+    }
+
+    private void ensureBottomRow() {
+        if (bottomNext != null || root == null) return;
+        bottomNext = chip("⏭ التالية", 13, this::goNextEpisode);
+        bottomNext.setBackground(round(0xcc0b1725, 0x884E718B, 1, 16));
+        bottomNext.setVisibility(View.GONE);
+        FrameLayout.LayoutParams a = new FrameLayout.LayoutParams(-2, dp(36), Gravity.BOTTOM | Gravity.LEFT);
+        a.leftMargin = dp(12);
+        a.bottomMargin = dp(12);
+        root.addView(bottomNext, a);
+        bottomEpisodes = chip("☰ الحلقات", 13, this::openEpisodePicker);
+        bottomEpisodes.setBackground(round(0xcc0b1725, 0x884E718B, 1, 16));
+        bottomEpisodes.setVisibility(View.GONE);
+        FrameLayout.LayoutParams b = new FrameLayout.LayoutParams(-2, dp(36), Gravity.BOTTOM | Gravity.RIGHT);
+        b.rightMargin = dp(12);
+        b.bottomMargin = dp(12);
+        root.addView(bottomEpisodes, b);
+    }
+
+    private void updateBottomRow() {
+        if (closed || root == null || interactiveSource) return;
+        boolean hasNext = !nextLabel.isEmpty(), hasList = episodeItems != null;
+        if (!hasNext && !hasList) return;
+        ensureBottomRow();
+        // In landscape «الحلقة التالية» takes this same place at the credits.
+        boolean cardHere = nextShown && nextCard != null && nextCard.getVisibility() == View.VISIBLE && nextCardLandscape;
+        boolean pickerOpen = episodePicker != null && episodePicker.getVisibility() == View.VISIBLE;
+        boolean show = controllerShown && playbackReady && !cardHere;
+        bottomNext.setVisibility(show && hasNext ? View.VISIBLE : View.GONE);
+        bottomEpisodes.setVisibility(show && hasList && !pickerOpen ? View.VISIBLE : View.GONE);
+        if (bottomNext.getVisibility() == View.VISIBLE) bottomNext.bringToFront();
+        if (bottomEpisodes.getVisibility() == View.VISIBLE) bottomEpisodes.bringToFront();
+    }
+
+    private void openEpisodePicker() {
+        if (episodeItems == null || closed) return;
+        collapseMenu();
+        int cur = -1, first = -1;
+        for (int i = 0; i < episodeItems.length(); i++) {
+            JSONObject it = episodeItems.optJSONObject(i);
+            if (it == null || !it.optString("h", "").isEmpty()) continue;
+            int sn = it.optInt("s", 0);
+            if (sn <= 0) continue;
+            if (first < 0) first = sn;
+            if (it.optBoolean("cur", false)) cur = sn;
+        }
+        if (first < 0) return;
+        if (pickerSeason <= 0) pickerSeason = cur > 0 ? cur : first;
+        buildEpisodePicker();
+    }
+
+    private void closeEpisodePicker() {
+        if (episodePicker != null) {
+            ViewGroup parent = (ViewGroup) episodePicker.getParent();
+            if (parent != null) parent.removeView(episodePicker);
+            episodePicker = null;
+        }
+        updateBottomRow();
+    }
+
+    private void buildEpisodePicker() {
+        if (closed || root == null || episodeItems == null) return;
+        if (episodePicker != null) {
+            ViewGroup parent = (ViewGroup) episodePicker.getParent();
+            if (parent != null) parent.removeView(episodePicker);
+        }
+        java.util.LinkedHashMap<Integer, ArrayList<JSONObject>> bySeason = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < episodeItems.length(); i++) {
+            JSONObject it = episodeItems.optJSONObject(i);
+            if (it == null || !it.optString("h", "").isEmpty()) continue;
+            int sn = it.optInt("s", 0), en = it.optInt("e", 0);
+            if (sn <= 0 || en <= 0) continue;
+            ArrayList<JSONObject> list = bySeason.get(sn);
+            if (list == null) { list = new ArrayList<>(); bySeason.put(sn, list); }
+            list.add(it);
+        }
+        if (!bySeason.containsKey(pickerSeason)) pickerSeason = bySeason.keySet().iterator().next();
+
+        episodePicker = new LinearLayout(activity);
+        episodePicker.setOrientation(LinearLayout.VERTICAL);
+        episodePicker.setPadding(dp(10), dp(6), dp(10), dp(10));
+        episodePicker.setBackground(round(0xf00b1725, 0x663D6B8E, 1, 16));
+        episodePicker.setElevation(dp(30));
+        episodePicker.setClickable(true);
+
+        LinearLayout head = new LinearLayout(activity);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(activity);
+        title.setText("الحلقات");
+        title.setTextColor(GOLD);
+        title.setTextSize(15);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        title.setPadding(dp(4), 0, dp(10), 0);
+        head.addView(title, new LinearLayout.LayoutParams(-2, dp(38)));
+        title.setGravity(Gravity.CENTER_VERTICAL);
+        if (bySeason.size() > 1) {
+            for (Integer key : bySeason.keySet()) {
+                final int k = key;
+                TextView sc = chip("الموسم " + toArabicDigits(k), 13, () -> { pickerSeason = k; buildEpisodePicker(); });
+                if (k == pickerSeason) sc.setBackground(round(0xff1d4d33, 0xff4ade80, 2, 14));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(34));
+                lp.setMargins(dp(3), 0, dp(3), 0);
+                head.addView(sc, lp);
+            }
+        }
+        head.addView(new View(activity), new LinearLayout.LayoutParams(0, 1, 1f));
+        TextView close = chip("✕", 16, this::closeEpisodePicker);
+        head.addView(close, new LinearLayout.LayoutParams(dp(44), dp(36)));
+        episodePicker.addView(head, new LinearLayout.LayoutParams(-1, -2));
+
+        HorizontalScrollView scroll = new HorizontalScrollView(activity);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        LinearLayout row = new LinearLayout(activity);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        row.setPadding(0, dp(6), 0, 0);
+        View current = null;
+        for (JSONObject it : bySeason.get(pickerSeason)) {
+            final int sn = it.optInt("s", 0), en = it.optInt("e", 0);
+            final boolean cur = it.optBoolean("cur", false), ok = it.optBoolean("ok", true);
+            String st = it.optString("st", "");
+            LinearLayout card = new LinearLayout(activity);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setGravity(Gravity.CENTER);
+            card.setPadding(dp(8), dp(6), dp(8), dp(6));
+            card.setBackground(cur ? round(0xff1d4d33, 0xff4ade80, 2, 12) : round(PANEL_2, BORDER, 1, 12));
+            TextView t1 = new TextView(activity);
+            t1.setText("الحلقة " + toArabicDigits(en));
+            t1.setTextColor(Color.WHITE);
+            t1.setTextSize(14);
+            t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            t1.setGravity(Gravity.CENTER);
+            card.addView(t1, new LinearLayout.LayoutParams(-1, -2));
+            String full = it.optString("t", "");
+            int dash = full.indexOf(" — ");
+            if (dash > 0 && dash + 3 < full.length()) {
+                TextView t3 = new TextView(activity);
+                t3.setText(full.substring(dash + 3));
+                t3.setTextColor(Color.rgb(184, 197, 214));
+                t3.setTextSize(11);
+                t3.setSingleLine(true);
+                t3.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                t3.setGravity(Gravity.CENTER);
+                card.addView(t3, new LinearLayout.LayoutParams(-1, -2));
+            }
+            TextView t2 = new TextView(activity);
+            t2.setText(cur ? "▶ الآن" : "done".equals(st) ? "✓ تمت" : "progress".equals(st) ? "● أكمل" : (ok ? "" : "قريباً"));
+            t2.setTextColor(cur ? Color.rgb(134, 239, 172) : Color.rgb(184, 197, 214));
+            t2.setTextSize(12);
+            t2.setGravity(Gravity.CENTER);
+            card.addView(t2, new LinearLayout.LayoutParams(-1, -2));
+            if (!ok && !cur) card.setAlpha(0.45f);
+            card.setOnClickListener(v -> {
+                enterImmersive();
+                if (cur || !ok) { if (cur) closeEpisodePicker(); return; }
+                closeEpisodePicker();
+                try { listener.episodeChosen(sn, en); } catch (Exception ignored) {}
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(128), dp(78));
+            lp.setMargins(dp(4), 0, dp(4), 0);
+            row.addView(card, lp);
+            if (cur) current = card;
+        }
+        scroll.addView(row, new HorizontalScrollView.LayoutParams(-2, -2));
+        episodePicker.addView(scroll, new LinearLayout.LayoutParams(-1, -2));
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        lp.leftMargin = dp(10);
+        lp.rightMargin = dp(10);
+        lp.bottomMargin = dp(72);   // above the progress line
+        root.addView(episodePicker, lp);
+        episodePicker.bringToFront();
+        menuButton.bringToFront();
+        updateBottomRow();
+        final View target = current;
+        if (target != null) {
+            scroll.post(() -> scroll.scrollTo(Math.max(0, target.getLeft() - (scroll.getWidth() - target.getWidth()) / 2), 0));
         }
     }
 
-    private void chooseEpisode() {
-        if (episodeItems == null || closed) return;
-        panelTitle.setText("الحلقات");
+    // 322.3.115: ⚙ in the ⋮ strip (the player's own gear left its bar):
+    // playback speed and, when the video has several, the audio track.
+    private void openSettings() {
+        if (player == null) {
+            message("الإعدادات تظهر بعد تشغيل الفيديو.");
+            return;
+        }
+        panelTitle.setText("الإعدادات");
         panelBody.removeAllViews();
         ScrollView scroll = new ScrollView(activity);
         LinearLayout list = new LinearLayout(activity);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(dp(4), dp(4), dp(4), dp(12));
-        View current = null;
-        for (int i = 0; i < episodeItems.length(); i++) {
-            JSONObject it = episodeItems.optJSONObject(i);
-            if (it == null) continue;
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.setMargins(0, dp(2), 0, dp(2));
-            String head = it.optString("h", "");
-            if (!head.isEmpty()) {
-                TextView h = new TextView(activity);
-                h.setText(head);
-                h.setTextColor(GOLD);
-                h.setTextSize(14);
-                h.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-                h.setGravity(Gravity.RIGHT);
-                h.setTextDirection(View.TEXT_DIRECTION_RTL);
-                h.setPadding(dp(8), dp(8), dp(8), dp(2));
-                list.addView(h, lp);
-                continue;
+
+        list.addView(settingsHeader("السرعة"), new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout speeds = new LinearLayout(activity);
+        speeds.setOrientation(LinearLayout.HORIZONTAL);
+        speeds.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+        float now = player.getPlaybackParameters().speed;
+        float[] values = {0.75f, 1f, 1.25f, 1.5f, 2f};
+        String[] names = {"٠٫٧٥×", "عادي", "١٫٢٥×", "١٫٥×", "٢×"};
+        for (int i = 0; i < values.length; i++) {
+            final float v = values[i];
+            TextView c = chip(names[i], 13, () -> {
+                if (player != null) player.setPlaybackSpeed(v);
+                openSettings();
+            });
+            if (Math.abs(now - v) < 0.01f) c.setBackground(round(0xff1d4d33, 0xff4ade80, 2, 14));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.setMargins(dp(2), 0, dp(2), 0);
+            speeds.addView(c, lp);
+        }
+        list.addView(speeds, new LinearLayout.LayoutParams(-1, -2));
+
+        list.addView(settingsHeader("الصوت"), new LinearLayout.LayoutParams(-1, -2));
+        int audio = 0;
+        for (Tracks.Group g : player.getCurrentTracks().getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_AUDIO) continue;
+            for (int i = 0; i < g.length; i++) {
+                if (!g.isTrackSupported(i)) continue;
+                androidx.media3.common.Format f = g.getTrackFormat(i);
+                audio++;
+                String name = f.label != null && !f.label.trim().isEmpty() ? f.label.trim()
+                        : (f.language != null && !f.language.isEmpty()
+                            ? new Locale(f.language).getDisplayLanguage(new Locale("ar")) : "الصوت " + toArabicDigits(audio));
+                final TrackSelectionOverride o = new TrackSelectionOverride(g.getMediaTrackGroup(), i);
+                TextView row = listRow(chip(name, 15, () -> {
+                    if (player == null) return;
+                    player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                            .setOverrideForType(o).build());
+                    hidePanel();
+                }));
+                if (g.isTrackSelected(i)) markSelected(row);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                lp.setMargins(0, dp(2), 0, dp(2));
+                list.addView(row, lp);
             }
-            final int sn = it.optInt("s", 0), en = it.optInt("e", 0);
-            if (sn <= 0 || en <= 0) continue;
-            String st = it.optString("st", "");
-            boolean cur = it.optBoolean("cur", false), ok = it.optBoolean("ok", true);
-            String mark = cur ? "  ▶ الآن" : "done".equals(st) ? "  ✓" : "progress".equals(st) ? "  ●" : (ok ? "" : "  · قريباً");
-            TextView row = listRow(chip(it.optString("t", "الحلقة " + toArabicDigits(en)) + mark, 15, () -> {
-                if (cur || !ok) { hidePanel(); return; }
-                collapseMenu();
-                try { listener.episodeChosen(sn, en); } catch (Exception ignored) {}
-            }));
-            if (cur) { markSelected(row); current = row; }
-            if (!ok && !cur) row.setAlpha(0.45f);
-            list.addView(row, lp);
+        }
+        if (audio == 0) {
+            TextView none = settingsHeader("صوت واحد لهذا الفيديو");
+            none.setTextColor(Color.rgb(184, 197, 214));
+            none.setTypeface(android.graphics.Typeface.DEFAULT);
+            list.addView(none, new LinearLayout.LayoutParams(-1, -2));
         }
         scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
         panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
         showPanel(true);
-        final View target = current;
-        if (target != null) scroll.post(() -> scroll.scrollTo(0, Math.max(0, target.getTop() - dp(40))));
+    }
+
+    private TextView settingsHeader(String text) {
+        TextView h = new TextView(activity);
+        h.setText(text);
+        h.setTextColor(GOLD);
+        h.setTextSize(14);
+        h.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        h.setGravity(Gravity.RIGHT);
+        h.setTextDirection(View.TEXT_DIRECTION_RTL);
+        h.setPadding(dp(8), dp(8), dp(8), dp(4));
+        return h;
     }
 
     // 322.3.110: this player is one attempt of «مشاهدة تلقائية».
@@ -1513,6 +1757,8 @@ public final class DirectStreamPlayer {
         }
         playing = false;
         playbackReady = false;
+        controllerShown = false;   // 322.3.115: the bottom row leaves with the old player
+        updateBottomRow();
         subscriberProviderVisible = false;
         candidate = null;
         candidateHeaders = null;
@@ -3242,11 +3488,13 @@ public final class DirectStreamPlayer {
         FrameLayout.LayoutParams pp = new FrameLayout.LayoutParams(-1, -1);
         pp.topMargin = 0;
         root.addView(playerView, 0, pp);
+        customizeControls();
 
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
                     playbackReady = true;
+                    updateBottomRow();   // 322.3.115
                     if (autoActive() && !autoReported) {
                         autoReported = true;
                         try { listener.autoSucceeded(); } catch (Exception ignored) {}
