@@ -71,6 +71,15 @@
       if (b && typeof b.directStreamSaveResult === 'function') b.directStreamSaveResult(token, session, !!ok, text);
     } catch (_) {}
   }
+  // 322.3.111: where this viewer stopped on the episode, as the site keeps it.
+  function episodeProgress(mid, season, episode) {
+    let resumeMs = 0;
+    try {
+      const p = typeof _seriesProgress === 'function' ? _seriesProgress(mid, season, episode) : null;
+      if (p && p.d > 0 && p.t > 5 && p.t / p.d < 0.9) resumeMs = Math.round(p.t * 1000);
+    } catch (_) {}
+    return { movieId: String(mid || ''), season: Number(season), episode: Number(episode), resumeMs: resumeMs };
+  }
   function epKey(season, episode) {
     return 's' + Number(season) + 'e' + Number(episode);
   }
@@ -370,6 +379,9 @@
         kind: 'tv',
         // 322.3.109: the device subtitle file belongs to this episode.
         episodeKey: epKey(season, episode),
+        // 322.3.111: the player reports where the viewer stops on this episode
+        // (site list: «أكمل · 17:20» / «✓ تمت المشاهدة») and continues from there.
+        progress: episodeProgress(selected.id, season, episode),
         interactiveSource: owner && !ownerAuto,
         ownerMode: owner,
         openChooser: owner && !ownerAuto && !!startPage,

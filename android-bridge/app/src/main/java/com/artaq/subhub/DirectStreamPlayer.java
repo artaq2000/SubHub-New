@@ -88,6 +88,9 @@ public final class DirectStreamPlayer {
         // (no message in between), or it plays (remember it for next time).
         void autoFailed(String reason);
         void autoSucceeded();
+        // 322.3.111: where the viewer is now (every few seconds, on pause/close
+        // and at the end), so the site can show «أكمل · 17:20» / «✓ تمت المشاهدة».
+        void progress(long positionMs, long durationMs);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -662,6 +665,22 @@ public final class DirectStreamPlayer {
         } catch (Exception ignored) {
             return "خطأ غير معروف";
         }
+    }
+
+    // 322.3.111: the site knows a later stop for this episode (maybe watched on
+    // another server or in the site player): continue from there.
+    public void setResumeFromMs(long ms) {
+        if (closed || ms < 5000L) return;
+        if (ms > pendingResumeMs + 3000L) pendingResumeMs = ms;
+    }
+
+    // 322.3.111: where the viewer is now, for the site's episode list.
+    private long lastProgressReported = -1L;
+    private void reportProgress(long positionMs, long durationMs) {
+        if (durationMs <= 0L || positionMs < 0L) return;
+        if (Math.abs(positionMs - lastProgressReported) < 1000L) return;
+        lastProgressReported = positionMs;
+        try { listener.progress(positionMs, durationMs); } catch (Exception ignored) {}
     }
 
     // 322.3.110: this player is one attempt of «مشاهدة تلقائية».
@@ -1557,6 +1576,7 @@ public final class DirectStreamPlayer {
 
         long position = Math.max(0L, player.getContentPosition());
         long duration = player.getDuration();
+        if (playbackReady) reportProgress(position, duration);
         if (player.getPlaybackState() == Player.STATE_ENDED
                 || (duration > 0L && position >= Math.max(0L, duration - 45000L))) {
             clearResumePosition();
@@ -2727,6 +2747,7 @@ public final class DirectStreamPlayer {
                     if (interactiveSource) showStage("جارٍ تحميل الفيديو…");
                     else showSubscriberStage("جارٍ تشغيل الفيديو");
                 } else if (state == Player.STATE_ENDED) {
+                    if (player != null) reportProgress(Math.max(0L, player.getDuration()), player.getDuration());
                     clearResumePosition();
                 }
             }

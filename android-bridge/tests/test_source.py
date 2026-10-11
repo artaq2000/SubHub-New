@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 119" in gradle
-assert "versionName '322.3.110'" in gradle
+assert "versionCode 120" in gradle
+assert "versionName '322.3.111'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 119' in mv107
-assert "versionCode 119" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 120' in mv107
+assert "versionCode 120" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1092,3 +1092,23 @@ assert 'static final long AUTO_STEP_MS = 8000L;' in d110 and 'if (autoActive() &
 assert 'if (autoActive() && autoMore) return;   // 322.3.110: the next server comes instead' in d110
 assert 'window.__subhubServerStatV401(c.movieId, name, ok, ms);' in a110 and 'record(chain, false);' in a110
 print('322.3.110 by-name learning + 8 s checks OK')
+
+# 322.3.111: the app player tells the site where the viewer stops on an episode
+# («أكمل · 17:20» / «✓ تمت المشاهدة») and continues from there on any server.
+d111 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m111 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+s111 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+l111 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert 'void progress(long positionMs, long durationMs);' in d111
+assert 'public void setResumeFromMs(long ms)' in d111 and 'if (ms > pendingResumeMs + 3000L) pendingResumeMs = ms;' in d111
+assert 'if (playbackReady) reportProgress(position, duration);' in d111
+assert 'if (player != null) reportProgress(Math.max(0L, player.getDuration()), player.getDuration());' in d111
+assert 'window.__subhubEpisodeProgressV3111' in m111 and 'JSONObject.quote(progMovie)' in m111
+assert 'progMovie.matches("[A-Za-z0-9_.-]{1,120}") && progSeason > 0 && progEpisode > 0' in m111
+r111 = m111.index('directStreamPlayer.setResumeFromMs(progResumeMs)')
+assert r111 < m111.index('directStreamPlayer.selectDefault(defaultIndex)', r111) < m111.index('directStreamPlayer.setAutoAttempt(', r111)
+for js in (s111, l111):
+    assert 'function episodeProgress(mid, season, episode)' in js and 'p.t / p.d < 0.9' in js
+assert 'progress: episodeProgress(selected.id, season, episode),' in s111
+assert "progress: ctx.kind === 'tv' ? episodeProgress(ctx.movieId, ctx.season, ctx.episode) : null," in l111
+print('322.3.111 episode progress checks OK')

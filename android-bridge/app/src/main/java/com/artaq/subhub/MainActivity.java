@@ -67,13 +67,13 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.110";
+    private static final String NATIVE_VERSION = "322.3.111";
     // 322.3.107: the update check now uses the version of the APK that is really
     // installed (it was a fixed 109 for many builds, so an installed release could
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 119;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 120;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2217,6 +2217,13 @@ public class MainActivity extends Activity {
                             && SystemClock.elapsedRealtime() - pendingAutoAt < 30000L) ? pendingAuto : null;
                     pendingAuto = null;
                     final String autoChain = autoAttempt == null ? "" : autoAttempt.optString("chain", "");
+                    // 322.3.111: the episode this player shows, for «أكمل · 17:20» on the site.
+                    JSONObject prog = config.optJSONObject("progress");
+                    final String progMovie = prog == null ? "" : prog.optString("movieId", "");
+                    final int progSeason = prog == null ? 0 : prog.optInt("season", 0);
+                    final int progEpisode = prog == null ? 0 : prog.optInt("episode", 0);
+                    final boolean progValid = progMovie.matches("[A-Za-z0-9_.-]{1,120}") && progSeason > 0 && progEpisode > 0;
+                    final long progResumeMs = prog == null ? 0L : Math.max(0L, prog.optLong("resumeMs", 0L));
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     final String localSubtitleKey = localSubtitleKeyValue;
@@ -2303,6 +2310,16 @@ public class MainActivity extends Activity {
                                 }, 300L);
                             });
                         }
+                        public void progress(long positionMs, long durationMs) {
+                            if (!progValid || webView == null) return;
+                            ui.post(() -> {
+                                if (webView == null || !isTrustedHomePage()) return;
+                                webView.evaluateJavascript("window.__subhubEpisodeProgressV3111 && window.__subhubEpisodeProgressV3111("
+                                        + JSONObject.quote(progMovie) + "," + progSeason + "," + progEpisode + ","
+                                        + String.format(Locale.US, "%.1f", positionMs / 1000.0) + ","
+                                        + String.format(Locale.US, "%.1f", durationMs / 1000.0) + ")", null);
+                            });
+                        }
                         public void autoSucceeded() {
                             if (autoChain.isEmpty() || webView == null) return;
                             webView.evaluateJavascript("window.__subhubAutoOkV3110 && window.__subhubAutoOkV3110("
@@ -2311,6 +2328,8 @@ public class MainActivity extends Activity {
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
+                    // 322.3.111: continue the episode from where the site says the viewer stopped.
+                    if (progValid && progResumeMs > 0L) directStreamPlayer.setResumeFromMs(progResumeMs);
                     final int defaultIndex = config.optInt("defaultIndex", -1);
                     // 322.3.109: a file this viewer added for this film opens by itself.
                     if (localSubtitleFile(localSubtitleKey) != null && localSubtitleFile(localSubtitleKey).isFile()) {
