@@ -93,6 +93,8 @@ public final class DirectStreamPlayer {
         void progress(long positionMs, long durationMs);
         // 322.3.112: «الحلقة التالية» — countdown ended or «▶ شغّل الآن».
         void nextEpisode();
+        // 322.3.114: an episode picked in «حلقات» (menu ⋮).
+        void episodeChosen(int season, int episode);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -602,6 +604,8 @@ public final class DirectStreamPlayer {
             subtitle.setMaxWidth(Math.max(dp(160), root.getWidth() - dp(36)));
             positionSubtitle();
             if (!closed) enterImmersive();
+            // 322.3.114: «الحلقة التالية» follows the phone turning.
+            if (nextShown) handler.post(this::nextCardOrientationCheck);
         });
         root.setOnSystemUiVisibilityChangeListener(v -> {
             if (!closed) handler.postDelayed(this::enterImmersive, 220);
@@ -789,20 +793,29 @@ public final class DirectStreamPlayer {
         nextAuto = auto;
     }
 
-    // End of the last line of the subtitle on screen (video time), -1 if unknown.
+    // End of the last dialogue line of the subtitle on screen (video time), -1 if
+    // unknown. 322.3.114: the translator's credit at the very end and a lone line
+    // after a long silence are not dialogue (EpisodeTiming.lastDialogueEndMs).
     // Exclusive subtitles arrive in 4-second pieces: their end is not known.
-    private long lastSubtitleLineMs() {
+    private long creditsCacheOffset = Long.MIN_VALUE, creditsCacheDuration = -1L;
+    private long lastSubtitleLineMs(long durationMs) {
         if (segmentMode || cues == null) return -1L;
-        if (cues != creditsCuesRef) {
+        if (cues != creditsCuesRef || subtitleOffsetMs != creditsCacheOffset || durationMs != creditsCacheDuration) {
             creditsCuesRef = cues;
-            double max = 0d;
-            for (int i = 0; i < cues.length(); i++) {
+            creditsCacheOffset = subtitleOffsetMs;
+            creditsCacheDuration = durationMs;
+            int n = cues.length();
+            double[] st = new double[n], en = new double[n];
+            String[] tx = new String[n];
+            for (int i = 0; i < n; i++) {
                 JSONObject c = cues.optJSONObject(i);
-                if (c != null) max = Math.max(max, c.optDouble("end", 0d));
+                st[i] = c == null ? 0d : c.optDouble("start", 0d);
+                en[i] = c == null ? 0d : c.optDouble("end", 0d);
+                tx[i] = c == null ? "" : c.optString("text", "");
             }
-            creditsLastCueMs = max > 0d ? Math.round(max * 1000d) : -1L;
+            creditsLastCueMs = EpisodeTiming.lastDialogueEndMs(st, en, tx, subtitleOffsetMs, durationMs);
         }
-        return creditsLastCueMs < 0L ? -1L : creditsLastCueMs + subtitleOffsetMs;
+        return creditsLastCueMs;
     }
 
     private void checkCredits() {
@@ -810,7 +823,7 @@ public final class DirectStreamPlayer {
         long duration = player.getDuration();
         if (duration <= 0L || duration == C.TIME_UNSET) return;
         long position = Math.max(0L, player.getContentPosition());
-        long at = EpisodeTiming.creditsAtMs(duration, lastSubtitleLineMs());
+        long at = EpisodeTiming.creditsAtMs(duration, lastSubtitleLineMs(duration));
         if (position >= at) {
             if (!creditsReached) {
                 creditsReached = true;
@@ -826,37 +839,70 @@ public final class DirectStreamPlayer {
         }
     }
 
-    private void showNextCard() {
-        if (closed || root == null) return;
-        nextShown = true;
-        if (nextCard == null) {
-            nextCard = new LinearLayout(activity);
+    // 322.3.114: portrait — the card above the controls at the right (as before);
+    // landscape — one thin strip at the very bottom, under the progress line.
+    private boolean nextCardLandscape = false;
+    private int nextLeft = 0;
+
+    private void buildNextCard(boolean landscape) {
+        if (nextCard != null) {
+            ViewGroup parent = (ViewGroup) nextCard.getParent();
+            if (parent != null) parent.removeView(nextCard);
+            nextCard = null;
+        }
+        nextCardLandscape = landscape;
+        nextCard = new LinearLayout(activity);
+        nextCard.setBackground(round(0xee0b1725, 0xccF7BC3D, 1, landscape ? 14 : 18));
+        nextCard.setElevation(dp(28));
+        nextCard.setClickable(true);
+        TextView title = new TextView(activity);
+        title.setTag("next-title");
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(landscape ? 14 : 16);
+        title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        title.setTextDirection(View.TEXT_DIRECTION_RTL);
+        title.setSingleLine(landscape);
+        nextCount = new TextView(activity);
+        nextCount.setTextColor(Color.rgb(184, 197, 214));
+        nextCount.setTextSize(13);
+        nextCount.setTextDirection(View.TEXT_DIRECTION_RTL);
+        nextCount.setSingleLine(true);
+        TextView play = chip("▶ شغّل الآن", landscape ? 13 : 14, this::goNextEpisode);
+        play.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
+        TextView cancel = chip("✕ إلغاء", landscape ? 13 : 14, this::cancelNextEpisode);
+        FrameLayout.LayoutParams lp;
+        if (landscape) {
+            nextCard.setOrientation(LinearLayout.HORIZONTAL);
+            nextCard.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            nextCard.setGravity(Gravity.CENTER_VERTICAL);
+            nextCard.setPadding(dp(14), dp(3), dp(6), dp(3));
+            title.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            nextCount.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            nextCount.setPadding(dp(10), 0, dp(10), 0);
+            nextCard.addView(title, new LinearLayout.LayoutParams(-2, -1));
+            nextCard.addView(nextCount, new LinearLayout.LayoutParams(-2, -1));
+            nextCard.addView(new View(activity), new LinearLayout.LayoutParams(0, 1, 1f));
+            LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(dp(140), dp(36));
+            a.setMargins(dp(3), 0, dp(3), 0);
+            LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(dp(96), dp(36));
+            b.setMargins(dp(3), 0, dp(3), 0);
+            nextCard.addView(play, a);
+            nextCard.addView(cancel, b);
+            lp = new FrameLayout.LayoutParams(-1, dp(46), Gravity.BOTTOM);
+            lp.leftMargin = dp(12);
+            lp.rightMargin = dp(12);
+            lp.bottomMargin = dp(4);
+        } else {
             nextCard.setOrientation(LinearLayout.VERTICAL);
             nextCard.setPadding(dp(14), dp(10), dp(14), dp(12));
-            nextCard.setBackground(round(0xee0b1725, 0xccF7BC3D, 1, 18));
-            nextCard.setElevation(dp(28));
-            nextCard.setClickable(true);
-            TextView title = new TextView(activity);
-            title.setTag("next-title");
-            title.setTextColor(Color.WHITE);
-            title.setTextSize(16);
-            title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             title.setGravity(Gravity.RIGHT);
-            title.setTextDirection(View.TEXT_DIRECTION_RTL);
-            nextCard.addView(title, new LinearLayout.LayoutParams(-1, -2));
-            nextCount = new TextView(activity);
-            nextCount.setTextColor(Color.rgb(184, 197, 214));
-            nextCount.setTextSize(13);
             nextCount.setGravity(Gravity.RIGHT);
-            nextCount.setTextDirection(View.TEXT_DIRECTION_RTL);
             nextCount.setPadding(0, dp(2), 0, dp(8));
+            nextCard.addView(title, new LinearLayout.LayoutParams(-1, -2));
             nextCard.addView(nextCount, new LinearLayout.LayoutParams(-1, -2));
             LinearLayout row = new LinearLayout(activity);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
-            TextView play = chip("▶ شغّل الآن", 14, this::goNextEpisode);
-            play.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
-            TextView cancel = chip("✕ إلغاء", 14, this::cancelNextEpisode);
             LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, dp(42), 1.3f);
             a.setMargins(dp(3), 0, dp(3), 0);
             LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(0, dp(42), 1f);
@@ -864,27 +910,50 @@ public final class DirectStreamPlayer {
             row.addView(play, a);
             row.addView(cancel, b);
             nextCard.addView(row, new LinearLayout.LayoutParams(-1, -2));
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(290), -2, Gravity.BOTTOM | Gravity.RIGHT);
+            lp = new FrameLayout.LayoutParams(dp(290), -2, Gravity.BOTTOM | Gravity.RIGHT);
             lp.bottomMargin = dp(96);
             lp.rightMargin = dp(18);
-            root.addView(nextCard, lp);
         }
+        title.setText("الحلقة التالية: " + nextLabel);
+        root.addView(nextCard, lp);
+    }
+
+    private void refreshNextCount() {
+        if (nextCount == null) return;
+        nextCount.setText(nextAuto ? "تبدأ بعد " + toArabicDigits(Math.max(0, nextLeft)) : "التشغيل التلقائي متوقف");
+    }
+
+    // The phone turned while the card is on screen: the other layout, same countdown.
+    private void nextCardOrientationCheck() {
+        if (closed || !nextShown || nextCard == null || nextCard.getVisibility() != View.VISIBLE) return;
+        boolean landscape = root.getWidth() > root.getHeight();
+        if (landscape == nextCardLandscape) return;
+        buildNextCard(landscape);
+        refreshNextCount();
+        nextCard.bringToFront();
+    }
+
+    private void showNextCard() {
+        if (closed || root == null) return;
+        nextShown = true;
+        boolean landscape = root.getWidth() > root.getHeight();
+        if (nextCard == null || landscape != nextCardLandscape) buildNextCard(landscape);
         View t = nextCard.findViewWithTag("next-title");
         if (t instanceof TextView) ((TextView) t).setText("الحلقة التالية: " + nextLabel);
         nextCard.setVisibility(View.VISIBLE);
         nextCard.bringToFront();
         final int gen = ++nextGeneration;
-        if (!nextAuto) {
-            nextCount.setText("التشغيل التلقائي متوقف");
-            return;
-        }
-        countdownNext(gen, NEXT_COUNTDOWN_S);
+        nextLeft = NEXT_COUNTDOWN_S;
+        refreshNextCount();
+        if (!nextAuto) return;
+        handler.postDelayed(() -> countdownNext(gen, NEXT_COUNTDOWN_S - 1), 1000L);
     }
 
     private void countdownNext(int gen, int left) {
         if (closed || gen != nextGeneration || nextCard == null) return;
         if (left <= 0) { goNextEpisode(); return; }
-        nextCount.setText("تبدأ بعد " + toArabicDigits(left));
+        nextLeft = left;
+        refreshNextCount();
         handler.postDelayed(() -> countdownNext(gen, left - 1), 1000L);
     }
 
@@ -903,6 +972,73 @@ public final class DirectStreamPlayer {
         nextCancelled = true;   // once
         hideNextCard();
         try { listener.nextEpisode(); } catch (Exception ignored) {}
+    }
+
+    // 322.3.114: «حلقات» in the ⋮ menu — the episodes of the series, any one of
+    // them opens with «مشاهدة تلقائية». Entries {s, e, t, st, cur, ok} or {h}.
+    private JSONArray episodeItems = null;
+    private TextView episodesQuick;
+
+    public void setEpisodes(JSONArray items) {
+        if (closed || interactiveSource || items == null || items.length() < 2) return;
+        episodeItems = items;
+        if (episodesQuick == null) {
+            episodesQuick = chip("حلقات", 13, this::chooseEpisode);
+            episodesQuick.setMinWidth(0);
+            episodesQuick.setMinimumWidth(0);
+            episodesQuick.setPadding(dp(5), 0, dp(5), 0);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(36));
+            lp.setMargins(dp(2), 0, dp(2), 0);
+            quickRow.addView(episodesQuick, Math.min(3, quickRow.getChildCount()), lp);
+        }
+    }
+
+    private void chooseEpisode() {
+        if (episodeItems == null || closed) return;
+        panelTitle.setText("الحلقات");
+        panelBody.removeAllViews();
+        ScrollView scroll = new ScrollView(activity);
+        LinearLayout list = new LinearLayout(activity);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(4), dp(4), dp(4), dp(12));
+        View current = null;
+        for (int i = 0; i < episodeItems.length(); i++) {
+            JSONObject it = episodeItems.optJSONObject(i);
+            if (it == null) continue;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.setMargins(0, dp(2), 0, dp(2));
+            String head = it.optString("h", "");
+            if (!head.isEmpty()) {
+                TextView h = new TextView(activity);
+                h.setText(head);
+                h.setTextColor(GOLD);
+                h.setTextSize(14);
+                h.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+                h.setGravity(Gravity.RIGHT);
+                h.setTextDirection(View.TEXT_DIRECTION_RTL);
+                h.setPadding(dp(8), dp(8), dp(8), dp(2));
+                list.addView(h, lp);
+                continue;
+            }
+            final int sn = it.optInt("s", 0), en = it.optInt("e", 0);
+            if (sn <= 0 || en <= 0) continue;
+            String st = it.optString("st", "");
+            boolean cur = it.optBoolean("cur", false), ok = it.optBoolean("ok", true);
+            String mark = cur ? "  ▶ الآن" : "done".equals(st) ? "  ✓" : "progress".equals(st) ? "  ●" : (ok ? "" : "  · قريباً");
+            TextView row = listRow(chip(it.optString("t", "الحلقة " + toArabicDigits(en)) + mark, 15, () -> {
+                if (cur || !ok) { hidePanel(); return; }
+                collapseMenu();
+                try { listener.episodeChosen(sn, en); } catch (Exception ignored) {}
+            }));
+            if (cur) { markSelected(row); current = row; }
+            if (!ok && !cur) row.setAlpha(0.45f);
+            list.addView(row, lp);
+        }
+        scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
+        panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
+        showPanel(true);
+        final View target = current;
+        if (target != null) scroll.post(() -> scroll.scrollTo(0, Math.max(0, target.getTop() - dp(40))));
     }
 
     // 322.3.110: this player is one attempt of «مشاهدة تلقائية».

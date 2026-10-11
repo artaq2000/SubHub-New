@@ -83,6 +83,40 @@
   function epKey(season, episode) {
     return 's' + Number(season) + 'e' + Number(episode);
   }
+  function AD(v) { try { return typeof arabicDigitsV369 === 'function' ? arabicDigitsV369(v) : String(v); } catch (_) { return String(v); } }
+  // 322.3.114: every episode of the series for «حلقات» in the player menu
+  // ({h} = a season title; ok=false = nothing to play yet).
+  function episodeList(mid, season, episode) {
+    try {
+      if (typeof _seriesDoc !== 'function') return [];
+      const seasons = (_seriesDoc().seasons || []).slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
+      const multi = seasons.filter(function (x) { return (x.episodes || []).length; }).length > 1;
+      const out = [];
+      seasons.forEach(function (se) {
+        const sn = Number(se.number);
+        const eps = (se.episodes || []).slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
+        if (!(sn > 0) || !eps.length) return;
+        if (multi) out.push({ h: 'الموسم ' + AD(sn) });
+        eps.forEach(function (ep) {
+          const en = Number(ep.number);
+          if (!(en > 0)) return;
+          let st = '';
+          try { st = typeof _seriesStatus === 'function' ? _seriesStatus(String(mid), sn, en).cls : ''; } catch (_) {}
+          let ok = true;
+          try { if (typeof window.__subhubEpisodeWatchableV403 === 'function') ok = !!window.__subhubEpisodeWatchableV403(sn, en); } catch (_) {}
+          const title = String(ep.title || '').trim().slice(0, 40);
+          out.push({
+            s: sn, e: en,
+            t: 'الحلقة ' + AD(en) + (title ? ' — ' + title : ''),
+            st: st === 'done' || st === 'progress' ? st : '',
+            cur: sn === Number(season) && en === Number(episode),
+            ok: ok
+          });
+        });
+      });
+      return out.slice(0, 400);
+    } catch (_) { return []; }
+  }
   // 322.3.112: the episode after this one, for the player's «الحلقة التالية»
   // card (null on the last episode, or when the next one has nothing to play).
   function nextInfo(mid, season, episode) {
@@ -94,7 +128,6 @@
       const sn = Number(n.se.number), en = Number(n.ep.number);
       if (!(sn > 0) || !(en > 0)) return null;
       if (typeof window.__subhubEpisodeWatchableV403 === 'function' && !window.__subhubEpisodeWatchableV403(sn, en)) return null;
-      const AD = function (v) { try { return typeof arabicDigitsV369 === 'function' ? arabicDigitsV369(v) : String(v); } catch (_) { return String(v); } };
       const label = sn === Number(season) ? 'الحلقة ' + AD(en) : 'الموسم ' + AD(sn) + ' · الحلقة ' + AD(en);
       return { movieId: String(mid || ''), season: sn, episode: en, label: label, auto: !(s && s.autoNext === false) };
     } catch (_) { return null; }
@@ -409,6 +442,8 @@
         progress: episodeProgress(selected.id, season, episode),
         // 322.3.112: «الحلقة التالية» card (viewers only; not while the owner chooses).
         next: (owner && !ownerAuto) ? null : nextInfo(selected.id, season, episode),
+        // 322.3.114: «حلقات» in the player menu.
+        episodes: (owner && !ownerAuto) ? [] : episodeList(selected.id, season, episode),
         interactiveSource: owner && !ownerAuto,
         ownerMode: owner,
         openChooser: owner && !ownerAuto && !!startPage,
@@ -588,6 +623,7 @@
         ownUrl: String(src.url),
         progress: episodeProgress(selected.id, season, episode),
         next: nextInfo(selected.id, season, episode),
+        episodes: episodeList(selected.id, season, episode),
         interactiveSource: false,
         ownerMode: false,
         openChooser: false,
@@ -613,6 +649,7 @@
   window.__subhubSeriesHelpersV3107 = {
     epKey: epKey,
     nextInfo: nextInfo,
+    episodeList: episodeList,
     resolveTmdbTv: resolveTmdbTv,
     episodePageUrl: episodePageUrl,
     episodeCatalog: episodeCatalog,

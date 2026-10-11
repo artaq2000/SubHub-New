@@ -67,13 +67,13 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.113";
+    private static final String NATIVE_VERSION = "322.3.114";
     // 322.3.107: the update check now uses the version of the APK that is really
     // installed (it was a fixed 109 for many builds, so an installed release could
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 122;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 123;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -1815,6 +1815,21 @@ public class MainActivity extends Activity {
         autoCover = null;
     }
 
+    // 322.3.112/114: another episode of the series (next one, or picked in «حلقات»):
+    // black screen, close this player, and the page starts «مشاهدة تلقائية» for it.
+    private void playOtherEpisode(String session, String movieId, int season, int episode, String coverText) {
+        ui.post(() -> {
+            showAutoCover(coverText);
+            if (directStreamPlayer != null && directStreamSession.equals(session)) directStreamPlayer.close();
+            ui.postDelayed(() -> {
+                if (webView == null || !isTrustedHomePage()) { hideAutoCover(); return; }
+                webView.evaluateJavascript("(window.__subhubNextEpisodeV3112 ? window.__subhubNextEpisodeV3112("
+                        + JSONObject.quote(movieId) + "," + season + "," + episode + ") : false)",
+                        v -> { if (!"true".equals(v)) hideAutoCover(); });
+            }, 300L);
+        });
+    }
+
     private void cancelAutoChain() {
         pendingAuto = null;
         hideAutoCover();
@@ -2275,6 +2290,32 @@ public class MainActivity extends Activity {
                     final boolean nextValid = !interactiveSource
                             && nextMovie.matches("[A-Za-z0-9_.-]{1,120}") && nextSeason > 0 && nextEpisodeNo > 0
                             && !nextLabel.isEmpty() && nextLabel.length() <= 60;
+                    // 322.3.114: «حلقات» in the player menu — the episodes the page listed.
+                    final org.json.JSONArray episodeItems = new org.json.JSONArray();
+                    final java.util.HashSet<String> episodeAllowed = new java.util.HashSet<>();
+                    org.json.JSONArray rawEpisodes = config.optJSONArray("episodes");
+                    if (!interactiveSource && progValid && rawEpisodes != null) {
+                        for (int i = 0; i < rawEpisodes.length() && i < 400; i++) {
+                            JSONObject it = rawEpisodes.optJSONObject(i);
+                            if (it == null) continue;
+                            try {
+                                String head = it.optString("h", "").trim();
+                                if (!head.isEmpty()) {
+                                    if (head.length() <= 40) episodeItems.put(new JSONObject().put("h", head));
+                                    continue;
+                                }
+                                int es = it.optInt("s", 0), ee = it.optInt("e", 0);
+                                String et = it.optString("t", "").trim();
+                                if (es <= 0 || ee <= 0 || es > 999 || ee > 9999 || et.isEmpty()) continue;
+                                if (et.length() > 70) et = et.substring(0, 70);
+                                String st = it.optString("st", "");
+                                episodeItems.put(new JSONObject().put("s", es).put("e", ee).put("t", et)
+                                        .put("st", "done".equals(st) || "progress".equals(st) ? st : "")
+                                        .put("cur", it.optBoolean("cur", false)).put("ok", it.optBoolean("ok", true)));
+                                if (it.optBoolean("ok", true)) episodeAllowed.add(es + "x" + ee);
+                            } catch (Exception ignored) {}
+                        }
+                    }
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     final String localSubtitleKey = localSubtitleKeyValue;
@@ -2377,16 +2418,14 @@ public class MainActivity extends Activity {
                         // page starts «مشاهدة تلقائية» for the next episode.
                         public void nextEpisode() {
                             if (!nextValid || webView == null) return;
-                            ui.post(() -> {
-                                showAutoCover("جارٍ تجهيز الحلقة التالية…\n" + nextLabel);
-                                if (directStreamPlayer != null && directStreamSession.equals(session)) directStreamPlayer.close();
-                                ui.postDelayed(() -> {
-                                    if (webView == null || !isTrustedHomePage()) { hideAutoCover(); return; }
-                                    webView.evaluateJavascript("(window.__subhubNextEpisodeV3112 ? window.__subhubNextEpisodeV3112("
-                                            + JSONObject.quote(nextMovie) + "," + nextSeason + "," + nextEpisodeNo + ") : false)",
-                                            v -> { if (!"true".equals(v)) hideAutoCover(); });
-                                }, 300L);
-                            });
+                            playOtherEpisode(session, nextMovie, nextSeason, nextEpisodeNo,
+                                    "جارٍ تجهيز الحلقة التالية…\n" + nextLabel);
+                        }
+                        // 322.3.114: an episode picked in «حلقات».
+                        public void episodeChosen(int season, int episode) {
+                            if (!progValid || webView == null || !episodeAllowed.contains(season + "x" + episode)) return;
+                            playOtherEpisode(session, progMovie, season, episode,
+                                    "جارٍ تجهيز الحلقة " + arabicDigits(episode) + "…");
                         }
                         public void autoSucceeded() {
                             if (autoChain.isEmpty() || webView == null) return;
@@ -2398,6 +2437,7 @@ public class MainActivity extends Activity {
                     directStreamPlayer.setSyncScope(syncScopeValue);
                     if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);
                     if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);
+                    if (episodeItems.length() > 1) directStreamPlayer.setEpisodes(episodeItems);
                     // 322.3.111: continue the episode from where the site says the viewer stopped.
                     if (progValid && progResumeMs > 0L) directStreamPlayer.setResumeFromMs(progResumeMs);
                     final int defaultIndex = config.optInt("defaultIndex", -1);

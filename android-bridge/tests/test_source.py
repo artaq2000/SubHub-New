@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 122" in gradle
-assert "versionName '322.3.113'" in gradle
+assert "versionCode 123" in gradle
+assert "versionName '322.3.114'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 122' in mv107
-assert "versionCode 122" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 123' in mv107
+assert "versionCode 123" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1153,10 +1153,10 @@ assert 'window.SubHubSeriesOwnSourceV3112 = function (raw) { return openOwn(raw 
 assert "mode: src.kind === 'file' ? 'ownfile' : 'ownpage'," in s112
 assert "const OWN_KEY = /^own:[a-z0-9]{1,12}$/;" in a112 and 'window.SubHubSeriesOwnSourceV3112' in a112
 # next episode
-assert 'void nextEpisode();' in d112 and 'public static final int NEXT_COUNTDOWN_S = 5;' in t112
+assert 'void nextEpisode();' in d112 and 'public static final int NEXT_COUNTDOWN_S = 10;' in t112   # 322.3.114: 10 s
 assert 'NEXT_AFTER_LAST_LINE_MS = 10000L' in t112 and 'NEXT_NO_SUBTITLE_MS = 40000L' in t112
 assert 'lastLineEndMs > durationMs * 8L / 10L' in t112 and 'if (durationMs < SHORT_VIDEO_MS) return durationMs;' in t112
-assert 'long at = EpisodeTiming.creditsAtMs(duration, lastSubtitleLineMs());' in d112
+assert 'long at = EpisodeTiming.creditsAtMs(duration, lastSubtitleLineMs(duration));' in d112
 assert 'if (segmentMode || cues == null) return -1L;' in d112
 assert 'if (creditsReached) positionMs = Math.max(positionMs, durationMs);' in d112
 assert 'checkCredits();' in d112
@@ -1192,3 +1192,26 @@ assert 'if (!vidnestMode && !interactiveSource && !preferredServerLabel.isEmpty(
 assert "embedUrl: (auto && mode !== 'vidnest') ? saved.embedUrl : ''," in s113
 assert "embedUrl: (auto && item && ctx.kind === 'tv') ? (item.embedUrl || '') : ''," in l113
 print('322.3.113 Moviesmod check + saved player links checks OK')
+
+# 322.3.114: next-episode strip in landscape, 10 s, translator credit ignored, «حلقات».
+d114 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m114 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+t114 = open('app/src/main/java/com/artaq/subhub/EpisodeTiming.java', encoding='utf-8').read()
+s114 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+l114 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert 'public static long lastDialogueEndMs(double[] startS, double[] endS, String[] text,' in t114
+assert 'CREDIT_GAP_MS = 60000L' in t114 and 'CREDIT_TAIL_MS = 120000L' in t114 and 'ترجم|' in t114
+assert 'creditsLastCueMs = EpisodeTiming.lastDialogueEndMs(st, en, tx, subtitleOffsetMs, durationMs);' in d114
+b = d114[d114.index('private void buildNextCard(boolean landscape)'):]
+b = b[:b.index('\n    }\n')]
+assert 'new FrameLayout.LayoutParams(-1, dp(46), Gravity.BOTTOM)' in b              # landscape: bottom strip
+assert 'new FrameLayout.LayoutParams(dp(290), -2, Gravity.BOTTOM | Gravity.RIGHT)' in b  # portrait as before
+assert 'if (nextShown) handler.post(this::nextCardOrientationCheck);' in d114
+assert 'void episodeChosen(int season, int episode);' in d114
+assert 'public void setEpisodes(JSONArray items)' in d114 and 'episodesQuick = chip("حلقات", 13, this::chooseEpisode);' in d114
+assert 'private void playOtherEpisode(String session, String movieId, int season, int episode, String coverText)' in m114
+assert '!episodeAllowed.contains(season + "x" + episode)' in m114
+assert 'if (episodeItems.length() > 1) directStreamPlayer.setEpisodes(episodeItems);' in m114
+assert 'function episodeList(mid, season, episode)' in s114 and 'episodes: episodeList(selected.id, season, episode),' in s114
+assert "H().episodeList(ctx.movieId, ctx.season, ctx.episode) : []," in l114
+print('322.3.114 next-episode strip + episodes list checks OK')

@@ -376,6 +376,9 @@
         // 322.3.112: «الحلقة التالية» card for episodes (viewers / owner playing a saved server).
         next: (ctx.kind === 'tv' && !(owner && !auto) && typeof H().nextInfo === 'function')
           ? H().nextInfo(ctx.movieId, ctx.season, ctx.episode) : null,
+        // 322.3.114: «حلقات» in the player menu.
+        episodes: (ctx.kind === 'tv' && !(owner && !auto) && typeof H().episodeList === 'function')
+          ? H().episodeList(ctx.movieId, ctx.season, ctx.episode) : [],
         interactiveSource: owner && !auto,
         ownerMode: owner,
         openChooser: owner && !auto && !!startPage,
