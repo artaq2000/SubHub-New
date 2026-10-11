@@ -79,6 +79,11 @@ public final class DirectStreamPlayer {
         // 322.3.103: owner pins only the subtitle timing for this film (or episode)
         // on this card — the saved server and the pinned subtitle stay untouched.
         void syncPinRequested(long subtitleOffsetMs);
+        // 322.3.109: a subtitle file from this device (everyone: visitor,
+        // subscriber, owner). It stays on this device for this film/episode.
+        void localSubtitlePickRequested();
+        void localSubtitleRemoved();
+        void localSubtitleOffsetSaved(long subtitleOffsetMs);
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -211,6 +216,15 @@ public final class DirectStreamPlayer {
     private boolean playing;
     private boolean captions = true;
     private int selectedSubtitle = -1;
+    // 322.3.109: the subtitle file added from this device. It is not part of
+    // SubHub's catalog: selectedSubtitle == LOCAL_SUBTITLE while it is shown.
+    static final int LOCAL_SUBTITLE = -2;
+    private String localSubtitleName = "";
+    private JSONArray localSubtitleCues = null;
+    private long localSubtitleOffsetMs = 0L;        // timing saved for the device file
+    private long catalogSubtitleOffsetMs = 0L;      // SubHub's timing, kept while the file is shown
+    private int defaultCatalogIndex = -1;
+    private boolean resumeAfterLocalPick = false;
     // 322.3.92: segment (exclusive) subtitle state, driven by the player clock.
     private boolean segmentMode = false;
     private long segmentBucket = Long.MIN_VALUE;
@@ -1211,7 +1225,7 @@ public final class DirectStreamPlayer {
             try { if (probe != null) recordServerPage(probe.getUrl()); } catch (Exception ignored) {}
         }
         listener.serverSelected(key, verifyLabel, discoveredServerPageUrl, verifyEmbedUrl);
-        listener.saveRequested(subtitleOffsetMs);
+        listener.saveRequested(offsetForSubHubSave());
     }
 
     // The hint hides itself after a few seconds so it does not cover the page.
@@ -2853,6 +2867,7 @@ public final class DirectStreamPlayer {
         list.setPadding(dp(4), dp(4), dp(4), dp(12));
 
         TextView off = listRow(chip("بدون ترجمة", 15, () -> {
+            leaveLocalSubtitle();
             selectedSubtitle = -1;
             resetSegment();
             captions = false;
@@ -2862,7 +2877,7 @@ public final class DirectStreamPlayer {
             subtitle.setVisibility(View.GONE);
             hidePanel();
         }));
-        if (selectedSubtitle < 0 || !captions) markSelected(off);
+        if ((selectedSubtitle < 0 && selectedSubtitle != LOCAL_SUBTITLE) || !captions) markSelected(off);
         LinearLayout.LayoutParams offLp = new LinearLayout.LayoutParams(-1, -2);
         offLp.setMargins(0, dp(2), 0, dp(2));
         list.addView(off, offLp);
@@ -2875,6 +2890,7 @@ public final class DirectStreamPlayer {
             if (ownerMode && o != null && o.optBoolean("pinned", false)) name = "📌 " + name;
             final int index = i;
             TextView item = listRow(chip(name, 15, () -> {
+                leaveLocalSubtitle();
                 selectedSubtitle = index;
                 resetSegment();
                 captions = true;
@@ -2910,9 +2926,166 @@ public final class DirectStreamPlayer {
             list.addView(pin, pinLp);
         }
 
+        addLocalSubtitleSection(list);
+
         scroll.addView(list, new ScrollView.LayoutParams(-1, -2));
         panelBody.addView(scroll, new LinearLayout.LayoutParams(-1, -1));
         showPanel(true);
+    }
+
+    // ---------------------------------------------------------------------
+    // 322.3.109: «📁 إضافة ترجمة من الجهاز» — for everyone. The file is read
+    // and kept on this device only (never uploaded); 📌 pins are hidden while
+    // it is shown, the ⏱ timing tool works and saves on this device.
+    // ---------------------------------------------------------------------
+    private void addLocalSubtitleSection(LinearLayout list) {
+        TextView head = new TextView(activity);
+        head.setText("──────  ترجمة من جهازك  ──────");
+        head.setTextColor(0xff8aa0b2);
+        head.setTextSize(12);
+        head.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams headLp = new LinearLayout.LayoutParams(-1, -2);
+        headLp.setMargins(0, dp(16), 0, dp(6));
+        list.addView(head, headLp);
+
+        if (hasLocalSubtitle()) {
+            LinearLayout row = new LinearLayout(activity);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            TextView item = listRow(chip("📁  " + localSubtitleName + "  (من الجهاز)", 14, () -> {
+                selectLocalSubtitle();
+                hidePanel();
+            }));
+            item.setGravity(Gravity.CENTER);
+            item.setTextDirection(View.TEXT_DIRECTION_RTL);
+            if (captions && selectedSubtitle == LOCAL_SUBTITLE) markSelected(item);
+            TextView remove = chip("✕", 16, () -> {
+                removeLocalSubtitle();
+                chooseSubtitle();
+            });
+            remove.setBackground(round(0xff3b1414, 0xffef4444, 1, 14));
+            remove.setContentDescription("حذف ترجمة الجهاز");
+            row.addView(item, new LinearLayout.LayoutParams(0, -2, 1f));
+            LinearLayout.LayoutParams rmLp = new LinearLayout.LayoutParams(dp(46), dp(46));
+            rmLp.setMargins(dp(6), 0, 0, 0);
+            row.addView(remove, rmLp);
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+            rowLp.setMargins(0, dp(2), 0, dp(4));
+            list.addView(row, rowLp);
+        }
+
+        TextView add = listRow(chip(
+                (hasLocalSubtitle() ? "📁  تغيير ملف الترجمة من الجهاز" : "📁  إضافة ترجمة من الجهاز")
+                        + "\nSRT · VTT · ASS",
+                14, this::pickLocalSubtitle));
+        add.setBackground(round(0xff0f2a44, 0xff38bdf8, 2, 14));
+        add.setTextColor(Color.WHITE);
+        add.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams addLp = new LinearLayout.LayoutParams(-1, -2);
+        addLp.setMargins(0, dp(2), 0, dp(2));
+        list.addView(add, addLp);
+    }
+
+    private boolean hasLocalSubtitle() {
+        return localSubtitleCues != null && localSubtitleCues.length() > 0;
+    }
+
+    private boolean localSubtitleActive() {
+        return selectedSubtitle == LOCAL_SUBTITLE && hasLocalSubtitle();
+    }
+
+    private void pickLocalSubtitle() {
+        hidePanel();
+        resumeAfterLocalPick = player != null && player.isPlaying();
+        showTransientValue("اختر ملف الترجمة (SRT أو VTT أو ASS)…", 1600);
+        try { listener.localSubtitlePickRequested(); } catch (Exception ignored) {}
+    }
+
+    // The picker was closed without a file, or the file could not be used.
+    public void localSubtitlePickFailed(String message) {
+        if (closed) return;
+        if (message != null && !message.trim().isEmpty()) showTransientValue(message.trim(), 4500);
+        resumeAfterLocalPickIfNeeded();
+    }
+
+    private void resumeAfterLocalPickIfNeeded() {
+        if (resumeAfterLocalPick && player != null) player.play();
+        resumeAfterLocalPick = false;
+    }
+
+    /** A device file is ready (just picked, or saved earlier for this film). */
+    public void setLocalSubtitle(String name, JSONArray value, long offsetMs, boolean announce) {
+        if (closed || value == null || value.length() == 0) return;
+        localSubtitleName = name == null || name.trim().isEmpty() ? "ترجمة من الجهاز" : name.trim();
+        localSubtitleCues = value;
+        localSubtitleOffsetMs = clampSync(offsetMs);
+        boolean wasLocal = selectedSubtitle == LOCAL_SUBTITLE;
+        if (wasLocal) {
+            cues = localSubtitleCues;
+            subtitleOffsetMs = localSubtitleOffsetMs;
+        } else {
+            selectLocalSubtitle();
+        }
+        if (announce) {
+            showTransientValue("✓ أُضيفت الترجمة: " + localSubtitleName
+                    + "\n" + toArabicDigits(value.length()) + " سطراً — على جهازك فقط", 3200);
+        } else {
+            // Saved earlier for this film/episode on this device.
+            showTransientValue("📁 ترجمة من جهازك: " + localSubtitleName + "\nلتغييرها أو حذفها: زر CC", 2600);
+        }
+        resumeAfterLocalPickIfNeeded();
+    }
+
+    private void selectLocalSubtitle() {
+        if (!hasLocalSubtitle()) return;
+        if (selectedSubtitle != LOCAL_SUBTITLE) catalogSubtitleOffsetMs = subtitleOffsetMs;
+        selectedSubtitle = LOCAL_SUBTITLE;
+        resetSegment();
+        captions = true;
+        subtitleAnsweredSeq = subtitleAskSeq;     // nothing to wait for from SubHub
+        cues = localSubtitleCues;
+        subtitleOffsetMs = localSubtitleOffsetMs;
+        currentSubtitleText = "";
+        applySubtitleText("");
+    }
+
+    // Switching from the device file back to SubHub: SubHub's timing returns.
+    private void leaveLocalSubtitle() {
+        if (selectedSubtitle != LOCAL_SUBTITLE) return;
+        subtitleOffsetMs = catalogSubtitleOffsetMs;
+        selectedSubtitle = -1;
+    }
+
+    private void removeLocalSubtitle() {
+        boolean wasActive = selectedSubtitle == LOCAL_SUBTITLE;
+        localSubtitleCues = null;
+        localSubtitleName = "";
+        localSubtitleOffsetMs = 0L;
+        try { listener.localSubtitleRemoved(); } catch (Exception ignored) {}
+        if (wasActive) {
+            leaveLocalSubtitle();
+            cues = new JSONArray();
+            currentSubtitleText = "";
+            applySubtitleText("");
+            if (defaultCatalogIndex >= 0 && defaultCatalogIndex < catalog.length()) {
+                selectDefault(defaultCatalogIndex);
+            } else {
+                captions = false;
+                subtitle.setVisibility(View.GONE);
+            }
+        }
+        showTransientValue("حُذفت ترجمة الجهاز", 1300);
+    }
+
+    // Owner «حفظ»: the device file's timing never goes to SubHub.
+    private long offsetForSubHubSave() {
+        return selectedSubtitle == LOCAL_SUBTITLE ? catalogSubtitleOffsetMs : subtitleOffsetMs;
+    }
+
+    /** SubHub's default subtitle, kept for when the device file is removed. */
+    public void rememberDefaultIndex(int index) {
+        defaultCatalogIndex = index;
     }
 
     // 322.3.82: keep the list's 📌 marker in step with what the owner just pinned.
@@ -2927,6 +3100,7 @@ public final class DirectStreamPlayer {
     }
 
     public void selectDefault(int index) {
+        defaultCatalogIndex = index;
         if (index >= 0 && index < catalog.length()) {
             selectedSubtitle = index;
             resetSegment();
@@ -3026,7 +3200,7 @@ public final class DirectStreamPlayer {
 
     private void requestSave() {
         if (!ownerMode) return;
-        listener.saveRequested(subtitleOffsetMs);
+        listener.saveRequested(offsetForSubHubSave());
         showTransientValue("جارٍ الحفظ…", 900);
     }
 
@@ -3052,6 +3226,12 @@ public final class DirectStreamPlayer {
     }
 
     public void setSubtitleOffsetMs(long value) {
+        if (selectedSubtitle == LOCAL_SUBTITLE) {
+            // 322.3.109: SubHub's timing is kept aside while the device file is shown.
+            catalogSubtitleOffsetMs = clampSync(value);
+            syncBaselineMs = catalogSubtitleOffsetMs;
+            return;
+        }
         subtitleOffsetMs = clampSync(value);
         syncBaselineMs = subtitleOffsetMs;
     }
@@ -3159,7 +3339,7 @@ public final class DirectStreamPlayer {
     }
 
     private boolean syncHasLines() {
-        return captions && selectedSubtitle >= 0 && cues.length() > 0;
+        return captions && (selectedSubtitle >= 0 || selectedSubtitle == LOCAL_SUBTITLE) && cues.length() > 0;
     }
 
     // The reference line: the one chosen with السابق/التالي, otherwise the
@@ -3215,6 +3395,14 @@ public final class DirectStreamPlayer {
     }
 
     private void syncSaveLocal() {
+        if (localSubtitleActive()) {
+            // 322.3.109: the device file keeps its own timing, on this device.
+            localSubtitleOffsetMs = subtitleOffsetMs;
+            try { listener.localSubtitleOffsetSaved(localSubtitleOffsetMs); } catch (Exception ignored) {}
+            showTransientValue("💾 حُفظ توقيت ملفك على جهازك", 1500);
+            hidePanel();
+            return;
+        }
         String key = syncPrefKey();
         if (key.isEmpty()) {
             showTransientValue("تعذّر الحفظ لهذا الفيلم", 1500);
@@ -3226,6 +3414,14 @@ public final class DirectStreamPlayer {
     }
 
     private void syncRevert() {
+        if (localSubtitleActive()) {
+            syncRefStartSec = Double.NaN;
+            setSyncOffset(0L);
+            localSubtitleOffsetMs = 0L;
+            try { listener.localSubtitleOffsetSaved(0L); } catch (Exception ignored) {}
+            showTransientValue("رجعنا لتوقيت ملفك الأصلي", 1300);
+            return;
+        }
         String key = syncPrefKey();
         if (!ownerMode && !key.isEmpty()) prefs.edit().remove(key).apply();
         syncRefStartSec = Double.NaN;
@@ -3234,6 +3430,7 @@ public final class DirectStreamPlayer {
     }
 
     private void syncPinForEveryone() {
+        if (localSubtitleActive()) { syncSaveLocal(); return; }
         if (!ownerMode) return;
         listener.syncPinRequested(subtitleOffsetMs);
         showTransientValue("جارٍ تثبيت التوقيت…", 1000);
@@ -3344,7 +3541,7 @@ public final class DirectStreamPlayer {
         addSyncRowChip(fine, "قدّم ١ ث", () -> setSyncOffset(subtitleOffsetMs - 1000L));
         addSyncBlock(list, fine, 4);
 
-        if (ownerMode) {
+        if (ownerMode && !localSubtitleActive()) {
             syncSaveButton = listRow(chip("📌  تثبيت هذا التوقيت لهذا الفيلم — للجميع", 14,
                     this::syncPinForEveryone));
             syncSaveButton.setBackground(round(0xff3a2f12, GOLD, 2, 14));
@@ -3362,7 +3559,8 @@ public final class DirectStreamPlayer {
             addSyncBlock(list, noSaveHint, 2);
         }
 
-        syncRevertButton = listRow(chip(ownerMode ? "↺  رجوع للتوقيت المثبّت" : "↺  رجوع لتوقيت SubHub",
+        syncRevertButton = listRow(chip(localSubtitleActive() ? "↺  رجوع لتوقيت ملفك الأصلي"
+                : ownerMode ? "↺  رجوع للتوقيت المثبّت" : "↺  رجوع لتوقيت SubHub",
                 13, this::syncRevert));
         addSyncBlock(list, syncRevertButton, 8);
 
@@ -3417,7 +3615,13 @@ public final class DirectStreamPlayer {
         }
 
         boolean changed = Math.abs(subtitleOffsetMs - syncBaselineMs) >= 50L;
-        if (ownerMode) {
+        if (localSubtitleActive()) {
+            boolean savedHere = subtitleOffsetMs == localSubtitleOffsetMs;
+            syncSaveButton.setText(savedHere
+                    ? "✓  محفوظ على جهازك لهذا الملف"
+                    : "💾  حفظ توقيت ملفك على جهازي");
+            syncRevertButton.setVisibility(Math.abs(subtitleOffsetMs) >= 50L ? View.VISIBLE : View.GONE);
+        } else if (ownerMode) {
             syncSaveButton.setText(changed
                     ? "📌  تثبيت هذا التوقيت لهذا الفيلم — للجميع"
                     : "✓  هذا هو التوقيت المثبّت للجميع");

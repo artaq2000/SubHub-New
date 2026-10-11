@@ -360,6 +360,8 @@
         resumeKey: stableKey,
         tmdbId: tmdbId,
         kind: kind,
+        // 322.3.109: the device subtitle file belongs to this film / episode.
+        episodeKey: ctx.kind === 'tv' ? ekOf(ctx) : '',
         interactiveSource: owner && !auto,
         ownerMode: owner,
         openChooser: owner && !auto && !!startPage,

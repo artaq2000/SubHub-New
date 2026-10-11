@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 117" in gradle
-assert "versionName '322.3.108'" in gradle
+assert "versionCode 118" in gradle
+assert "versionName '322.3.109'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 117' in mv107
-assert "versionCode 117" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 118' in mv107
+assert "versionCode 118" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1025,3 +1025,36 @@ l108 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
 assert "'subhub-applist-legacy-block'" in l108 and 'الأزرار السابقة' in l108
 assert 'data-legacy' in l108
 print('322.3.108 compact rows checks OK')
+
+# 322.3.109: «📁 إضافة ترجمة من الجهاز» in the app player — everyone, this device only.
+d109 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m109 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+assert 'static final int LOCAL_SUBTITLE = -2;' in d109
+assert 'void localSubtitlePickRequested();' in d109 and 'void localSubtitleRemoved();' in d109
+cc = d109[d109.index('private void chooseSubtitle()'):]
+cc = cc[:cc.index('\n    }\n')]
+assert 'addLocalSubtitleSection(list);' in cc
+assert cc.index('addLocalSubtitleSection(list);') > cc.index('ownerMode && captions && selectedSubtitle >= 0')   # under the list + pin
+sec = d109[d109.index('private void addLocalSubtitleSection(LinearLayout list)'):]
+sec = sec[:sec.index('\n    }\n')]
+assert 'ترجمة من جهازك' in sec and '📁  إضافة ترجمة من الجهاز' in sec and 'SRT · VTT · ASS' in sec
+assert '(من الجهاز)' in sec and 'removeLocalSubtitle();' in sec
+assert 'ownerMode' not in sec                                      # same for visitor / subscriber / owner
+assert 'listener.saveRequested(offsetForSubHubSave());' in d109 and d109.count('listener.saveRequested(subtitleOffsetMs)') == 0
+assert 'if (localSubtitleActive()) { syncSaveLocal(); return; }' in d109   # no 📌 timing pin for the device file
+assert 'if (ownerMode && !localSubtitleActive()) {' in d109
+assert '(selectedSubtitle >= 0 || selectedSubtitle == LOCAL_SUBTITLE) && cues.length() > 0' in d109
+assert 'private static final int LOCAL_SUBTITLE_REQUEST = 2208;' in m109
+assert 'requestCode == LOCAL_SUBTITLE_REQUEST' in m109 and 'handleLocalSubtitleResult(resultCode, data);' in m109
+pk = m109[m109.index('private void openLocalSubtitlePicker('):]
+pk = pk[:pk.index('\n    }\n')]
+assert 'picker.setType("*/*");' in pk                                # .srt/.ass have no MIME type on Android
+assert 'LocalSubtitleParser.decode(bytes)' in m109 and 'LocalSubtitleParser.MAX_BYTES' in m109
+assert 'localSubtitleKeyValue = "movie_" + tmdbId;' in m109 and '"tv_" + tmdbId + "_" + episodeKey' in m109
+assert 'restoreLocalSubtitle(session, localSubtitleKey, defaultIndex);' in m109
+assert 'getFilesDir(), "local_subtitles"' in m109                   # app-private, never uploaded
+assert "episodeKey: epKey(season, episode)," in open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+assert "episodeKey: ctx.kind === 'tv' ? ekOf(ctx) : ''," in open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+wf = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+assert 'tests/LocalSubtitleParserTest.java' in wf
+print('322.3.109 device subtitle checks OK')

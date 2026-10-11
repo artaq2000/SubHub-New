@@ -368,6 +368,8 @@
         resumeKey: stableKey,
         tmdbId: tmdbId,
         kind: 'tv',
+        // 322.3.109: the device subtitle file belongs to this episode.
+        episodeKey: epKey(season, episode),
         interactiveSource: owner && !ownerAuto,
         ownerMode: owner,
         openChooser: owner && !ownerAuto && !!startPage,

@@ -67,13 +67,13 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.108";
+    private static final String NATIVE_VERSION = "322.3.109";
     // 322.3.107: the update check now uses the version of the APK that is really
     // installed (it was a fixed 109 for many builds, so an installed release could
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 117;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 118;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -94,6 +94,11 @@ public class MainActivity extends Activity {
         return installedVersionName != null ? installedVersionName : NATIVE_VERSION;
     }
     private static final int FILE_CHOOSER_REQUEST = 2207;
+    // 322.3.109: «📁 إضافة ترجمة من الجهاز» in the app player.
+    private static final int LOCAL_SUBTITLE_REQUEST = 2208;
+    private static final int LOCAL_SUBTITLE_KEEP = 40;
+    private String localSubtitlePickSession = "";
+    private String localSubtitlePickKey = "";
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -1729,8 +1734,206 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    // ---------------------------------------------------------------------
+    // 322.3.109: subtitle file from this device for the app player. Read here,
+    // parsed by LocalSubtitleParser, and kept in the app's private storage for
+    // this film/episode only (never uploaded). Up to LOCAL_SUBTITLE_KEEP films.
+    // ---------------------------------------------------------------------
+    private void openLocalSubtitlePicker(String session, String key) {
+        localSubtitlePickSession = session == null ? "" : session;
+        localSubtitlePickKey = key == null ? "" : key;
+        // Android has no MIME type for .srt/.ass, so every file is shown.
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        picker.addCategory(Intent.CATEGORY_OPENABLE);
+        picker.setType("*/*");
+        picker.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(picker, LOCAL_SUBTITLE_REQUEST);
+        } catch (ActivityNotFoundException first) {
+            try {
+                Intent alt = new Intent(Intent.ACTION_GET_CONTENT);
+                alt.addCategory(Intent.CATEGORY_OPENABLE);
+                alt.setType("*/*");
+                startActivityForResult(alt, LOCAL_SUBTITLE_REQUEST);
+            } catch (ActivityNotFoundException second) {
+                localSubtitlePickSession = "";
+                if (directStreamPlayer != null) directStreamPlayer.localSubtitlePickFailed("تعذّر فتح مدير الملفات في هذا الجهاز.");
+            }
+        }
+    }
+
+    private void handleLocalSubtitleResult(int resultCode, Intent data) {
+        final String session = localSubtitlePickSession;
+        final String key = localSubtitlePickKey;
+        localSubtitlePickSession = "";
+        localSubtitlePickKey = "";
+        final Uri uri = (resultCode == RESULT_OK && data != null) ? data.getData() : null;
+        if (uri == null) {
+            if (directStreamPlayer != null && directStreamSession.equals(session)) directStreamPlayer.localSubtitlePickFailed("");
+            return;
+        }
+        new Thread(() -> {
+            String error = "";
+            String name = "";
+            org.json.JSONArray cues = null;
+            try {
+                name = LocalSubtitleParser.cleanName(localSubtitleDisplayName(uri));
+                byte[] bytes = readLocalSubtitleBytes(uri);
+                if (bytes == null) {
+                    error = "الملف كبير جداً — الحد ٥ ميغابايت.";
+                } else {
+                    java.util.List<LocalSubtitleParser.Cue> list =
+                            LocalSubtitleParser.parse(LocalSubtitleParser.decode(bytes));
+                    if (list.isEmpty()) {
+                        error = "تعذّر قراءة هذا الملف كترجمة.\nجرّب ملف SRT أو VTT أو ASS.";
+                    } else {
+                        cues = new org.json.JSONArray();
+                        for (LocalSubtitleParser.Cue c : list) {
+                            JSONObject o = new JSONObject();
+                            o.put("start", c.start);
+                            o.put("end", c.end);
+                            o.put("text", c.text);
+                            cues.put(o);
+                        }
+                        writeLocalSubtitle(key, name, cues, 0L);
+                    }
+                }
+            } catch (Exception e) {
+                error = "تعذّر قراءة الملف من الجهاز.";
+                cues = null;
+            }
+            final String finalError = error;
+            final String finalName = name;
+            final org.json.JSONArray finalCues = cues;
+            ui.post(() -> {
+                if (directStreamPlayer == null || !directStreamSession.equals(session)) return;
+                if (finalCues == null) directStreamPlayer.localSubtitlePickFailed(finalError);
+                else directStreamPlayer.setLocalSubtitle(finalName, finalCues, 0L, true);
+            });
+        }, "subhub-local-subtitle").start();
+    }
+
+    private String localSubtitleDisplayName(Uri uri) {
+        String name = "";
+        try (android.database.Cursor c = getContentResolver().query(uri,
+                new String[] {android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) name = c.getString(0);
+        } catch (Exception ignored) {}
+        if (name == null || name.trim().isEmpty()) name = uri.getLastPathSegment();
+        return name == null ? "" : name;
+    }
+
+    // null when the file is bigger than the limit.
+    private byte[] readLocalSubtitleBytes(Uri uri) throws Exception {
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new java.io.IOException("no stream");
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[16384];
+            int total = 0, n;
+            while ((n = in.read(buf)) > 0) {
+                total += n;
+                if (total > LocalSubtitleParser.MAX_BYTES) return null;
+                out.write(buf, 0, n);
+            }
+            return out.toByteArray();
+        }
+    }
+
+    private File localSubtitleFile(String key) {
+        if (key == null || key.isEmpty()) return null;
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] h = md.digest(key.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < 12; i++) hex.append(String.format(Locale.US, "%02x", h[i]));
+            return new File(new File(getFilesDir(), "local_subtitles"), hex + ".json");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private synchronized void writeLocalSubtitle(String key, String name, org.json.JSONArray cues, long offsetMs) {
+        File f = localSubtitleFile(key);
+        if (f == null) return;   // no film key: this viewing only
+        try {
+            File dir = f.getParentFile();
+            if (dir != null && !dir.isDirectory()) dir.mkdirs();
+            JSONObject o = new JSONObject();
+            o.put("v", 1);
+            o.put("key", key);
+            o.put("name", name);
+            o.put("offsetMs", DirectStreamPlayer.clampSync(offsetMs));
+            o.put("savedAt", System.currentTimeMillis());
+            o.put("cues", cues);
+            File tmp = new File(f.getPath() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(o.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f); }
+            pruneLocalSubtitles(dir);
+        } catch (Exception ignored) {}
+    }
+
+    private void pruneLocalSubtitles(File dir) {
+        if (dir == null) return;
+        File[] all = dir.listFiles((d, n) -> n.endsWith(".json"));
+        if (all == null || all.length <= LOCAL_SUBTITLE_KEEP) return;
+        java.util.Arrays.sort(all, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        for (int i = LOCAL_SUBTITLE_KEEP; i < all.length; i++) all[i].delete();
+    }
+
+    private JSONObject readLocalSubtitle(String key) {
+        File f = localSubtitleFile(key);
+        if (f == null || !f.isFile() || f.length() > 24L * 1024 * 1024) return null;
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[32768];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            JSONObject o = new JSONObject(new String(out.toByteArray(), StandardCharsets.UTF_8));
+            return key.equals(o.optString("key")) ? o : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void restoreLocalSubtitle(String session, String key, int defaultIndex) {
+        new Thread(() -> {
+            JSONObject o = readLocalSubtitle(key);
+            ui.post(() -> {
+                if (directStreamPlayer == null || !directStreamSession.equals(session)) return;
+                org.json.JSONArray cues = o == null ? null : o.optJSONArray("cues");
+                if (cues == null || cues.length() == 0) {
+                    directStreamPlayer.selectDefault(defaultIndex);
+                    return;
+                }
+                File f = localSubtitleFile(key);
+                if (f != null) f.setLastModified(System.currentTimeMillis());
+                directStreamPlayer.setLocalSubtitle(o.optString("name"), cues, o.optLong("offsetMs", 0L), false);
+            });
+        }, "subhub-local-subtitle-restore").start();
+    }
+
+    private void saveLocalSubtitleOffset(String key, long offsetMs) {
+        new Thread(() -> {
+            JSONObject o = readLocalSubtitle(key);
+            if (o == null) return;
+            org.json.JSONArray cues = o.optJSONArray("cues");
+            if (cues != null) writeLocalSubtitle(key, o.optString("name"), cues, offsetMs);
+        }, "subhub-local-subtitle-offset").start();
+    }
+
+    private void deleteLocalSubtitle(String key) {
+        File f = localSubtitleFile(key);
+        if (f != null) f.delete();
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == LOCAL_SUBTITLE_REQUEST) {
+            handleLocalSubtitleResult(resultCode, data);
+            return;
+        }
         if (requestCode == FILE_CHOOSER_REQUEST) {
             ValueCallback<Uri[]> cb = fileChooserCallback;
             fileChooserCallback = null;
@@ -1858,6 +2061,9 @@ public class MainActivity extends Activity {
                     // 322.3.103: ⏱ timing saved on this device belongs to this film
                     // (or episode) on this card only.
                     String syncScopeValue = "";
+                    // 322.3.109: a subtitle file added from this device belongs to this
+                    // film (or episode) whatever button opened it.
+                    String localSubtitleKeyValue = "";
                     if (moviesmodFlow) {
                         String tmdbId = config.optString("tmdbId");
                         String kind = config.optString("kind", "movie");
@@ -1884,6 +2090,14 @@ public class MainActivity extends Activity {
                         allowedHost = "moviesmod.gd";
                         resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
                         syncScopeValue = mode + "_" + stableKey;
+                        if ("tv".equals(kind)) {
+                            String episodeKey = config.optString("episodeKey", "").trim();
+                            if (episodeKey.matches("s[0-9]{1,3}e[0-9]{1,4}")) {
+                                localSubtitleKeyValue = "tv_" + tmdbId + "_" + episodeKey;
+                            }
+                        } else {
+                            localSubtitleKeyValue = "movie_" + tmdbId;
+                        }
                         preferredServerKey = config.optString("serverKey", "").trim();
                         preferredServerLabel = config.optString("serverLabel", "").trim();
                         interactiveSource = config.optBoolean("interactiveSource", false);
@@ -1918,6 +2132,7 @@ public class MainActivity extends Activity {
 
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
+                    final String localSubtitleKey = localSubtitleKeyValue;
                     org.json.JSONArray catalog = config.optJSONArray("catalog");
                     if (catalog == null) catalog = new org.json.JSONArray();
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
@@ -1979,10 +2194,26 @@ public class MainActivity extends Activity {
                                     + DirectStreamPlayer.clampSync(subtitleOffsetMs) + ")";
                             webView.evaluateJavascript(js, null);
                         }
+                        public void localSubtitlePickRequested() {
+                            openLocalSubtitlePicker(session, localSubtitleKey);
+                        }
+                        public void localSubtitleRemoved() {
+                            deleteLocalSubtitle(localSubtitleKey);
+                        }
+                        public void localSubtitleOffsetSaved(long subtitleOffsetMs) {
+                            saveLocalSubtitleOffset(localSubtitleKey, subtitleOffsetMs);
+                        }
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
-                    directStreamPlayer.selectDefault(config.optInt("defaultIndex", -1));
+                    final int defaultIndex = config.optInt("defaultIndex", -1);
+                    // 322.3.109: a file this viewer added for this film opens by itself.
+                    if (localSubtitleFile(localSubtitleKey) != null && localSubtitleFile(localSubtitleKey).isFile()) {
+                        directStreamPlayer.rememberDefaultIndex(defaultIndex);
+                        restoreLocalSubtitle(session, localSubtitleKey, defaultIndex);
+                    } else {
+                        directStreamPlayer.selectDefault(defaultIndex);
+                    }
                 } catch (Exception ignored) {
                     Toast.makeText(MainActivity.this, "تعذّر فتح المشغّل المباشر", Toast.LENGTH_LONG).show();
                 }
