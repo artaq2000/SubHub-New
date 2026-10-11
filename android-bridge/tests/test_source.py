@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 124" in gradle
-assert "versionName '322.3.115'" in gradle
+assert "versionCode 125" in gradle
+assert "versionName '322.3.116'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -986,7 +986,7 @@ assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
 assert 'NATIVE_VERSION_CODE_FALLBACK = 123' in mv107
-assert "versionCode 124" in open('app/build.gradle', encoding='utf-8').read()
+assert "versionCode 125" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
