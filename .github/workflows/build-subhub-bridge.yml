@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.114 next episode strip + episodes list
+name: Build TEST SubHub 322.3.115 smart episode drawer
 
 on:
   push:
     branches:
-      - 'test/episodes-322.3.114'
+      - 'test/smart-episodes-322.3.115'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
