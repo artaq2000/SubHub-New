@@ -84,6 +84,10 @@ public final class DirectStreamPlayer {
         void localSubtitlePickRequested();
         void localSubtitleRemoved();
         void localSubtitleOffsetSaved(long subtitleOffsetMs);
+        // 322.3.110: «مشاهدة تلقائية» — this server did not play, try the next one
+        // (no message in between), or it plays (remember it for next time).
+        void autoFailed(String reason);
+        void autoSucceeded();
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -272,6 +276,12 @@ public final class DirectStreamPlayer {
     // owner sees why it failed.
     private String firstFailureReason = "";
     private LinearLayout failurePanel;
+    // 322.3.110: one attempt of the automatic server search (index of total).
+    private int autoIndex = -1;
+    private int autoTotal = 0;
+    private boolean autoMore = false;   // another server (or the site player) comes after this one
+    private boolean autoReported = false;
+    static final long AUTO_STEP_MS = 8000L;
     // 322.3.108: a subtitle that never arrives is reported, not left silent.
     private int subtitleAskSeq = 0;
     private int subtitleAnsweredSeq = 0;
@@ -654,6 +664,43 @@ public final class DirectStreamPlayer {
         }
     }
 
+    // 322.3.110: this player is one attempt of «مشاهدة تلقائية».
+    public void setAutoAttempt(int index, int total, boolean more) {
+        if (closed || interactiveSource || index < 0 || total <= 0) return;
+        autoIndex = index;
+        autoTotal = total;
+        autoMore = more;
+        autoReported = false;
+        if (!subscriberStageBase.isEmpty()) showSubscriberStage(subscriberStageBase);
+    }
+
+    private boolean autoActive() {
+        return autoIndex >= 0 && !interactiveSource;
+    }
+
+    private String autoLine(int index) {
+        return autoTotal > 1 && index < autoTotal
+                ? "السيرفر " + toArabicDigits(index + 1) + " من " + toArabicDigits(autoTotal) : "";
+    }
+
+    // The server did not play: hand over to the next one quietly. False when this
+    // was the last one — then the normal failure message shows.
+    private boolean autoFail(String reason) {
+        if (!autoActive() || autoReported || !autoMore || closed) return false;
+        autoReported = true;
+        subscriberStartupGeneration++;
+        stopSubscriberStageAnimation();
+        cleanupPlayerForRetry();
+        destroyProbe();
+        removeDirectCover();
+        String next = autoLine(autoIndex + 1);
+        status.setText("جارٍ تجهيز المشاهدة…" + (next.isEmpty() ? "" : "\n" + next));
+        status.setVisibility(View.VISIBLE);
+        status.bringToFront();
+        try { listener.autoFailed(reason == null ? "" : reason); } catch (Exception ignored) {}
+        return true;
+    }
+
     // 322.3.108: final failure of a saved server. The screen stays black; the
     // viewer gets one message and a button back to the film page. The owner
     // also gets the reason (the viewer never sees it).
@@ -888,6 +935,14 @@ public final class DirectStreamPlayer {
 
     private void showSubscriberStage(String base) {
         if (closed || interactiveSource || base == null || base.trim().isEmpty()) return;
+        if (autoActive()) {
+            // 322.3.110: «جارٍ تجهيز المشاهدة… السيرفر ٢ من ٥» — no errors in between.
+            String line = autoLine(autoIndex);
+            base = base.trim();
+            int cut = base.indexOf('\n');
+            if (cut >= 0) base = base.substring(0, cut);
+            if (!line.isEmpty()) base = base + "\n" + line;
+        }
         if (directCover != null) {
             subscriberStageAnimationGeneration++;
             subscriberStageBase = base.trim();
@@ -908,7 +963,9 @@ public final class DirectStreamPlayer {
         subscriberStageDots = (subscriberStageDots % 3) + 1;
         StringBuilder dots = new StringBuilder();
         for (int i = 0; i < subscriberStageDots; i++) dots.append("•");
-        status.setText(subscriberStageBase + "  " + dots);
+        int nl = subscriberStageBase.indexOf('\n');
+        status.setText(nl < 0 ? subscriberStageBase + "  " + dots
+                : subscriberStageBase.substring(0, nl) + "  " + dots + subscriberStageBase.substring(nl));
         status.setVisibility(View.VISIBLE);
         status.bringToFront();
         handler.postDelayed(() -> renderSubscriberStage(animationGeneration), 420L);
@@ -927,6 +984,9 @@ public final class DirectStreamPlayer {
         if (phase == 4) timeoutMs = 30000L;
         else if (phase >= 5) timeoutMs = 15000L;
         else timeoutMs = 18000L;
+        // 322.3.110: during the automatic search a server that makes no progress
+        // for 8 seconds gives way to the next one (owner's choice).
+        if (autoActive() && autoMore) timeoutMs = AUTO_STEP_MS;
         subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + timeoutMs;
         subscriberStartupGeneration++;
         int generation = subscriberStartupGeneration;
@@ -948,7 +1008,7 @@ public final class DirectStreamPlayer {
         }
         // 322.3.108: asking to tap only makes sense when the server's player is
         // visible; a hidden page means a black screen — retry, then the message.
-        if (subscriberStartupPhase <= 4 && probe != null && subscriberProviderVisible) {
+        if (subscriberStartupPhase <= 4 && probe != null && subscriberProviderVisible && !(autoActive() && autoMore)) {
             subscriberStartupGeneration++;
             final int tapGeneration = subscriberStartupGeneration;
             stopSubscriberStageAnimation();
@@ -1010,6 +1070,8 @@ public final class DirectStreamPlayer {
         if (closed || interactiveSource || playbackReady) return;
         subscriberStartupGeneration++;
         stopSubscriberStageAnimation();
+        // 322.3.110: in the automatic search each server gets one try.
+        if (autoActive() && autoMore && autoFail(firstFailureReason)) return;
         if (subscriberStartupAttempt >= 2) {
             cleanupPlayerForRetry();
             destroyProbe();
@@ -1754,6 +1816,7 @@ public final class DirectStreamPlayer {
             if (generation != directRevealGeneration || closed || playing
                     || candidate != null || probe == null || v != probe) return;
             if (directCover == null) return;
+            if (autoActive() && autoMore) return;   // 322.3.110: the next server comes instead
             subscriberStartupGeneration++;
             stopSubscriberStageAnimation();
             removeDirectCover();
@@ -2520,6 +2583,7 @@ public final class DirectStreamPlayer {
     /** Same outcome paths as an ExoPlayer error, with the probe report for the owner. */
     private void vidnestProbeFailed() {
         failureDetail = ownerMode ? ("Vidnest · فحص الرابط فشل\n" + vidnestProbeReport) : "";
+        if (autoFail("Vidnest · فحص الرابط فشل")) return;
         if (!interactiveSource && subscriberStartupAttempt < 2) {
             retrySubscriberStartup();
         } else if (!interactiveSource) {
@@ -2638,6 +2702,10 @@ public final class DirectStreamPlayer {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
                     playbackReady = true;
+                    if (autoActive() && !autoReported) {
+                        autoReported = true;
+                        try { listener.autoSucceeded(); } catch (Exception ignored) {}
+                    }
                     subscriberStartupGeneration++;
                     subscriberStartupPhase = 0;
                     stopSubscriberStageAnimation();
@@ -2668,6 +2736,7 @@ public final class DirectStreamPlayer {
                 failureDetail = vidnestDiag;
                 final String reason = vidnestDiag.isEmpty() ? playbackFailureReason(error) : vidnestDiag;
                 if (firstFailureReason.isEmpty()) firstFailureReason = reason;
+                if (autoFail(reason)) return;   // 322.3.110: next server, quietly
                 if (!interactiveSource && subscriberStartupAttempt < 2) {
                     retrySubscriberStartup();
                 } else if (!interactiveSource) {

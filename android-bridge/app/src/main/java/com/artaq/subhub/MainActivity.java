@@ -67,13 +67,13 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.109";
+    private static final String NATIVE_VERSION = "322.3.110";
     // 322.3.107: the update check now uses the version of the APK that is really
     // installed (it was a fixed 109 for many builds, so an installed release could
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 118;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 119;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -99,6 +99,12 @@ public class MainActivity extends Activity {
     private static final int LOCAL_SUBTITLE_KEEP = 40;
     private String localSubtitlePickSession = "";
     private String localSubtitlePickKey = "";
+    // 322.3.110: «مشاهدة تلقائية» — the attempt the page armed for the next player,
+    // and the black screen shown while one server hands over to the next.
+    private JSONObject pendingAuto = null;
+    private long pendingAutoAt = 0L;
+    private FrameLayout autoCover = null;
+    private int autoCoverGeneration = 0;
     private static final String KEY_UPDATE_CHECK = "updateLastAttempt";
     private static final String KEY_UPDATE_META = "updateMetadata";
     private boolean updateCheckBusy = false;
@@ -300,6 +306,8 @@ public class MainActivity extends Activity {
                 + readAsset("series_stream.js") + "\n"
                 // 322.3.107: «سيرفرات التطبيق» list (films + episodes) — after series_stream.js.
                 + readAsset("app_list_stream.js") + "\n"
+                // 322.3.110: «مشاهدة تلقائية» for episodes — after the scripts it drives.
+                + readAsset("auto_chain.js") + "\n"
                 + readAsset("r2_upload.js");
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -1696,6 +1704,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (autoCover != null) {
+            cancelAutoChain();
+            return;
+        }
         if (directStreamPlayer != null) {
             if (directStreamPlayer.handleBack()) return;
             directStreamPlayer.close();
@@ -1739,6 +1751,76 @@ public class MainActivity extends Activity {
     // parsed by LocalSubtitleParser, and kept in the app's private storage for
     // this film/episode only (never uploaded). Up to LOCAL_SUBTITLE_KEEP films.
     // ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // 322.3.110: black screen between two servers of the automatic search, so
+    // the page never flashes in between. Back / «إلغاء» stops the search.
+    // ---------------------------------------------------------------------
+    private void showAutoCover(String text) {
+        if (autoCover == null) {
+            autoCover = new FrameLayout(this);
+            autoCover.setBackgroundColor(Color.BLACK);
+            autoCover.setClickable(true);
+            android.widget.LinearLayout col = new android.widget.LinearLayout(this);
+            col.setOrientation(android.widget.LinearLayout.VERTICAL);
+            col.setGravity(Gravity.CENTER_HORIZONTAL);
+            TextView brand = new TextView(this);
+            brand.setText("SubHub");
+            brand.setTextColor(Color.rgb(247, 188, 61));
+            brand.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
+            brand.setGravity(Gravity.CENTER);
+            TextView msg = new TextView(this);
+            msg.setTag("auto-cover-text");
+            msg.setTextColor(Color.WHITE);
+            msg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            msg.setGravity(Gravity.CENTER);
+            msg.setLineSpacing(0f, 1.3f);
+            msg.setPadding(dp(16), dp(12), dp(16), dp(18));
+            TextView cancel = new TextView(this);
+            cancel.setText("إلغاء");
+            cancel.setTextColor(Color.WHITE);
+            cancel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            cancel.setGravity(Gravity.CENTER);
+            cancel.setPadding(dp(22), dp(10), dp(22), dp(10));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(Color.rgb(11, 22, 37));
+            bg.setStroke(dp(1), Color.rgb(59, 84, 112));
+            bg.setCornerRadius(dp(12));
+            cancel.setBackground(bg);
+            cancel.setOnClickListener(v -> cancelAutoChain());
+            col.addView(brand);
+            col.addView(msg);
+            col.addView(cancel, new android.widget.LinearLayout.LayoutParams(-2, dp(44)));
+            autoCover.addView(col, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+            root.addView(autoCover, new FrameLayout.LayoutParams(-1, -1));
+        }
+        View t = autoCover.findViewWithTag("auto-cover-text");
+        if (t instanceof TextView) ((TextView) t).setText(text);
+        autoCover.bringToFront();
+        final int g = ++autoCoverGeneration;
+        ui.postDelayed(() -> { if (g == autoCoverGeneration) hideAutoCover(); }, 30000L);
+    }
+
+    private static String arabicDigits(int value) {
+        String w = String.valueOf(value), a = "٠١٢٣٤٥٦٧٨٩";
+        StringBuilder o = new StringBuilder();
+        for (char c : w.toCharArray()) o.append(c >= '0' && c <= '9' ? a.charAt(c - '0') : c);
+        return o.toString();
+    }
+
+    private void hideAutoCover() {
+        autoCoverGeneration++;
+        if (autoCover == null) return;
+        ViewGroup parent = (ViewGroup) autoCover.getParent();
+        if (parent != null) parent.removeView(autoCover);
+        autoCover = null;
+    }
+
+    private void cancelAutoChain() {
+        pendingAuto = null;
+        hideAutoCover();
+        if (webView != null) webView.evaluateJavascript("window.__subhubAutoCancelV3110 && window.__subhubAutoCancelV3110()", null);
+    }
+
     private void openLocalSubtitlePicker(String session, String key) {
         localSubtitlePickSession = session == null ? "" : session;
         localSubtitlePickKey = key == null ? "" : key;
@@ -2130,6 +2212,11 @@ public class MainActivity extends Activity {
                         openChooser = false;
                     }
 
+                    // 322.3.110: an attempt of «مشاهدة تلقائية» armed by the page just before.
+                    final JSONObject autoAttempt = (moviesmodFlow && !interactiveSource && pendingAuto != null
+                            && SystemClock.elapsedRealtime() - pendingAutoAt < 30000L) ? pendingAuto : null;
+                    pendingAuto = null;
+                    final String autoChain = autoAttempt == null ? "" : autoAttempt.optString("chain", "");
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     final String localSubtitleKey = localSubtitleKeyValue;
@@ -2203,6 +2290,24 @@ public class MainActivity extends Activity {
                         public void localSubtitleOffsetSaved(long subtitleOffsetMs) {
                             saveLocalSubtitleOffset(localSubtitleKey, subtitleOffsetMs);
                         }
+                        public void autoFailed(String reason) {
+                            if (autoChain.isEmpty()) return;
+                            ui.post(() -> {
+                                int next = autoAttempt.optInt("index", 0) + 2, total = autoAttempt.optInt("total", 1);
+                                showAutoCover("جارٍ تجهيز المشاهدة…" + (next <= total && total > 1
+                                        ? "\nالسيرفر " + arabicDigits(next) + " من " + arabicDigits(total) : ""));
+                                if (directStreamPlayer != null && directStreamSession.equals(session)) directStreamPlayer.close();
+                                ui.postDelayed(() -> {
+                                    if (webView != null) webView.evaluateJavascript("window.__subhubAutoNextV3110 && window.__subhubAutoNextV3110("
+                                            + JSONObject.quote(autoChain) + ")", null);
+                                }, 300L);
+                            });
+                        }
+                        public void autoSucceeded() {
+                            if (autoChain.isEmpty() || webView == null) return;
+                            webView.evaluateJavascript("window.__subhubAutoOkV3110 && window.__subhubAutoOkV3110("
+                                    + JSONObject.quote(autoChain) + ")", null);
+                        }
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
@@ -2214,10 +2319,39 @@ public class MainActivity extends Activity {
                     } else {
                         directStreamPlayer.selectDefault(defaultIndex);
                     }
+                    if (autoAttempt != null) {
+                        directStreamPlayer.setAutoAttempt(autoAttempt.optInt("index", 0),
+                                autoAttempt.optInt("total", 1), autoAttempt.optBoolean("more", false));
+                        webView.evaluateJavascript("window.__subhubAutoOpenedV3110 && window.__subhubAutoOpenedV3110("
+                                + JSONObject.quote(autoChain) + "," + autoAttempt.optInt("index", 0) + ")", null);
+                    }
+                    hideAutoCover();
                 } catch (Exception ignored) {
                     Toast.makeText(MainActivity.this, "تعذّر فتح المشغّل المباشر", Toast.LENGTH_LONG).show();
                 }
             });
+        }
+
+        // 322.3.110: «مشاهدة تلقائية» — the page arms the next player as one attempt
+        // of the search ({chain, index, total, more}), or ends the search.
+        @JavascriptInterface
+        public void directStreamAutoArm(String token, String raw) {
+            if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 2000) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                try {
+                    JSONObject o = new JSONObject(raw);
+                    if (!o.optString("chain", "").matches("[A-Za-z0-9_-]{1,80}")) return;
+                    pendingAuto = o;
+                    pendingAutoAt = SystemClock.elapsedRealtime();
+                } catch (Exception ignored) { pendingAuto = null; }
+            });
+        }
+
+        @JavascriptInterface
+        public void directStreamAutoEnd(String token) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> { pendingAuto = null; hideAutoCover(); });
         }
 
         @JavascriptInterface

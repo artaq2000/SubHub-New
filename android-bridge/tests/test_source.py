@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 118" in gradle
-assert "versionName '322.3.109'" in gradle
+assert "versionCode 119" in gradle
+assert "versionName '322.3.110'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 118' in mv107
-assert "versionCode 118" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 119' in mv107
+assert "versionCode 119" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1058,3 +1058,37 @@ assert "episodeKey: ctx.kind === 'tv' ? ekOf(ctx) : ''," in open('app/src/main/a
 wf = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
 assert 'tests/LocalSubtitleParserTest.java' in wf
 print('322.3.109 device subtitle checks OK')
+
+# 322.3.110: «مشاهدة تلقائية» — the app tries the episode's servers one by one.
+d110 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m110 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+a110 = open('app/src/main/assets/auto_chain.js', encoding='utf-8').read()
+assert 'void autoFailed(String reason);' in d110 and 'void autoSucceeded();' in d110
+assert 'public void setAutoAttempt(int index, int total, boolean more)' in d110
+af = d110[d110.index('private boolean autoFail(String reason)'):]
+af = af[:af.index('\n    }\n')]
+assert 'if (!autoActive() || autoReported || !autoMore || closed) return false;' in af   # last server -> normal message
+assert 'listener.autoFailed(' in af and 'جارٍ تجهيز المشاهدة' in af
+assert 'if (autoFail(reason)) return;   // 322.3.110' in d110                       # player error -> next server
+assert 'if (autoActive() && autoMore && autoFail(firstFailureReason)) return;' in d110  # no retry per server
+assert 'if (autoFail("Vidnest · فحص الرابط فشل")) return;' in d110
+assert 'subscriberProviderVisible && !(autoActive() && autoMore)' in d110             # no tap prompt mid-search
+assert 'listener.autoSucceeded();' in d110
+assert 'readAsset("auto_chain.js")' in m110
+assert m110.index('readAsset("app_list_stream.js")') < m110.index('readAsset("auto_chain.js")')
+assert 'public void directStreamAutoArm(String token, String raw)' in m110
+assert 'public void directStreamAutoEnd(String token)' in m110
+assert 'final JSONObject autoAttempt = (moviesmodFlow && !interactiveSource && pendingAuto != null' in m110
+assert 'directStreamPlayer.setAutoAttempt(' in m110 and 'window.__subhubAutoNextV3110' in m110
+assert 'private void showAutoCover(String text)' in m110 and 'cancelAutoChain();' in m110
+assert "window.__subhubAutoChainV3110 = function (req)" in a110
+assert "window.__subhubSeriesAutoOkV400(c.movieId, c.season, c.episode, c.keys[c.i])" in a110
+wf = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+assert 'node tests/auto_chain.test.cjs' in wf and 'node --check app/src/main/assets/auto_chain.js' in wf
+print('322.3.110 automatic server search checks OK')
+d110 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+a110 = open('app/src/main/assets/auto_chain.js', encoding='utf-8').read()
+assert 'static final long AUTO_STEP_MS = 8000L;' in d110 and 'if (autoActive() && autoMore) timeoutMs = AUTO_STEP_MS;' in d110
+assert 'if (autoActive() && autoMore) return;   // 322.3.110: the next server comes instead' in d110
+assert 'window.__subhubServerStatV401(c.movieId, name, ok, ms);' in a110 and 'record(chain, false);' in a110
+print('322.3.110 by-name learning + 8 s checks OK')
