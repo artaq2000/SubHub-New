@@ -137,7 +137,6 @@ public final class DirectStreamPlayer {
     // 322.3.113: Moviesmod «Just a quick check» page — shown to the viewer, who
     // presses «Continue» once (it lasts a day); the search waits, then goes on.
     private boolean gateShown = false;
-    private TextView gateBanner;
     // 322.3.84: teal Vidnest card. Vidnest pages request two stream families:
     // a clean self-contained "/proxy?url=...m3u8&headers=..." link (https all the
     // way, headers embedded) and a "/hls/<base64>" chain that goes through a plain
@@ -1357,39 +1356,138 @@ public final class DirectStreamPlayer {
                 + "},400);}catch(_){}})();";
     }
 
+    // 322.3.116: the check is no longer the whole Moviesmod page. Our own small
+    // card says what it is; the viewer presses «✓ تحقّق الآن» and that press is
+    // passed to the page's «Continue» button (the page itself stays hidden, and so
+    // does the page that opens after it). Only if the button cannot be found or
+    // the press does not pass, the page itself is shown (as in 322.3.113).
+    private boolean gatePageVisible = false;
+    private LinearLayout gateCard;
+    private TextView gateCardStatus, gateCardButton;
+    private int gateTapGeneration = 0;
+
     private void showGate() {
         if (gateShown || closed || interactiveSource || probe == null || playing) return;
         gateShown = true;
+        gatePageVisible = false;
         // The search waits for the viewer (no time limit runs meanwhile).
         subscriberStartupGeneration++;
         stopSubscriberStageAnimation();
         removeDirectCover();
         status.setVisibility(View.GONE);
-        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
-        p.topMargin = dp(72);
-        probe.setLayoutParams(p);
-        probe.setAlpha(1.0f);
-        probe.bringToFront();
-        if (gateBanner == null) {
-            gateBanner = new TextView(activity);
-            gateBanner.setTextColor(Color.WHITE);
-            gateBanner.setTextSize(14);
-            gateBanner.setGravity(Gravity.CENTER);
-            gateBanner.setTextDirection(View.TEXT_DIRECTION_RTL);
-            gateBanner.setPadding(dp(66), dp(6), dp(12), dp(6));
-            gateBanner.setBackground(round(0xf00b1725, 0xccF7BC3D, 1, 0));
-            gateBanner.setText("تحقّق من Moviesmod: اضغط «Continue to Moviesmod» مرة واحدة —\nيكفي ليوم كامل، وبعدها تكمل المشاهدة وحدها.");
-            root.addView(gateBanner, new FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP));
+        probe.setAlpha(0.0f);
+        if (gateCard == null) {
+            gateCard = new LinearLayout(activity);
+            gateCard.setOrientation(LinearLayout.VERTICAL);
+            gateCard.setGravity(Gravity.CENTER_HORIZONTAL);
+            gateCard.setPadding(dp(18), dp(16), dp(18), dp(16));
+            gateCard.setBackground(round(0xf00b1725, 0xccF7BC3D, 1, 18));
+            gateCard.setElevation(dp(32));
+            gateCard.setClickable(true);
+            // Only the check itself — no site name.
+            TextView title = new TextView(activity);
+            title.setText("تحقّق من أنك لست روبوتاً");
+            title.setTextColor(Color.WHITE);
+            title.setTextSize(18);
+            title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            title.setGravity(Gravity.CENTER);
+            title.setTextDirection(View.TEXT_DIRECTION_RTL);
+            title.setPadding(0, 0, 0, dp(14));
+            gateCard.addView(title, new LinearLayout.LayoutParams(-1, -2));
+            gateCardButton = chip("✓ تحقّق الآن", 16, this::gatePressed);
+            gateCardButton.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
+            gateCard.addView(gateCardButton, new LinearLayout.LayoutParams(-1, dp(48)));
+            gateCardStatus = new TextView(activity);
+            gateCardStatus.setTextColor(Color.rgb(184, 197, 214));
+            gateCardStatus.setTextSize(13);
+            gateCardStatus.setGravity(Gravity.CENTER);
+            gateCardStatus.setPadding(0, dp(8), 0, 0);
+            gateCardStatus.setVisibility(View.GONE);
+            gateCard.addView(gateCardStatus, new LinearLayout.LayoutParams(-1, -2));
+            root.addView(gateCard, new FrameLayout.LayoutParams(dp(320), -2, Gravity.CENTER));
         }
-        gateBanner.setVisibility(View.VISIBLE);
-        gateBanner.bringToFront();
+        gateCardButton.setEnabled(true);
+        gateCardButton.setAlpha(1f);
+        gateCardStatus.setVisibility(View.GONE);
+        gateCard.setVisibility(View.VISIBLE);
+        gateCard.bringToFront();
         menuButton.bringToFront();
+    }
+
+    // The viewer's own press → the page's «Continue» button.
+    private void gatePressed() {
+        if (!gateShown || closed || probe == null) return;
+        gateCardButton.setEnabled(false);
+        gateCardButton.setAlpha(0.6f);
+        gateCardStatus.setText("جارٍ التحقق…");
+        gateCardStatus.setVisibility(View.VISIBLE);
+        final int gen = ++gateTapGeneration;
+        try { probe.evaluateJavascript(gateButtonScript(), null); } catch (Exception ignored) {}
+        // Still on the check after a few seconds: show the page itself.
+        handler.postDelayed(() -> {
+            if (gen == gateTapGeneration && gateShown && !closed) showGatePage();
+        }, 7000L);
+    }
+
+    private String gateButtonScript() {
+        String bridgeToken = JSONObject.quote(sourceChoiceToken);
+        return "(function(){try{var t=" + bridgeToken + ";var S=window.SubHubSourceChoice;if(!S||!S.gateTarget)return;"
+                + "var els=[].slice.call(document.querySelectorAll('button,a,[role=button],input[type=submit],input[type=button]'));"
+                + "var b=null;for(var i=0;i<els.length;i++){var x=String(els[i].innerText||els[i].value||els[i].textContent||'').trim();"
+                + "if(/continue to moviesmod/i.test(x)){b=els[i];break;}if(!b&&/^(continue|verify|proceed|i'?m human|i am human)/i.test(x))b=els[i];}"
+                + "if(!b){S.gateTarget(t,-1,-1);return;}"
+                + "try{b.scrollIntoView({block:'center',inline:'center'});}catch(_){}"
+                + "setTimeout(function(){try{var r=b.getBoundingClientRect();var w=window.innerWidth||document.documentElement.clientWidth,h=window.innerHeight||document.documentElement.clientHeight;"
+                + "if(!r.width||!r.height||!w||!h){S.gateTarget(t,-1,-1);return;}"
+                + "S.gateTarget(t,(r.left+r.width/2)/w,(r.top+r.height/2)/h);}catch(_){S.gateTarget(t,-1,-1);}},350);"
+                + "}catch(_){}})();";
+    }
+
+    // Fallback: if our press did not pass, the check itself — only their check
+    // box, centred on black (the rest of their page hidden), for the viewer to
+    // press by hand.
+    private void showGatePage() {
+        if (!gateShown || closed || probe == null || playing) return;
+        gateTapGeneration++;
+        gatePageVisible = true;
+        if (gateCard != null) gateCard.setVisibility(View.GONE);
+        probe.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        try { probe.evaluateJavascript(gateOnlyScript(), null); } catch (Exception ignored) {}
+        handler.postDelayed(() -> {
+            if (closed || !gateShown || !gatePageVisible || probe == null) return;
+            probe.setAlpha(1.0f);
+            probe.bringToFront();
+            menuButton.bringToFront();
+        }, 250L);
+    }
+
+    // Their page with everything hidden except the box around «Continue».
+    private String gateOnlyScript() {
+        return "(function(){try{"
+                + "var els=[].slice.call(document.querySelectorAll('button,a,[role=button],input[type=submit],input[type=button]'));"
+                + "var b=null;for(var i=0;i<els.length;i++){var x=String(els[i].innerText||els[i].value||els[i].textContent||'').trim();"
+                + "if(/continue to moviesmod/i.test(x)){b=els[i];break;}if(!b&&/^(continue|verify|proceed|i'?m human|i am human)/i.test(x))b=els[i];}"
+                + "if(!b)return;var bh=b.getBoundingClientRect().height||40,card=null,n=b;"
+                + "for(var k=0;k<7&&n&&n.parentElement&&n.parentElement!==document.body;k++){n=n.parentElement;"
+                + "var r=n.getBoundingClientRect(),cs=getComputedStyle(n);"
+                + "var boxed=parseFloat(cs.borderTopLeftRadius)>6||cs.boxShadow!=='none'||(cs.backgroundColor&&cs.backgroundColor!=='rgba(0, 0, 0, 0)'&&cs.backgroundColor!=='transparent');"
+                + "if(boxed&&r.width<window.innerWidth*0.98&&r.height>bh*2){card=n;break;}}"
+                + "if(!card)card=b.parentElement||b;card.setAttribute('data-subhub-gate','1');"
+                + "var st=document.getElementById('__subhubGateOnly')||document.createElement('style');st.id='__subhubGateOnly';"
+                + "st.textContent='html,body{background:#000 !important;}body *{visibility:hidden !important;}"
+                + "[data-subhub-gate],[data-subhub-gate] *{visibility:visible !important;}"
+                + "[data-subhub-gate]{position:fixed !important;left:50% !important;top:50% !important;transform:translate(-50%,-50%) !important;"
+                + "width:min(420px,92vw) !important;box-sizing:border-box !important;max-height:94vh !important;overflow:auto !important;margin:0 !important;z-index:2147483647 !important;}';"
+                + "(document.head||document.documentElement).appendChild(st);"
+                + "}catch(_){}})();";
     }
 
     private void hideGate() {
         if (!gateShown || closed) return;
         gateShown = false;
-        if (gateBanner != null) gateBanner.setVisibility(View.GONE);
+        gatePageVisible = false;
+        gateTapGeneration++;
+        if (gateCard != null) gateCard.setVisibility(View.GONE);
         if (probe != null) {
             probe.setAlpha(0.0f);
             subscriberProviderVisible = false;
@@ -2176,12 +2274,35 @@ public final class DirectStreamPlayer {
             if (!sourceChoiceToken.equals(token)) return;
             handler.post(() -> {
                 if (closed || interactiveSource || playing) return;
-                if (present) showGate();
+                if (present) {
+                    if (!gateShown) showGate();
+                    else if (gatePageVisible && probe != null) {   // the page reloaded: only the box again
+                        try { probe.evaluateJavascript(gateOnlyScript(), null); } catch (Exception ignored) {}
+                        final WebView pv = probe;
+                        handler.postDelayed(() -> {
+                            if (closed || !gateShown || !gatePageVisible || probe != pv) return;
+                            pv.setAlpha(1.0f);
+                            pv.bringToFront();
+                            menuButton.bringToFront();
+                        }, 250L);
+                    }
+                }
                 else if (gateShown) {
                     hideGate();
                     // The page behind the check is open now: go on from the step it reached.
                     startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
                 }
+            });
+        }
+
+        // 322.3.116: where the page's «Continue» button is (after the viewer pressed ours).
+        @JavascriptInterface
+        public void gateTarget(String token, double normalizedX, double normalizedY) {
+            if (!sourceChoiceToken.equals(token)) return;
+            handler.post(() -> {
+                if (closed || !gateShown || gatePageVisible) return;
+                if (normalizedX < 0 || normalizedY < 0) { showGatePage(); return; }
+                dispatchProviderTap(normalizedX, normalizedY);
             });
         }
 
@@ -2458,7 +2579,10 @@ public final class DirectStreamPlayer {
                     }
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
                     // 322.3.113: Moviesmod's check page is shown to the viewer, not pressed by us.
+                    // 322.3.116: a page that opens while the check is up stays hidden until
+                    // the check says it is gone (no flash of the Moviesmod page).
                     if (!interactiveSource) {
+                        if (gateShown && gatePageVisible) v.setAlpha(0.0f);
                         try { v.evaluateJavascript(gateCheckScript(), null); } catch (Exception ignored) {}
                     }
                     if (openChooser && !chooserAutoRequested && !playing) {

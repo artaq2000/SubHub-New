@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 124" in gradle
-assert "versionName '322.3.115'" in gradle
+assert "versionCode 125" in gradle
+assert "versionName '322.3.116'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 124' in mv107
-assert "versionCode 124" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 125' in mv107
+assert "versionCode 125" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1179,7 +1179,7 @@ assert 'public void gate(String token, boolean present)' in d113
 assert 'just a quick check|continue to moviesmod' in d113
 g = d113[d113.index('private void showGate()'):]
 g = g[:g.index('\n    }\n')]
-assert 'subscriberStartupGeneration++;' in g and 'probe.setAlpha(1.0f);' in g     # visible, search paused
+assert 'subscriberStartupGeneration++;' in g and 'probe.setAlpha(0.0f);' in g     # 322.3.116: our card, the page stays hidden
 assert '.click()' not in d113[d113.index('private String gateCheckScript()'):d113.index('private void showGate()')]   # never pressed for the viewer
 assert 'if (interactiveSource || probe == null || root == null || closed || gateShown) return;' in d113
 assert 'if (gateShown) return;' in d113
@@ -1232,3 +1232,24 @@ assert 'lp.bottomMargin = dp(72);   // above the progress line' in d115
 assert 'addCompactQuick("⚙", this::openSettings);' in d115 and 'player.setPlaybackSpeed(v);' in d115
 assert 'customizeControls();' in d115
 print('322.3.115 bottom row + episode cards + settings checks OK')
+
+# 322.3.116: our own check card; the viewer's press goes to the page's «Continue».
+d116 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+gp = d116[d116.index('private void gatePressed()'):]
+gp = gp[:gp.index('\n    }\n')]
+assert 'probe.evaluateJavascript(gateButtonScript(), null);' in gp and 'showGatePage();' in gp
+assert 'gateCardButton = chip("✓ تحقّق الآن", 16, this::gatePressed);' in d116   # pressed only by the viewer
+sg = d116[d116.index('private void showGate()'):]
+sg = sg[:sg.index('\n    }\n')]
+assert 'gateButtonScript' not in sg and 'dispatchProviderTap' not in sg            # nothing is pressed by itself
+assert 'public void gateTarget(String token, double normalizedX, double normalizedY)' in d116
+gt = d116[d116.index('public void gateTarget(String token'):]
+gt = gt[:gt.index('\n        }\n')]
+assert 'if (closed || !gateShown || gatePageVisible) return;' in gt and 'dispatchProviderTap(normalizedX, normalizedY);' in gt
+assert 'private void showGatePage()' in d116 and 'probe.setAlpha(1.0f);' in d116[d116.index('private void showGatePage()'):]
+assert 'if (gateShown && gatePageVisible) v.setAlpha(0.0f);' in d116
+assert 'title.setText("تحقّق من أنك لست روبوتاً");' in d116 and 'Moviesmod التأكد' not in d116   # no site name on our card
+assert 'probe.evaluateJavascript(gateOnlyScript(), null);' in d116                                   # fallback: only their box
+assert "body *{visibility:hidden !important;}" in d116 and "[data-subhub-gate],[data-subhub-gate] *{visibility:visible !important;}" in d116
+assert 'gateBanner' not in d116
+print('322.3.116 own check card checks OK')
