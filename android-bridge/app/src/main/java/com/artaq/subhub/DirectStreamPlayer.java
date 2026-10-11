@@ -1006,8 +1006,8 @@ public final class DirectStreamPlayer {
         if (episodeItems == null || closed) return;
         dismissEpisodeDrawer();
         final boolean landscape = root.getWidth() > root.getHeight();
-        final int width = landscape ? Math.min(dp(340), Math.max(dp(220), root.getWidth() * 42 / 100)) : -1;
-        final int height = landscape ? -1 : Math.min(dp(430), Math.max(dp(220), root.getHeight() * 65 / 100));
+        final int width = landscape ? Math.min(dp(300), Math.max(dp(220), root.getWidth() * 34 / 100)) : -1;
+        final int height = landscape ? Math.max(dp(180), root.getHeight() - dp(100)) : Math.min(dp(430), Math.max(dp(220), root.getHeight() * 65 / 100));
         FrameLayout shade = new FrameLayout(activity);
         episodeDrawer = shade;
         shade.setBackgroundColor(0x55000000);
@@ -1019,7 +1019,7 @@ public final class DirectStreamPlayer {
         sheet.setPadding(dp(12), dp(12), dp(12), dp(8));
         sheet.setBackground(round(PANEL, BORDER, 1, 18));
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(width, height,
-                landscape ? Gravity.RIGHT | Gravity.TOP : Gravity.BOTTOM);
+                landscape ? Gravity.RIGHT | Gravity.BOTTOM : Gravity.BOTTOM);
         shade.addView(sheet, slp);
         sheet.setOnClickListener(v -> {});
 
