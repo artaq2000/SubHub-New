@@ -382,6 +382,8 @@
         serverKey: auto ? item.key : '',
         serverLabel: auto ? item.label : '',
         serverPageUrl: startPage,
+        // 322.3.113: episodes — the saved player link first, the Moviesmod page if it does not play.
+        embedUrl: (auto && item && ctx.kind === 'tv') ? (item.embedUrl || '') : '',
         subtitleOffsetMs: active.subtitleOffsetMs,
         catalog: catalog.map(function (x) { return { name: String(x.name || 'ترجمة SubHub'), pinned: x.pinned === true }; }),
         defaultIndex: defaultIndex

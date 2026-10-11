@@ -67,13 +67,13 @@ public class MainActivity extends Activity {
     private static final String HOME_URL = "https://subhub-at7.pages.dev/";
     private static final String HOME_HOST = "subhub-at7.pages.dev";
     private static final String UPDATES_WORKER_URL = "https://subhub-updates.artaq2000.workers.dev";
-    private static final String NATIVE_VERSION = "322.3.112";
+    private static final String NATIVE_VERSION = "322.3.113";
     // 322.3.107: the update check now uses the version of the APK that is really
     // installed (it was a fixed 109 for many builds, so an installed release could
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 121;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 122;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2225,7 +2225,10 @@ public class MainActivity extends Activity {
                         openChooser = config.optBoolean("openChooser", false);
                         if (preferredServerKey.length() > 80 || preferredServerLabel.length() > 80) return;
                         String rawEmbed = config.optString("embedUrl", "").trim();
-                        if ("vsm".equals(mode) && !interactiveSource
+                        // 322.3.113: every saved server (not only the yellow card) opens its
+                        // saved player link first; the player falls back to the Moviesmod
+                        // page of the same server when that link does not play.
+                        if (!vidnestMode && !interactiveSource && !preferredServerLabel.isEmpty()
                                 && !rawEmbed.isEmpty() && rawEmbed.length() <= 2200) {
                             try {
                                 Uri embedUri = Uri.parse(rawEmbed);

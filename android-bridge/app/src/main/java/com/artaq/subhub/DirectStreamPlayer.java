@@ -128,7 +128,14 @@ public final class DirectStreamPlayer {
     private final boolean openChooser;
     // 322.3.79: saved server player URL (yellow card). When set, automatic
     // playback opens it directly instead of the Moviesmod server list.
-    private final String directEmbedUrl;
+    // 322.3.113: not final — when the saved player link does not play, the same
+    // server is tried once more through its Moviesmod page (embedFallbackUsed).
+    private String directEmbedUrl;
+    private boolean embedFallbackUsed = false;
+    // 322.3.113: Moviesmod «Just a quick check» page — shown to the viewer, who
+    // presses «Continue» once (it lasts a day); the search waits, then goes on.
+    private boolean gateShown = false;
+    private TextView gateBanner;
     // 322.3.84: teal Vidnest card. Vidnest pages request two stream families:
     // a clean self-contained "/proxy?url=...m3u8&headers=..." link (https all the
     // way, headers embedded) and a "/hls/<base64>" chain that goes through a plain
@@ -938,8 +945,85 @@ public final class DirectStreamPlayer {
 
     // The server did not play: hand over to the next one quietly. False when this
     // was the last one — then the normal failure message shows.
+    // 322.3.113: the saved player link did not play → the same server again
+    // through its Moviesmod page (once). Not for our own pages (no Moviesmod page).
+    private boolean tryEmbedFallback(String reason) {
+        if (embedFallbackUsed || directEmbedUrl.isEmpty() || ownKind != OWN_NONE
+                || interactiveSource || closed || playbackReady || source == null || source.isEmpty()) return false;
+        embedFallbackUsed = true;
+        directEmbedUrl = "";
+        subscriberStartupGeneration++;
+        stopSubscriberStageAnimation();
+        cleanupPlayerForRetry();
+        destroyProbe();
+        removeDirectCover();
+        firstFailureReason = "";
+        handler.postDelayed(() -> {
+            if (closed || interactiveSource || playbackReady) return;
+            beginCapture();
+        }, 300L);
+        return true;
+    }
+
+    // 322.3.113: the Moviesmod check page («Just a quick check» / «Continue to
+    // Moviesmod»). Reports gate(true) when it is on screen, gate(false) when not.
+    private String gateCheckScript() {
+        String bridgeToken = JSONObject.quote(sourceChoiceToken);
+        return "(function(){try{var t=" + bridgeToken + ",n=0;"
+                + "var re=/just a quick check|continue to moviesmod|real person,? not a bot|verify you are human|checking your browser/i;"
+                + "var iv=setInterval(function(){n++;var x='';try{x=String((document.body&&document.body.innerText)||'').slice(0,4000);}catch(_){}"
+                + "if(re.test(x)){clearInterval(iv);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.gate)window.SubHubSourceChoice.gate(t,true);return;}"
+                + "if(n>=7){clearInterval(iv);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.gate)window.SubHubSourceChoice.gate(t,false);}"
+                + "},400);}catch(_){}})();";
+    }
+
+    private void showGate() {
+        if (gateShown || closed || interactiveSource || probe == null || playing) return;
+        gateShown = true;
+        // The search waits for the viewer (no time limit runs meanwhile).
+        subscriberStartupGeneration++;
+        stopSubscriberStageAnimation();
+        removeDirectCover();
+        status.setVisibility(View.GONE);
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-1, -1);
+        p.topMargin = dp(72);
+        probe.setLayoutParams(p);
+        probe.setAlpha(1.0f);
+        probe.bringToFront();
+        if (gateBanner == null) {
+            gateBanner = new TextView(activity);
+            gateBanner.setTextColor(Color.WHITE);
+            gateBanner.setTextSize(14);
+            gateBanner.setGravity(Gravity.CENTER);
+            gateBanner.setTextDirection(View.TEXT_DIRECTION_RTL);
+            gateBanner.setPadding(dp(66), dp(6), dp(12), dp(6));
+            gateBanner.setBackground(round(0xf00b1725, 0xccF7BC3D, 1, 0));
+            gateBanner.setText("تحقّق من Moviesmod: اضغط «Continue to Moviesmod» مرة واحدة —\nيكفي ليوم كامل، وبعدها تكمل المشاهدة وحدها.");
+            root.addView(gateBanner, new FrameLayout.LayoutParams(-1, dp(72), Gravity.TOP));
+        }
+        gateBanner.setVisibility(View.VISIBLE);
+        gateBanner.bringToFront();
+        menuButton.bringToFront();
+    }
+
+    private void hideGate() {
+        if (!gateShown || closed) return;
+        gateShown = false;
+        if (gateBanner != null) gateBanner.setVisibility(View.GONE);
+        if (probe != null) {
+            probe.setAlpha(0.0f);
+            subscriberProviderVisible = false;
+            root.post(this::applySubscriberProbePreviewLayout);
+        }
+        status.setVisibility(View.VISIBLE);
+        status.bringToFront();
+        menuButton.bringToFront();
+    }
+
     private boolean autoFail(String reason) {
         if (!autoActive() || autoReported || !autoMore || closed) return false;
+        // 322.3.113: the saved player link first, then this server's Moviesmod page.
+        if (tryEmbedFallback(reason)) return true;
         autoReported = true;
         subscriberStartupGeneration++;
         stopSubscriberStageAnimation();
@@ -1259,6 +1343,9 @@ public final class DirectStreamPlayer {
         if (firstFailureReason.isEmpty()) {
             firstFailureReason = "انتهت المهلة عند «" + startupStageText(subscriberStartupPhase) + "»";
         }
+        if (gateShown) return;
+        // 322.3.113: the saved player link did not answer → its Moviesmod page.
+        if (tryEmbedFallback(firstFailureReason)) return;
         // 322.3.108: asking to tap only makes sense when the server's player is
         // visible; a hidden page means a black screen — retry, then the message.
         if (subscriberStartupPhase <= 4 && probe != null && subscriberProviderVisible && !(autoActive() && autoMore)) {
@@ -1325,6 +1412,8 @@ public final class DirectStreamPlayer {
         stopSubscriberStageAnimation();
         // 322.3.110: in the automatic search each server gets one try.
         if (autoActive() && autoMore && autoFail(firstFailureReason)) return;
+        // 322.3.113: the saved player link first, then this server's Moviesmod page.
+        if (tryEmbedFallback(firstFailureReason)) return;
         if (subscriberStartupAttempt >= 2) {
             cleanupPlayerForRetry();
             destroyProbe();
@@ -1699,6 +1788,21 @@ public final class DirectStreamPlayer {
             });
         }
 
+        // 322.3.113: Moviesmod's check page is (or is no longer) on screen.
+        @JavascriptInterface
+        public void gate(String token, boolean present) {
+            if (!sourceChoiceToken.equals(token)) return;
+            handler.post(() -> {
+                if (closed || interactiveSource || playing) return;
+                if (present) showGate();
+                else if (gateShown) {
+                    hideGate();
+                    // The page behind the check is open now: go on from the step it reached.
+                    startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
+                }
+            });
+        }
+
         @JavascriptInterface
         public void playTarget(String token, double normalizedX, double normalizedY) {
             if (!sourceChoiceToken.equals(token)) return;
@@ -1849,7 +1953,7 @@ public final class DirectStreamPlayer {
     }
 
     private void applySubscriberProbePreviewLayout() {
-        if (interactiveSource || probe == null || root == null || closed) return;
+        if (interactiveSource || probe == null || root == null || closed || gateShown) return;
         int rw = root.getWidth();
         int rh = root.getHeight();
         if (rw <= 0 || rh <= 0) {
@@ -1971,6 +2075,10 @@ public final class DirectStreamPlayer {
                         startSubscriberStartupTimer(2);
                     }
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
+                    // 322.3.113: Moviesmod's check page is shown to the viewer, not pressed by us.
+                    if (!interactiveSource) {
+                        try { v.evaluateJavascript(gateCheckScript(), null); } catch (Exception ignored) {}
+                    }
                     if (openChooser && !chooserAutoRequested && !playing) {
                         chooserAutoRequested = true;
                         handler.postDelayed(() -> {

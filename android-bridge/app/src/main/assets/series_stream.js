@@ -415,7 +415,9 @@
         serverKey: auto ? saved.key : '',
         serverLabel: auto ? saved.label : '',
         serverPageUrl: startPage,
-        embedUrl: (mode === 'vsm' && auto) ? saved.embedUrl : '',
+        // 322.3.113: every saved server opens its saved player link first (the app
+        // falls back to the Moviesmod page of the same server). Vidnest keeps its own way.
+        embedUrl: (auto && mode !== 'vidnest') ? saved.embedUrl : '',
         subtitleOffsetMs: Number(saved.subtitleOffsetMs || 0),
         catalog: catalog.map(x => ({ name: String(x.name || 'ترجمة SubHub'), pinned: x.pinned === true })),
         defaultIndex: defaultIndex

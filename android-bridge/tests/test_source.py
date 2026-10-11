@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 121" in gradle
-assert "versionName '322.3.112'" in gradle
+assert "versionCode 122" in gradle
+assert "versionName '322.3.113'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 121' in mv107
-assert "versionCode 121" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 122' in mv107
+assert "versionCode 122" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1169,3 +1169,26 @@ assert 'next: nextInfo(selected.id, season, episode),' in s112
 assert "H().nextInfo(ctx.movieId, ctx.season, ctx.episode)" in l112
 assert 'window.__subhubNextEpisodeV3112 = function (movieId, season, episode)' in a112
 print('322.3.112 one screen + next episode + smart waiting checks OK')
+
+# 322.3.113: Moviesmod «Just a quick check» shown to the viewer + saved player links first.
+d113 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m113 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+s113 = open('app/src/main/assets/series_stream.js', encoding='utf-8').read()
+l113 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert 'public void gate(String token, boolean present)' in d113
+assert 'just a quick check|continue to moviesmod' in d113
+g = d113[d113.index('private void showGate()'):]
+g = g[:g.index('\n    }\n')]
+assert 'subscriberStartupGeneration++;' in g and 'probe.setAlpha(1.0f);' in g     # visible, search paused
+assert '.click()' not in d113[d113.index('private String gateCheckScript()'):d113.index('private void showGate()')]   # never pressed for the viewer
+assert 'if (interactiveSource || probe == null || root == null || closed || gateShown) return;' in d113
+assert 'if (gateShown) return;' in d113
+f = d113[d113.index('private boolean tryEmbedFallback(String reason)'):]
+f = f[:f.index('\n    }\n')]
+assert 'embedFallbackUsed = true;' in f and 'directEmbedUrl = "";' in f and 'beginCapture();' in f and 'ownKind != OWN_NONE' in f
+assert 'if (tryEmbedFallback(reason)) return true;' in d113
+assert d113.count('if (tryEmbedFallback(firstFailureReason)) return;') == 2
+assert 'if (!vidnestMode && !interactiveSource && !preferredServerLabel.isEmpty()' in m113
+assert "embedUrl: (auto && mode !== 'vidnest') ? saved.embedUrl : ''," in s113
+assert "embedUrl: (auto && item && ctx.kind === 'tv') ? (item.embedUrl || '') : ''," in l113
+print('322.3.113 Moviesmod check + saved player links checks OK')
