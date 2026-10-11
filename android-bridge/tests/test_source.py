@@ -986,7 +986,7 @@ assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
 assert 'NATIVE_VERSION_CODE_FALLBACK = 123' in mv107
-assert "versionCode 123" in open('app/build.gradle', encoding='utf-8').read()
+assert "versionCode 124" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
