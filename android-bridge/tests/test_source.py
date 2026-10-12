@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 126" in gradle
-assert "versionName '322.3.117'" in gradle
+assert "versionCode 127" in gradle
+assert "versionName '322.3.118'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 126' in mv107
-assert "versionCode 126" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 127' in mv107
+assert "versionCode 127" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1258,8 +1258,20 @@ print('322.3.116 own check card checks OK')
 al117 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
 m117 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
 assert "function isFboxPage(raw)" in al117 and "function filmFboxUrl()" in al117
-assert "site: isFboxPage(startPage) ? 'fbox' : 'moviesmod'," in al117
-assert "openSession(ctx, null, true, fbox);" in al117
+assert "site: isFboxAny(startPage) ? 'fbox' : 'moviesmod'," in al117
+assert "openSession(ctx, null, true, fbox || ('https://' + (fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0]) + '/'));" in al117
 assert '"fbox".equals(config.optString("site", ""))' in m117
 assert 'allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;' in m117
 print('322.3.117 fbox source checks OK')
+
+# 322.3.118: fbox under several names, search by the film title, guard against another film's page.
+al118 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+m118 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+d118 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+assert "const FBOX_DEFAULT_DOMAINS = ['fbox.gd', 'vumoo.gd', 'movies2watch.gs'];" in al118
+assert "async function fboxLive(raw)" in al118 and "function samePageFilm(" in al118
+assert "fboxDomains: arr" in al118                                   # names editable from settings
+assert "searchText" in al118 and "⚠️ هذي صفحة «" in al118            # search + wrong-film guard
+assert "public void setSearchText(String text)" in d118 and "private String searchFillScript()" in d118
+assert "directStreamPlayer.setSearchText(config.optString(\"searchText\", \"\"));" in m118
+print('322.3.118 fbox names/search checks OK')

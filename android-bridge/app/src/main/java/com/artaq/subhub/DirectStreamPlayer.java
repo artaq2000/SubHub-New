@@ -226,6 +226,11 @@ public final class DirectStreamPlayer {
     private final ArrayList<android.animation.Animator> coverAnimators = new ArrayList<>();
     private int directRevealGeneration = 0;
     private boolean chooserAutoRequested = false;
+    // 322.3.118: fbox with no saved page for this film — the owner starts from
+    // their search; the film's title is typed into their search box for him.
+    private String searchText = "";
+    private String searchedUrl = "";
+    private int searchRuns = 0;
     private boolean decisionShown = false;
     private boolean reopening = false;
     private LinearLayout decisionBar;
@@ -2313,6 +2318,32 @@ public final class DirectStreamPlayer {
         }
     }
 
+    public void setSearchText(String text) {
+        String t = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        searchText = t.length() > 80 ? t.substring(0, 80) : t;
+    }
+
+    // Opens the page's search (an element named «search») and types the title into
+    // the first visible search box, so their live results show. Nothing else is
+    // pressed: the owner picks the right film himself.
+    private String searchFillScript() {
+        String q = JSONObject.quote(searchText);
+        return "(function(){try{var q=" + q + ",n=0;"
+                + "function vis(e){try{var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>30&&r.height>12&&s.display!=='none'&&s.visibility!=='hidden';}catch(_){return false;}}"
+                + "function cls(e){var c=e.className;return (c&&c.baseVal!==undefined)?c.baseVal:String(c||'');}"
+                + "function box(){return [].slice.call(document.querySelectorAll('input')).filter(function(e){var t=(e.type||'text').toLowerCase();if(t!=='text'&&t!=='search')return false;"
+                + "return vis(e)&&/search|keyword|title|imdb|بحث/i.test((e.placeholder||'')+' '+(e.name||'')+' '+(e.id||'')+' '+cls(e));})[0]||null;}"
+                + "function opener(){return [].slice.call(document.querySelectorAll('button,a,[role=button]')).find(function(e){"
+                + "var s=((e.getAttribute('aria-label')||'')+' '+cls(e)+' '+(e.id||'')+' '+(e.title||'')+' '+(e.getAttribute('href')||'')).toLowerCase();"
+                + "return /search/.test(s)&&!/submit/.test(s)&&vis(e);})||null;}"
+                + "function fill(i){try{var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');d.set.call(i,q);}catch(_){i.value=q;}"
+                + "['input','change','keyup'].forEach(function(k){try{i.dispatchEvent(k==='keyup'?new KeyboardEvent(k,{bubbles:true,key:'e'}):new Event(k,{bubbles:true}));}catch(_){}});try{i.focus();}catch(_){}}"
+                + "(function t(){n++;var i=box();if(i){if(!i.value)fill(i);return;}"
+                + "if(n===2||n===7||n===14){var o=opener();if(o){try{o.click();}catch(_){}}}"
+                + "if(n<36)setTimeout(t,400);})();"
+                + "}catch(_){}})();";
+    }
+
     private String providerPickerScript() {
         String wanted = JSONObject.quote(normalizeServerLabel(preferredServerLabel));
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
@@ -2578,6 +2609,19 @@ public final class DirectStreamPlayer {
                         startSubscriberStartupTimer(2);
                     }
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
+                    // 322.3.118: fbox search for this film's title (owner, no saved page yet).
+                    // Only on their front page (also again after their «Continue» check), never on a
+                    // results or film page, so what the owner types himself is left alone.
+                    if (interactiveSource && !searchText.isEmpty() && url != null && searchRuns < 3) {
+                        String path = "";
+                        try { path = Uri.parse(url).getPath(); } catch (Exception ignored) {}
+                        if (path == null || path.isEmpty() || "/".equals(path) || "/home".equals(path)) {
+                            searchRuns++;
+                            searchedUrl = url;
+                            showVerifyStage("ابحث عن «" + searchText + "» واختر الفيلم نفسه، ثم اضغط السيرفر — احفظ من صفحة هذا الفيلم فقط.");
+                            try { v.evaluateJavascript(searchFillScript(), null); } catch (Exception ignored) {}
+                        }
+                    }
                     // 322.3.113: Moviesmod's check page is shown to the viewer, not pressed by us.
                     // 322.3.116: a page that opens while the check is up stays hidden until
                     // the check says it is gone (no flash of the Moviesmod page).

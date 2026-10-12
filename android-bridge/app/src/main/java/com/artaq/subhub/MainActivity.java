@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 126;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 127;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2219,9 +2219,11 @@ public class MainActivity extends Activity {
                                 Uri fu = Uri.parse(savedServerPageUrl);
                                 String fh = fu.getHost() == null ? "" : fu.getHost().toLowerCase(Locale.ROOT);
                                 String fp = fu.getPath() == null ? "" : fu.getPath();
+                                // 322.3.118: fbox has several names (vumoo, movies2watch…) kept in
+                                // the site settings, and the owner may start from its search page.
                                 if ("https".equalsIgnoreCase(fu.getScheme())
-                                        && fh.matches("([a-z0-9-]+\\.)*fbox\\.[a-z]{2,12}")
-                                        && fp.startsWith("/watch/")) {
+                                        && fh.matches("([a-z0-9-]+\\.)+[a-z]{2,12}") && fh.length() <= 80
+                                        && !HOME_HOST.equalsIgnoreCase(fh)) {
                                     fboxHostValue = fh.startsWith("www.") ? fh.substring(4) : fh;
                                     resolvedSourceUrl = fu.toString();
                                 }
@@ -2454,6 +2456,10 @@ public class MainActivity extends Activity {
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
+                    // 322.3.118: fbox with no page for this film yet — type its title into their search.
+                    if ("list".equals(mode) && "fbox".equals(config.optString("site", "")) && interactiveSource) {
+                        directStreamPlayer.setSearchText(config.optString("searchText", ""));
+                    }
                     if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);
                     if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);
                     if (episodeItems.length() > 1) directStreamPlayer.setEpisodes(episodeItems);

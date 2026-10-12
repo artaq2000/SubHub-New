@@ -77,19 +77,103 @@
     return cleanLabel(label).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
   }
   // 322.3.117: fbox (like Moviesmod, more servers). Its title pages are named by
-  // slug (/watch/movie-<slug>-<id>), not by TMDB id, so the owner pastes the film's
-  // fbox page once on the site (field fboxUrl) and adds servers from it here.
-  function fboxHost(h) { return /(^|\.)fbox\.[a-z]{2,12}$/i.test(String(h || '')); }
+  // slug (/watch/movie-<slug>-<id>), not by TMDB id.
+  // 322.3.118: fbox, vumoo, movies2watch… are ONE site under several names (the
+  // same film has the same /watch/movie-inception-2g84ihso path on all of them;
+  // SmashyStream hands out a different name each visit, names get closed). So
+  // a saved page is really its PATH: it opens on the first name that answers,
+  // in the owner's order (subtitles/_appSettings.fboxDomains, editable here).
+  const FBOX_DEFAULT_DOMAINS = ['fbox.gd', 'vumoo.gd', 'movies2watch.gs'];
+  let fboxDomainList = FBOX_DEFAULT_DOMAINS.slice();
+  let fboxDomainsLoaded = false;
+  let fboxDomainsTried = false;
+  let fboxPicked = { host: '', at: 0 };
+  function cleanHost(h) {
+    const v = String(h || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+    return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(v) && v.length <= 80 ? v : '';
+  }
+  function fboxHost(h) {
+    const v = cleanHost(h);
+    if (!v) return false;
+    if (/(^|\.)fbox\.[a-z]{2,12}$/.test(v)) return true;
+    return fboxDomainList.concat(FBOX_DEFAULT_DOMAINS).indexOf(v) >= 0;
+  }
   function isFboxPage(raw) {
     try {
       const u = new URL(String(raw || ''));
-      return u.protocol === 'https:' && fboxHost(u.hostname) && /^\/watch\/(movie|tv)-/i.test(u.pathname);
+      return u.protocol === 'https:' && fboxHost(u.hostname) && /^\/watch\/(movie|tv)-[a-z0-9-]+/i.test(u.pathname);
     } catch (_) { return false; }
+  }
+  function isFboxAny(raw) {
+    try { const u = new URL(String(raw || '')); return u.protocol === 'https:' && fboxHost(u.hostname); }
+    catch (_) { return false; }
+  }
+  function fboxPath(raw) {
+    try { const u = new URL(String(raw || '')); return u.pathname + (u.search || ''); } catch (_) { return ''; }
+  }
+  function fboxIdOf(raw) {
+    try { const m = new URL(String(raw || '')).pathname.match(/^\/watch\/((?:movie|tv)-[a-z0-9-]+)/i); return m ? m[1].toLowerCase() : ''; }
+    catch (_) { return ''; }
+  }
+  async function loadFboxDomains(force) {
+    if (fboxDomainsLoaded && !force) return fboxDomainList;
+    try {
+      const d = await db.collection('subtitles').doc('_appSettings').get();
+      const arr = d.exists && Array.isArray(d.data().fboxDomains) ? d.data().fboxDomains.map(cleanHost).filter(Boolean) : [];
+      if (arr.length) fboxDomainList = arr.slice(0, 12);
+      fboxDomainsLoaded = true;
+    } catch (_) {}
+    return fboxDomainList;
+  }
+  function probeHost(h) {
+    return new Promise(function (resolve) {
+      let done = false;
+      const t = setTimeout(function () { if (!done) { done = true; resolve(false); } }, 3500);
+      try {
+        fetch('https://' + h + '/', { mode: 'no-cors', cache: 'no-store', credentials: 'omit' })
+          .then(function () { if (!done) { done = true; clearTimeout(t); resolve(true); } })
+          .catch(function () { if (!done) { done = true; clearTimeout(t); resolve(false); } });
+      } catch (_) { clearTimeout(t); resolve(false); }
+    });
+  }
+  // The first name (in the owner's order) that answers; remembered 10 minutes.
+  async function pickFboxHost() {
+    await loadFboxDomains(false);
+    if (fboxPicked.host && Date.now() - fboxPicked.at < 600000 && fboxDomainList.indexOf(fboxPicked.host) >= 0) return fboxPicked.host;
+    for (let i = 0; i < fboxDomainList.length; i++) {
+      if (await probeHost(fboxDomainList[i])) { fboxPicked = { host: fboxDomainList[i], at: Date.now() }; return fboxDomainList[i]; }
+    }
+    return fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0];
+  }
+  async function fboxLive(raw) {
+    const host = await pickFboxHost();
+    try { const u = new URL(String(raw || '')); u.hostname = host; return u.href; } catch (_) { return String(raw || ''); }
   }
   function filmFboxUrl() {
     const d = movieDoc();
     const v = String((d && d.fboxUrl) || '').trim();
-    return isFboxPage(v) ? v : '';
+    if (isFboxPage(v)) return v;
+    const it = (film.items || []).find(function (x) { return isFboxPage(x.pageUrl); });
+    return it ? it.pageUrl : '';
+  }
+  // Does the fbox page look like this film? Compares the slug words with the title.
+  function slugWords(raw) {
+    const id = fboxIdOf(raw).replace(/^(movie|tv)-/, '');
+    const parts = id.split('-');
+    if (parts.length > 1) parts.pop();          // the site's own id (2g84ihso)
+    return parts.filter(Boolean);
+  }
+  function titleWords(t) {
+    return String(t || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      .replace(/&/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  }
+  function samePageFilm(raw, title) {
+    const a = slugWords(raw).join(' '), b = titleWords(title).join(' ');
+    if (!a || !b) return true;               // nothing to compare (non-latin title…)
+    return a === b || a.indexOf(b) === 0 || b.indexOf(a) === 0;
+  }
+  function prettySlug(raw) {
+    return slugWords(raw).map(function (w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ') || fboxIdOf(raw);
   }
   function normalizePageUrl(raw) {
     const v = String(raw || '').trim();
@@ -97,7 +181,7 @@
     try {
       const u = new URL(v);
       const h = String(u.hostname || '').toLowerCase();
-      if (u.protocol === 'https:' && fboxHost(h) && /^\/watch\//i.test(u.pathname)) return u.href;
+      if (u.protocol === 'https:' && fboxHost(h)) return u.href;   // 322.3.118: any page of the fbox family
       if (u.protocol !== 'https:' || !(h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd'))) return '';
       return u.href;
     } catch (_) { return ''; }
@@ -360,7 +444,17 @@
 
       const manualPage = normalizePageUrl(overridePageUrl || '') || (item ? item.pageUrl : '')
         || (ctx.kind === 'tv' ? H().episodePageUrl(tmdbId, ctx.season, ctx.episode) : '');
-      const startPage = auto ? item.pageUrl : manualPage;
+      let startPage = auto ? item.pageUrl : manualPage;
+      // 322.3.118: an fbox page opens on the first fbox name that answers; with no
+      // page for this film yet, the owner starts from fbox search (the title typed in).
+      let searchText = '';
+      if (isFboxAny(startPage)) {
+        startPage = await fboxLive(startPage);
+        if (!isFboxPage(startPage) && owner && !auto) {
+          searchText = String(selected.title || '').trim().slice(0, 80);
+        }
+        if (current() !== selected) return;
+      }
       const base = String(selected.id || ('tmdb_' + kind + '_' + tmdbId)).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60);
       const stableKey = (base + (ctx.kind === 'tv' ? '_' + ekOf(ctx) : '') + '_' + (item ? item.id : 'new')).slice(0, 100);
       const session = 'applist_' + Date.now() + '_' + Math.random().toString(36).slice(2);
@@ -381,7 +475,8 @@
       bridge.openDirectStream(token, JSON.stringify({
         mode: 'list',
         // 322.3.117: which page lists the servers — Moviesmod (by TMDB id) or fbox (saved page).
-        site: isFboxPage(startPage) ? 'fbox' : 'moviesmod',
+        site: isFboxAny(startPage) ? 'fbox' : 'moviesmod',
+        searchText: searchText,
         session: session,
         movieId: stableKey,
         resumeKey: stableKey,
@@ -425,6 +520,21 @@
       const p = st.pending;
       if (!p || !p.pageUrl) return { ok: false, text: 'تعذّر معرفة صفحة السيرفر — اضغط السيرفر في الصفحة مرة أخرى' };
       const ctx = st.ctx;
+      // 322.3.118: an fbox page of ANOTHER film (reached through their search) is
+      // never saved on this film without the owner saying so.
+      if (isFboxAny(p.pageUrl) && ctx.kind !== 'tv') {
+        if (!isFboxPage(p.pageUrl)) return { ok: false, text: 'ادخل صفحة الفيلم في fbox أولاً، ثم اضغط السيرفر' };
+        const sel = current();
+        const title = sel ? String(sel.title || '') : '';
+        const known = filmFboxUrl();
+        const otherId = known && fboxIdOf(known) && fboxIdOf(known) !== fboxIdOf(p.pageUrl);
+        if (!samePageFilm(p.pageUrl, title) || otherId) {
+          const msg = '⚠️ هذي صفحة «' + prettySlug(p.pageUrl) + '» في fbox — وفيلمك «' + title + '».'
+            + (otherId ? '\nوهذا الفيلم محفوظ له صفحة ثانية: ' + fboxIdOf(known) : '')
+            + '\n\nأحفظ السيرفر لهذا الفيلم مع ذلك؟';
+          if (!confirm(msg)) return { ok: false, text: 'ما انحفظ — صفحة فيلم آخر' };
+        }
+      }
       const items = ctx.kind === 'tv' ? await episodeItems(ctx, true) : await loadFilm(ctx.movieId, true);
       const idx = st.slotId ? items.findIndex(function (x) { return x.id === st.slotId; }) : -1;
       const now = Date.now();
@@ -452,6 +562,16 @@
       }
       await writeItems(ctx, items);
       st.slotId = id;
+      // 322.3.118: the first fbox server of a film also records the film's fbox page.
+      if (ctx.kind !== 'tv' && isFboxPage(p.pageUrl)) {
+        try {
+          const d = movieDoc();
+          if (!(d && isFboxPage(String(d.fboxUrl || '')))) {
+            await db.collection('subtitles').doc(String(ctx.movieId)).set({ fboxUrl: p.pageUrl }, { merge: true });
+            syncDoc(ctx.movieId, function (x) { x.fboxUrl = p.pageUrl; });
+          }
+        } catch (_) {}
+      }
       return { ok: true, id: id, text: 'تم الحفظ ✓ ' + p.label };
     } catch (_) {
       return { ok: false, text: 'تعذّر الحفظ' };
@@ -859,31 +979,47 @@
       ev.preventDefault();
       if (!add.disabled) openSession(ctx, null, true, '');
     });
-    // 322.3.117: with the film's fbox page saved, servers can be added from it too.
+    // 322.3.117: servers can be added from fbox too.
+    // 322.3.118: always — without a saved page it starts from fbox search.
     const fbox = filmFboxUrl();
-    if (fbox) {
-      add.textContent = full ? add.textContent : '➕ إضافة سيرفر من Moviesmod';
-      const addF = document.createElement('button');
-      addF.type = 'button';
-      addF.textContent = full ? 'وصلت للحد الأقصى (١٠ سيرفرات)' : '📦 إضافة سيرفر من fbox';
-      addF.disabled = full || !film.loaded;
-      addF.style.cssText = add.style.cssText.replace(ACCENT, '#f6b93b');
-      addF.addEventListener('click', function (ev) {
-        ev.preventDefault();
-        if (!addF.disabled) openSession(ctx, null, true, fbox);
-      });
-      const pair = document.createElement('div');
-      pair.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
-      pair.appendChild(add);
-      pair.appendChild(addF);
-      sec.appendChild(pair);
-    } else {
-      sec.appendChild(add);
-      const tip = document.createElement('div');
-      tip.style.cssText = 'color:#7f93ab;font-size:.62rem;line-height:1.6';
-      tip.textContent = '📦 لسيرفرات fbox: الصق رابط صفحة الفيلم في fbox من زر «📦 صفحة fbox» (قسم «تعمل عن طريق التطبيق»)، فيظهر هنا زر الإضافة منه.';
-      sec.appendChild(tip);
-    }
+    add.textContent = full ? add.textContent : '➕ إضافة سيرفر من Moviesmod';
+    const addF = document.createElement('button');
+    addF.type = 'button';
+    addF.textContent = full ? 'وصلت للحد الأقصى (١٠ سيرفرات)' : (fbox ? '📦 إضافة سيرفر من fbox' : '📦 إضافة من fbox (بحث)');
+    addF.disabled = full || !film.loaded;
+    addF.style.cssText = add.style.cssText.replace(ACCENT, '#f6b93b');
+    addF.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      if (addF.disabled) return;
+      openSession(ctx, null, true, fbox || ('https://' + (fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0]) + '/'));
+    });
+    const pair = document.createElement('div');
+    pair.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
+    pair.appendChild(add);
+    pair.appendChild(addF);
+    sec.appendChild(pair);
+    const dom = document.createElement('div');
+    dom.style.cssText = 'display:flex;align-items:center;gap:6px;color:#7f93ab;font-size:.62rem;line-height:1.6';
+    const domTx = document.createElement('span');
+    domTx.style.cssText = 'flex:1;min-width:0;direction:ltr;text-align:right';
+    domTx.textContent = '📦 fbox: ' + fboxDomainList.join(' · ') + (fbox ? '  ·  ' + fboxIdOf(fbox) : '');
+    const domBtn = smallBtn('✏️ الأسماء', 'edit', false, async function () {
+      if (!isOwner() || typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
+      const v = prompt('أسماء fbox بالترتيب (يجرّب الأول ثم اللي بعده). افصل بفاصلة:', fboxDomainList.join(', '));
+      if (v == null) return;
+      const arr = String(v).split(/[\s,،]+/).map(cleanHost).filter(Boolean).filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
+      if (!arr.length) { notify('اكتب اسماً واحداً على الأقل، مثل fbox.gd'); return; }
+      try {
+        await db.collection('subtitles').doc('_appSettings').set({ fboxDomains: arr }, { merge: true });
+        fboxDomainList = arr; fboxDomainsLoaded = true; fboxPicked = { host: '', at: 0 };
+        notify('تم حفظ أسماء fbox ✓', 'success');
+        render(true);
+      } catch (_) { notify('تعذّر حفظ الأسماء.'); }
+    });
+    domBtn.style.flex = 'none';
+    dom.appendChild(domTx);
+    dom.appendChild(domBtn);
+    sec.appendChild(dom);
     sec.appendChild(legacyBlock());   // moves the existing block (with its cards) here
     return sec;
   }
@@ -951,6 +1087,10 @@
   }
 
   function install() {
+    if (!fboxDomainsLoaded && !fboxDomainsTried && isOwner()) {
+      fboxDomainsTried = true;
+      loadFboxDomains(false).then(function () { render(true); }).catch(function () {});
+    }
     const sel = current();
     const doc = movieDoc();
     if (!sel || !doc || doc.contentType === 'series') {
