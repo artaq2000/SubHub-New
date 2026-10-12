@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 125;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 126;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 

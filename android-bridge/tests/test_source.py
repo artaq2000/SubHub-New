@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 125" in gradle
-assert "versionName '322.3.116'" in gradle
+assert "versionCode 126" in gradle
+assert "versionName '322.3.117'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -358,7 +358,7 @@ assert 'public boolean handleBack()' in direct_player
 assert 'readAsset("moviesmod_stream.js")' in main
 assert '"moviesmod".equals(mode)' in main
 assert 'fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId)' in main
-assert 'allowedHost = "moviesmod.gd"' in main
+assert 'allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;' in main
 # 322.3.98: purple/teal keys unchanged; open cards add their own prefix.
 assert 'resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey' in main
 assert 'resumePrefKey' in direct
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 125' in mv107
-assert "versionCode 125" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 126' in mv107
+assert "versionCode 126" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1253,3 +1253,13 @@ assert 'probe.evaluateJavascript(gateOnlyScript(), null);' in d116              
 assert "body *{visibility:hidden !important;}" in d116 and "[data-subhub-gate],[data-subhub-gate] *{visibility:visible !important;}" in d116
 assert 'gateBanner' not in d116
 print('322.3.116 own check card checks OK')
+
+# 322.3.117: fbox as a source for «سيرفرات التطبيق» (films).
+al117 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+m117 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+assert "function isFboxPage(raw)" in al117 and "function filmFboxUrl()" in al117
+assert "site: isFboxPage(startPage) ? 'fbox' : 'moviesmod'," in al117
+assert "openSession(ctx, null, true, fbox);" in al117
+assert '"fbox".equals(config.optString("site", ""))' in m117
+assert 'allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;' in m117
+print('322.3.117 fbox source checks OK')
