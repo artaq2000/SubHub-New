@@ -2209,7 +2209,25 @@ public class MainActivity extends Activity {
                         String fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId);
                         String savedServerPageUrl = config.optString("serverPageUrl", "").trim();
                         String resolvedSourceUrl = fallbackSourceUrl;
-                        if (!savedServerPageUrl.isEmpty() && savedServerPageUrl.length() <= 2200) {
+                        // 322.3.117: «سيرفرات التطبيق» from an fbox page (saved by the owner on the
+                        // site — fbox names its pages by slug, not by TMDB id). Same open/verify
+                        // flow: the server grid is found by structure, a tapped server is captured.
+                        String fboxHostValue = "";
+                        if ("list".equals(mode) && "fbox".equals(config.optString("site", ""))
+                                && !savedServerPageUrl.isEmpty() && savedServerPageUrl.length() <= 2200) {
+                            try {
+                                Uri fu = Uri.parse(savedServerPageUrl);
+                                String fh = fu.getHost() == null ? "" : fu.getHost().toLowerCase(Locale.ROOT);
+                                String fp = fu.getPath() == null ? "" : fu.getPath();
+                                if ("https".equalsIgnoreCase(fu.getScheme())
+                                        && fh.matches("([a-z0-9-]+\\.)*fbox\\.[a-z]{2,12}")
+                                        && fp.startsWith("/watch/")) {
+                                    fboxHostValue = fh.startsWith("www.") ? fh.substring(4) : fh;
+                                    resolvedSourceUrl = fu.toString();
+                                }
+                            } catch (Exception ignored) {}
+                        }
+                        if (fboxHostValue.isEmpty() && !savedServerPageUrl.isEmpty() && savedServerPageUrl.length() <= 2200) {
                             try {
                                 Uri savedUri = Uri.parse(savedServerPageUrl);
                                 String savedHost = savedUri.getHost();
@@ -2222,7 +2240,7 @@ public class MainActivity extends Activity {
                             } catch (Exception ignored) {}
                         }
                         sourceUrl = resolvedSourceUrl;
-                        allowedHost = "moviesmod.gd";
+                        allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;
                         resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
                         syncScopeValue = mode + "_" + stableKey;
                         if ("tv".equals(kind)) {
@@ -2250,7 +2268,8 @@ public class MainActivity extends Activity {
                                 String embedHost = embedUri.getHost();
                                 if ("https".equalsIgnoreCase(embedUri.getScheme()) && embedHost != null) {
                                     String eh = embedHost.toLowerCase(Locale.ROOT);
-                                    if (!eh.equals("moviesmod.gd") && !eh.endsWith(".moviesmod.gd")) {
+                                    if (!eh.equals("moviesmod.gd") && !eh.endsWith(".moviesmod.gd")
+                                            && !eh.matches("([a-z0-9-]+\\.)*fbox\\.[a-z]{2,12}")) {
                                         directEmbedUrl = embedUri.toString();
                                     }
                                 }

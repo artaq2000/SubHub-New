@@ -76,12 +76,28 @@
   function keyOf(label) {
     return cleanLabel(label).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60);
   }
+  // 322.3.117: fbox (like Moviesmod, more servers). Its title pages are named by
+  // slug (/watch/movie-<slug>-<id>), not by TMDB id, so the owner pastes the film's
+  // fbox page once on the site (field fboxUrl) and adds servers from it here.
+  function fboxHost(h) { return /(^|\.)fbox\.[a-z]{2,12}$/i.test(String(h || '')); }
+  function isFboxPage(raw) {
+    try {
+      const u = new URL(String(raw || ''));
+      return u.protocol === 'https:' && fboxHost(u.hostname) && /^\/watch\/(movie|tv)-/i.test(u.pathname);
+    } catch (_) { return false; }
+  }
+  function filmFboxUrl() {
+    const d = movieDoc();
+    const v = String((d && d.fboxUrl) || '').trim();
+    return isFboxPage(v) ? v : '';
+  }
   function normalizePageUrl(raw) {
     const v = String(raw || '').trim();
     if (!v || v.length > 2200) return '';
     try {
       const u = new URL(v);
       const h = String(u.hostname || '').toLowerCase();
+      if (u.protocol === 'https:' && fboxHost(h) && /^\/watch\//i.test(u.pathname)) return u.href;
       if (u.protocol !== 'https:' || !(h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd'))) return '';
       return u.href;
     } catch (_) { return ''; }
@@ -92,7 +108,7 @@
     try {
       const u = new URL(v);
       const h = String(u.hostname || '').toLowerCase();
-      if (u.protocol !== 'https:' || h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd')) return '';
+      if (u.protocol !== 'https:' || h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd') || fboxHost(h)) return '';
       return u.href;
     } catch (_) { return ''; }
   }
@@ -364,6 +380,8 @@
 
       bridge.openDirectStream(token, JSON.stringify({
         mode: 'list',
+        // 322.3.117: which page lists the servers — Moviesmod (by TMDB id) or fbox (saved page).
+        site: isFboxPage(startPage) ? 'fbox' : 'moviesmod',
         session: session,
         movieId: stableKey,
         resumeKey: stableKey,
@@ -806,7 +824,8 @@
       badge.title = n ? 'يظهر للمشترك: مشاهدة بالتطبيق ' + arNum(n) : 'لا يظهر للمشترك';
       const name = document.createElement('b');
       name.style.cssText = 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.84rem';
-      name.textContent = it.label;
+      name.textContent = (isFboxPage(it.pageUrl) ? '📦 ' : '') + it.label;
+      if (isFboxPage(it.pageUrl)) name.title = 'من fbox';
       const meta = document.createElement('small');
       meta.style.cssText = 'margin-inline-start:auto;flex:none;color:#86efac;font-size:.62rem;font-weight:800';
       const off = clampOffset(it.subtitleOffsetMs);
@@ -840,7 +859,31 @@
       ev.preventDefault();
       if (!add.disabled) openSession(ctx, null, true, '');
     });
-    sec.appendChild(add);
+    // 322.3.117: with the film's fbox page saved, servers can be added from it too.
+    const fbox = filmFboxUrl();
+    if (fbox) {
+      add.textContent = full ? add.textContent : '➕ إضافة سيرفر من Moviesmod';
+      const addF = document.createElement('button');
+      addF.type = 'button';
+      addF.textContent = full ? 'وصلت للحد الأقصى (١٠ سيرفرات)' : '📦 إضافة سيرفر من fbox';
+      addF.disabled = full || !film.loaded;
+      addF.style.cssText = add.style.cssText.replace(ACCENT, '#f6b93b');
+      addF.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        if (!addF.disabled) openSession(ctx, null, true, fbox);
+      });
+      const pair = document.createElement('div');
+      pair.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
+      pair.appendChild(add);
+      pair.appendChild(addF);
+      sec.appendChild(pair);
+    } else {
+      sec.appendChild(add);
+      const tip = document.createElement('div');
+      tip.style.cssText = 'color:#7f93ab;font-size:.62rem;line-height:1.6';
+      tip.textContent = '📦 لسيرفرات fbox: الصق رابط صفحة الفيلم في fbox من زر «📦 صفحة fbox» (قسم «تعمل عن طريق التطبيق»)، فيظهر هنا زر الإضافة منه.';
+      sec.appendChild(tip);
+    }
     sec.appendChild(legacyBlock());   // moves the existing block (with its cards) here
     return sec;
   }
@@ -876,7 +919,7 @@
       const grid = document.querySelector('.owner-watch-pills');
       const existing = document.getElementById('subhub-applist-section');
       if (!grid) { if (existing) existing.remove(); lastSig = ''; return; }
-      const sig = JSON.stringify([id, film.loaded, film.items.map(function (x) { return [x.id, x.label, x.subtitleOffsetMs, viewerNumber('list:' + x.id)]; })]);
+      const sig = JSON.stringify([id, film.loaded, filmFboxUrl(), film.items.map(function (x) { return [x.id, x.label, x.subtitleOffsetMs, viewerNumber('list:' + x.id)]; })]);
       if (existing && existing.isConnected && !force && sig === lastSig && existing.previousElementSibling === grid) return;
       const sec = buildSection(id);
       if (existing) existing.remove();
