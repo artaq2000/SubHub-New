@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 129;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 130;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2161,6 +2161,8 @@ public class MainActivity extends Activity {
                     String directEmbedUrl = "";
                     // 322.3.120: the other fbox names (in order) for when this page does not open.
                     final java.util.ArrayList<String> fboxFallbackHosts = new java.util.ArrayList<>();
+                    // 322.3.121: the fbox name this page opens on (shown to the owner adding a server).
+                    String fboxNameValue = "";
                     // 322.3.103: ⏱ timing saved on this device belongs to this film
                     // (or episode) on this card only.
                     String syncScopeValue = "";
@@ -2245,6 +2247,7 @@ public class MainActivity extends Activity {
                         }
                         sourceUrl = resolvedSourceUrl;
                         allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;
+                        fboxNameValue = fboxHostValue;
                         resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
                         syncScopeValue = mode + "_" + stableKey;
                         if ("tv".equals(kind)) {
@@ -2488,6 +2491,8 @@ public class MainActivity extends Activity {
                     // 322.3.118: fbox with no page for this film yet — type its title into their search.
                     if ("list".equals(mode) && "fbox".equals(config.optString("site", "")) && interactiveSource) {
                         directStreamPlayer.setSearchText(config.optString("searchText", ""));
+                        // 322.3.121: the name he chose — on the page, and in the message if it does not open.
+                        if (!fboxNameValue.isEmpty()) directStreamPlayer.setFboxOwnerName(fboxNameValue);
                     }
                     if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);
                     if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);

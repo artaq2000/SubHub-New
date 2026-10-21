@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 129" in gradle
-assert "versionName '322.3.120'" in gradle
+assert "versionCode 130" in gradle
+assert "versionName '322.3.121'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 129' in mv107
-assert "versionCode 129" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 130' in mv107
+assert "versionCode 130" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1259,7 +1259,7 @@ al117 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
 m117 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
 assert "function isFboxPage(raw)" in al117 and "function filmFboxUrl()" in al117
 assert "site: isFboxAny(startPage) ? 'fbox' : 'moviesmod'," in al117
-assert "openSession(ctx, null, true, fbox || ('https://' + (fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0]) + '/'));" in al117
+assert "openSession(ctx, null, true, fboxFits ? fbox : 'https://' + fboxChosen() + '/');" in al117   # 322.3.121: chosen name
 assert '"fbox".equals(config.optString("site", ""))' in m117
 assert 'allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;' in m117
 print('322.3.117 fbox source checks OK')
@@ -1269,7 +1269,7 @@ al118 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
 m118 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
 d118 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
 assert "const FBOX_DEFAULT_DOMAINS = ['fbox.gd', 'vumoo.gd', 'movies2watch.gs'];" in al118
-assert "async function fboxLive(raw)" in al118 and "function samePageFilm(" in al118
+assert "function onFboxName(raw, host)" in al118 and "function samePageFilm(" in al118   # 322.3.121: no probing
 assert "fboxDomains: arr" in al118                                   # names editable from settings
 assert "searchText" in al118 and "⚠️ هذي صفحة «" in al118            # search + wrong-film guard
 assert "public void setSearchText(String text)" in d118 and "private String searchFillScript()" in d118
@@ -1294,8 +1294,8 @@ al120 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
 m120 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
 d120 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
 assert "const FBOX_BAD_KEY = 'subhub_fbox_bad_v3120';" in al120 and "const FBOX_BAD_MS = 600000;" in al120
-assert "function fboxOrder()" in al120 and "fboxMark(order[i], true);" in al120
-assert "fboxHosts = fboxOrder().filter(function (h) { return h !== h0; }).slice(0, 11);" in al120
+assert "function fboxOrder()" in al120 and "if (h) fboxMark(h, !ok);" in al120
+assert "fboxHosts = order.slice(1, 12);" in al120
 assert "fboxHosts: fboxHosts," in al120
 assert "window.__subhubFboxHostV3120 = function (rawHost, ok) {" in al120
 assert 'org.json.JSONArray fboxHostList = config.optJSONArray("fboxHosts");' in m120
@@ -1316,3 +1316,40 @@ assert "noteServerGrid(json);" in d120 and "fboxNameWorks();   // 322.3.120" in 
 assert "final boolean fboxPage = isFboxPageRequest(r.getUrl());" in d120
 assert "code == 521 || code == 522 || code == 523" in d120 and "code == 403" not in d120
 print('322.3.120 fbox next-name checks OK')
+
+# 322.3.121: the fbox flow from scratch — the chosen name (✓) is the one that opens;
+# choosing counts at once; the owner adding a server gets exactly that name (a named
+# message when it does not open — he changes it himself); search through the 🔍 at
+# the top of their page; a saved page of another film is shown, can be cleared, and
+# is replaced by the page saved from last.
+al121 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+m121 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+d121 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+for gone in ('function probeHost(', 'async function pickFboxHost(', 'async function fboxLive(', 'fboxPicked'):
+    assert gone not in al121, gone                                      # no probing, no remembered pick
+assert "function fboxChosen()" in al121 and "function onFboxName(raw, host)" in al121
+o121 = al121[al121.index('async function openSession('):al121.index('async function savePending(')]
+assert "if (!auto) {\n          const name = fboxChosen();" in o121           # owner: exactly the chosen name
+assert "startPage = 'https://' + name + '/';" in o121 and "searchText = String(selected.title || '').trim().slice(0, 80);" in o121
+assert "const order = fboxOrder();" in o121 and "fboxHosts = order.slice(1, 12);" in o121   # viewers: chosen first + next names
+s121 = al121[al121.index('async function saveFboxNames('):al121.index('async function addName(')]
+assert s121.index('fboxDomainList = arr;') < s121.index('await checkOwnerAccess()') < s121.index('.set({ fboxDomains: arr }')
+assert "fboxDomainList = before;" in s121                               # goes back when saving fails
+assert "if (namesBusy) return fboxDomainList;" in al121                 # a reload never undoes a change being saved
+assert "fboxMark(h, false);   // 322.3.121" in al121                    # choosing forgets an old failure of that name
+assert "const fboxFits = !!fbox && samePageFilm(fbox, filmTitle());" in al121
+assert "'⚠️ صفحة فيلم آخر'" in al121 and "async function clearFilmPage(ctx)" in al121
+assert "set({ fboxUrl: '' }, { merge: true })" in al121
+assert "Object.prototype.hasOwnProperty.call(d, 'fboxUrl') && !String(d.fboxUrl || '').trim()" in al121
+assert "if (!d || String(d.fboxUrl || '') !== stored) {" in al121       # the film's page = the page saved from last
+assert "const otherId = !!known && samePageFilm(known, title) && fboxIdOf(known) !== fboxIdOf(p.pageUrl);" in al121
+assert "if (!confirm(msg)) return { ok: false, text: 'ما انحفظ — صفحة فيلم آخر' };" in al121   # option ب: still asks
+assert "public void setFboxOwnerName(String host)" in d121 and "private void fboxOwnerProblem(WebView v, String text)" in d121
+assert "محجوب عندك (451) — اختر اسماً آخر من «✏️ الأسماء»." in d121
+assert "@Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon)" in d121
+assert "if(!clicked&&!onSearchPage){var o=opener();" in d121           # the 🔍 at the top first
+assert "d.set.call(i,'');d.set.call(i,q);" in d121                      # old text in the box is replaced
+assert "status.setMinHeight(dp(48));" in d121 and "slp.height = ViewGroup.LayoutParams.WRAP_CONTENT;" in d121
+assert "sp = new FrameLayout.LayoutParams(-1, dp(48), Gravity.TOP);" in d121   # Moviesmod pages unchanged
+assert "if (!fboxNameValue.isEmpty()) directStreamPlayer.setFboxOwnerName(fboxNameValue);" in m121
+print('322.3.121 fbox chosen-name flow checks OK')

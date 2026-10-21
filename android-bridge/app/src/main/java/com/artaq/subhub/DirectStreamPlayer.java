@@ -236,6 +236,13 @@ public final class DirectStreamPlayer {
     private String searchText = "";
     private String searchedUrl = "";
     private int searchRuns = 0;
+    // 322.3.121: the owner adds a server from fbox on the name he chose — shown on
+    // the page, and named in a message that stays when its page does not open
+    // (blocked / not found / the site's server down / no answer). He changes the
+    // name himself in «✏️ الأسماء»; nothing moves to another name here.
+    private String fboxOwnerName = "";
+    private TextView fboxNameTag;
+    private String fboxPageProblem = "";
     private boolean decisionShown = false;
     private boolean reopening = false;
     private LinearLayout decisionBar;
@@ -2476,24 +2483,99 @@ public final class DirectStreamPlayer {
         searchText = t.length() > 80 ? t.substring(0, 80) : t;
     }
 
-    // Opens the page's search (an element named «search») and types the title into
-    // the first visible search box, so their live results show. Nothing else is
-    // pressed: the owner picks the right film himself.
+    // 322.3.121: the fbox name the owner chose (this page is opened on it).
+    public void setFboxOwnerName(String host) {
+        if (closed || !interactiveSource || host == null) return;
+        String h = host.trim().toLowerCase(Locale.ROOT);
+        if (h.startsWith("www.")) h = h.substring(4);
+        if (h.length() > 80 || !h.matches("([a-z0-9-]+\\.)+[a-z]{2,12}")) return;
+        fboxOwnerName = h;
+        // The whole hint and message show here (a fixed height cut them after two lines).
+        ViewGroup.LayoutParams slp = status.getLayoutParams();
+        if (slp != null) {
+            slp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            status.setLayoutParams(slp);
+        }
+        status.setMinHeight(dp(48));
+        status.setPadding(dp(16), dp(6), dp(16), dp(6));
+        if (fboxNameTag == null) {
+            fboxNameTag = new TextView(activity);
+            fboxNameTag.setTextColor(Color.WHITE);
+            fboxNameTag.setTextSize(12);
+            fboxNameTag.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            fboxNameTag.setTextDirection(View.TEXT_DIRECTION_LTR);
+            fboxNameTag.setPadding(dp(10), dp(4), dp(10), dp(4));
+            fboxNameTag.setBackground(round(0xd90b1725, 0xccF7BC3D, 1, 12));
+            fboxNameTag.setElevation(dp(27));
+            // Only a label: touches go on to the page under it.
+            fboxNameTag.setClickable(false);
+            fboxNameTag.setFocusable(false);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.LEFT);
+            lp.leftMargin = dp(8);
+            lp.bottomMargin = dp(8);
+            root.addView(fboxNameTag, lp);
+        }
+        fboxNameTag.setText("📦 " + h);
+        fboxNameTag.setVisibility(View.VISIBLE);
+        fboxNameTag.bringToFront();
+    }
+
+    private boolean isFboxOwnerPage(Uri u) {
+        if (!interactiveSource || fboxOwnerName.isEmpty() || u == null || u.getHost() == null) return false;
+        String h = u.getHost().toLowerCase(Locale.ROOT);
+        return h.equals(fboxOwnerName) || h.endsWith("." + fboxOwnerName);
+    }
+
+    // The chosen name's page did not open: the reason stays on screen (the hint
+    // that hides itself is not shown over it).
+    private void fboxOwnerProblem(WebView v, String text) {
+        if (closed || v != probe || !interactiveSource) return;
+        fboxPageProblem = text;
+        verifyStageGeneration++;
+        showStage(text);
+    }
+
+    // 322.3.121: on fbox sites the search that WORKS is the 🔍 at the top of the
+    // page (it opens a «Search» window whose box shows the films as you type); the
+    // big box in the page does not. So the 🔍 is pressed and the title typed in the
+    // box that appears; only without that 🔍 the box in the page is used. Old text
+    // in the box is always replaced by this film's title. Nothing else is pressed:
+    // the owner picks the right film himself.
     private String searchFillScript() {
         String q = JSONObject.quote(searchText);
-        return "(function(){try{var q=" + q + ",n=0;"
-                + "function vis(e){try{var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>30&&r.height>12&&s.display!=='none'&&s.visibility!=='hidden';}catch(_){return false;}}"
-                + "function cls(e){var c=e.className;return (c&&c.baseVal!==undefined)?c.baseVal:String(c||'');}"
-                + "function box(){return [].slice.call(document.querySelectorAll('input')).filter(function(e){var t=(e.type||'text').toLowerCase();if(t!=='text'&&t!=='search')return false;"
-                + "return vis(e)&&/search|keyword|title|imdb|بحث/i.test((e.placeholder||'')+' '+(e.name||'')+' '+(e.id||'')+' '+cls(e));})[0]||null;}"
-                + "function opener(){return [].slice.call(document.querySelectorAll('button,a,[role=button]')).find(function(e){"
-                + "var s=((e.getAttribute('aria-label')||'')+' '+cls(e)+' '+(e.id||'')+' '+(e.title||'')+' '+(e.getAttribute('href')||'')).toLowerCase();"
-                + "return /search/.test(s)&&!/submit/.test(s)&&vis(e);})||null;}"
-                + "function fill(i){try{var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');d.set.call(i,q);}catch(_){i.value=q;}"
-                + "['input','change','keyup'].forEach(function(k){try{i.dispatchEvent(k==='keyup'?new KeyboardEvent(k,{bubbles:true,key:'e'}):new Event(k,{bubbles:true}));}catch(_){}});try{i.focus();}catch(_){}}"
-                + "(function t(){n++;var i=box();if(i){if(!i.value)fill(i);return;}"
-                + "if(n===2||n===7||n===14){var o=opener();if(o){try{o.click();}catch(_){}}}"
-                + "if(n<36)setTimeout(t,400);})();"
+        return "(function(){try{var q=" + q + ",n=0,clicked=false,before=[];"
+                + "function vis(e){try{var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>6&&r.height>6&&r.bottom>0&&r.right>0"
+                + "&&r.top<(innerHeight||9999)&&s.display!=='none'&&s.visibility!=='hidden';}catch(_){return false;}}"
+                + "function attrs(e){var s='';try{for(var i=0;i<e.attributes.length;i++)s+=' '+e.attributes[i].name+'='+e.attributes[i].value;}catch(_){}return s.toLowerCase();}"
+                + "function boxes(){return [].slice.call(document.querySelectorAll('input')).filter(function(e){var t=(e.type||'text').toLowerCase();"
+                + "return (t==='text'||t==='search')&&!e.disabled&&!e.readOnly&&vis(e);});}"
+                + "function searchy(e){return /search|keyword|query|title|imdb|بحث/.test(attrs(e));}"
+                // the 🔍 in their header: small, near the top, «search» in itself or in its icon
+                + "function opener(){var best=null,bt=1e9,br=-1,lim=Math.min(170,(innerHeight||800)*0.3);"
+                + "[].slice.call(document.querySelectorAll('button,a,[role=button],[onclick],label,span,i,svg,div')).forEach(function(e){"
+                + "if(!vis(e)||(e.querySelector&&e.querySelector('input')))return;var r=e.getBoundingClientRect();"
+                + "if(r.top<0||r.top>lim||r.width>90||r.height>90)return;"
+                + "var s=attrs(e);try{[].slice.call(e.querySelectorAll('*')).slice(0,12).forEach(function(c){s+=attrs(c);});}catch(_){}"
+                + "if(!/search|magnif|loupe/.test(s)||/submit|type=search/.test(s))return;"
+                + "if(r.top<bt-2||(Math.abs(r.top-bt)<=2&&r.right>br)){bt=r.top;br=r.right;best=e;}});"
+                + "if(!best)return null;return best.closest('button,a,[role=button],[onclick]')||best;}"
+                + "function press(e){['mousedown','mouseup','click'].forEach(function(k){try{e.dispatchEvent(new MouseEvent(k,{bubbles:true,cancelable:true,view:window}));}catch(_){}});}"
+                + "function fill(i){try{i.focus();}catch(_){}try{var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');d.set.call(i,'');d.set.call(i,q);}catch(_){i.value=q;}"
+                + "try{i.dispatchEvent(new InputEvent('input',{bubbles:true,data:q,inputType:'insertText'}));}catch(_){try{i.dispatchEvent(new Event('input',{bubbles:true}));}catch(__){}}"
+                + "try{i.dispatchEvent(new Event('change',{bubbles:true}));}catch(_){}"
+                + "['keydown','keyup'].forEach(function(k){try{i.dispatchEvent(new KeyboardEvent(k,{bubbles:true,key:'e',code:'KeyE'}));}catch(_){}});}"
+                + "var onSearchPage=/search/i.test(location.pathname||'');"
+                + "(function t(){n++;"
+                + "if(!clicked&&!onSearchPage){var o=opener();if(o){clicked=true;before=boxes();press(o);setTimeout(t,350);return;}}"
+                + "if(clicked){var now=boxes(),a=document.activeElement,pick=null;"
+                + "if(a&&a.tagName==='INPUT'&&now.indexOf(a)>=0&&before.indexOf(a)<0)pick=a;"
+                + "if(!pick)pick=now.filter(function(e){return before.indexOf(e)<0;})[0]||null;"
+                + "if(pick){fill(pick);return;}"
+                + "if(n<16){setTimeout(t,300);return;}}"
+                // no 🔍 (or no box came up after it): the search box in the page
+                + "var b=boxes().filter(searchy)[0]||null;if(b){fill(b);return;}"
+                + "if(n<40)setTimeout(t,400);"
+                + "})();"
                 + "}catch(_){}})();";
     }
 
@@ -2751,7 +2833,13 @@ public final class DirectStreamPlayer {
                     }
                 } else {
                     if (interactiveSource && verifyFirst) {
-                        if (verifyLabel.isEmpty()) showVerifyStage("اضغط أي سيرفر في الصفحة — يشتغل هنا في مشغّل الموقع. إن اشتغل الفيلم فعلاً اضغط «💾 حفظ هذا السيرفر».");
+                        // 322.3.121: the chosen fbox name's page did not open — its reason stays.
+                        if (!fboxPageProblem.isEmpty()) {
+                            verifyStageGeneration++;
+                            showStage(fboxPageProblem);
+                        } else if (verifyLabel.isEmpty()) {
+                            showVerifyStage("اضغط أي سيرفر في الصفحة — يشتغل هنا في مشغّل الموقع. إن اشتغل الفيلم فعلاً اضغط «💾 حفظ هذا السيرفر».");
+                        }
                         // 322.3.106: the page cannot pull the view back to its player.
                         try { v.evaluateJavascript(scrollGuardScript(), null); } catch (Exception ignored) {}
                     } else if (interactiveSource) {
@@ -2765,10 +2853,13 @@ public final class DirectStreamPlayer {
                     // 322.3.118: fbox search for this film's title (owner, no saved page yet).
                     // Only on their front page (also again after their «Continue» check), never on a
                     // results or film page, so what the owner types himself is left alone.
-                    if (interactiveSource && !searchText.isEmpty() && url != null && searchRuns < 3) {
+                    // 322.3.121: also on their search page (when the 🔍 is a link), never on an
+                    // error page of the chosen name.
+                    if (interactiveSource && !searchText.isEmpty() && url != null && searchRuns < 3 && fboxPageProblem.isEmpty()) {
                         String path = "";
                         try { path = Uri.parse(url).getPath(); } catch (Exception ignored) {}
-                        if (path == null || path.isEmpty() || "/".equals(path) || "/home".equals(path)) {
+                        if (path == null || path.isEmpty() || "/".equals(path) || "/home".equals(path)
+                                || path.toLowerCase(Locale.ROOT).startsWith("/search")) {
                             searchRuns++;
                             searchedUrl = url;
                             showVerifyStage("ابحث عن «" + searchText + "» واختر الفيلم نفسه، ثم اضغط السيرفر — احفظ من صفحة هذا الفيلم فقط.");
@@ -2806,6 +2897,12 @@ public final class DirectStreamPlayer {
                 try { if (e != null && e.getDescription() != null) why += " (" + e.getDescription() + ")"; }
                 catch (Exception ignored) {}
                 final String reason = why;
+                // 322.3.121: the owner's chosen fbox name does not answer — he is told by name.
+                if (isFboxOwnerPage(r.getUrl())) {
+                    final String text = "⚠️ «" + fboxOwnerName + "» لا يردّ — اختر اسماً آخر من «✏️ الأسماء».";
+                    handler.post(() -> fboxOwnerProblem(v, text));
+                    return;
+                }
                 // 322.3.120: the fbox page itself (not a server opened from it) → the next name at once.
                 final boolean fboxPage = isFboxPageRequest(r.getUrl());
                 handler.post(() -> {
@@ -2814,10 +2911,27 @@ public final class DirectStreamPlayer {
                 });
             }
 
+            // 322.3.121: a new page — any reason shown for the one before is gone.
+            @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon) {
+                if (v == probe) fboxPageProblem = "";
+            }
+
             @Override public void onReceivedHttpError(WebView v, WebResourceRequest r,
                                                       WebResourceResponse resp) {
                 if (closed || v != probe || r == null || resp == null || !r.isForMainFrame()) return;
                 int code = resp.getStatusCode();
+                // 322.3.121: the owner's chosen fbox name is blocked (451), «not found» or
+                // the site's server is down — he is told by name, and changes it himself.
+                if (isFboxOwnerPage(r.getUrl()) && (code == 404 || code == 410 || code == 451
+                        || code == 521 || code == 522 || code == 523 || code == 525 || code == 526 || code == 530)) {
+                    final String text = code == 451
+                            ? "⚠️ «" + fboxOwnerName + "» محجوب عندك (451) — اختر اسماً آخر من «✏️ الأسماء»."
+                            : code >= 500
+                            ? "⚠️ خادم «" + fboxOwnerName + "» متوقف (" + code + ") — اختر اسماً آخر من «✏️ الأسماء»."
+                            : "⚠️ الصفحة غير موجودة على «" + fboxOwnerName + "» (" + code + ") — جرّب اسماً آخر من «✏️ الأسماء».";
+                    handler.post(() -> fboxOwnerProblem(v, text));
+                    return;
+                }
                 // 322.3.120: an fbox name that answers «not found / gone», «blocked» (451)
                 // or Cloudflare's «the site's server is down» (521–523, 525, 526, 530) →
                 // the next name at once. Never 403/503: check pages answer like that.

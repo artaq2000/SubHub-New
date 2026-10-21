@@ -87,10 +87,12 @@
   let fboxDomainList = FBOX_DEFAULT_DOMAINS.slice();
   let fboxDomainsLoaded = false;
   let fboxDomainsTried = false;
-  let fboxPicked = { host: '', at: 0 };
-  // 322.3.120: a name whose page did not open in the player (or that did not answer
-  // here) is tried last for 10 minutes on this device. The player itself moves to
-  // the next name, so the viewer never has to change anything.
+  // 322.3.121: ONE rule — the chosen name (✓, first in the list) is the one that
+  // opens. The owner adding or changing a server gets exactly that name (if it is
+  // blocked he is told, and changes it himself). A viewer's player starts on it
+  // and moves to the next names by itself when the page does not open; a name
+  // whose page did not open in the player on this device is tried last for 10
+  // minutes. No probing from here: a blocked page «answers» like a working one.
   const FBOX_BAD_KEY = 'subhub_fbox_bad_v3120';
   const FBOX_BAD_MS = 600000;
   let fboxBadMem = null;
@@ -163,6 +165,7 @@
   }
   async function loadFboxDomains(force) {
     if (fboxDomainsLoaded && !force) return fboxDomainList;
+    if (namesBusy) return fboxDomainList;   // 322.3.121: a change being saved is already in place
     try {
       const d = await db.collection('subtitles').doc('_appSettings').get();
       const arr = d.exists && Array.isArray(d.data().fboxDomains) ? d.data().fboxDomains.map(cleanHost).filter(Boolean) : [];
@@ -171,40 +174,28 @@
     } catch (_) {}
     return fboxDomainList;
   }
-  function probeHost(h) {
-    return new Promise(function (resolve) {
-      let done = false;
-      const t = setTimeout(function () { if (!done) { done = true; resolve(false); } }, 3500);
-      try {
-        fetch('https://' + h + '/', { mode: 'no-cors', cache: 'no-store', credentials: 'omit' })
-          .then(function () { if (!done) { done = true; clearTimeout(t); resolve(true); } })
-          .catch(function () { if (!done) { done = true; clearTimeout(t); resolve(false); } });
-      } catch (_) { clearTimeout(t); resolve(false); }
-    });
+  function fboxChosen() {
+    return fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0];
   }
-  // The first name (in the owner's order) that answers; remembered 10 minutes.
-  // 322.3.120: names that failed in the last 10 minutes come last.
-  async function pickFboxHost() {
-    await loadFboxDomains(false);
-    if (fboxPicked.host && Date.now() - fboxPicked.at < 600000 && fboxDomainList.indexOf(fboxPicked.host) >= 0
-        && !fboxBadMap()[fboxPicked.host]) return fboxPicked.host;
-    const order = fboxOrder();
-    for (let i = 0; i < order.length; i++) {
-      if (await probeHost(order[i])) { fboxPicked = { host: order[i], at: Date.now() }; return order[i]; }
-      fboxMark(order[i], true);
-    }
-    return order[0] || FBOX_DEFAULT_DOMAINS[0];
+  // The same page path on another name (the saved copy keeps fbox.gd).
+  function onFboxName(raw, host) {
+    try { const u = new URL(String(raw || '')); u.hostname = host; u.hash = ''; return u.href; }
+    catch (_) { return String(raw || ''); }
   }
-  async function fboxLive(raw) {
-    const host = await pickFboxHost();
-    try { const u = new URL(String(raw || '')); u.hostname = host; return u.href; } catch (_) { return String(raw || ''); }
-  }
+  // This film's page on fbox (path only matters). 322.3.121: an fbox page the owner
+  // removed («🗑️ مسح») is kept as an empty value, so an old server's page is not
+  // taken in its place.
   function filmFboxUrl() {
     const d = movieDoc();
+    if (d && Object.prototype.hasOwnProperty.call(d, 'fboxUrl') && !String(d.fboxUrl || '').trim()) return '';
     const v = String((d && d.fboxUrl) || '').trim();
     if (isFboxPage(v)) return v;
     const it = (film.items || []).find(function (x) { return isFboxPage(x.pageUrl); });
     return it ? it.pageUrl : '';
+  }
+  function filmTitle() {
+    const sel = current();
+    return sel ? String(sel.title || '').trim() : '';
   }
   // Does the fbox page look like this film? Compares the slug words with the title.
   function slugWords(raw) {
@@ -496,22 +487,29 @@
       const manualPage = normalizePageUrl(overridePageUrl || '') || (item ? item.pageUrl : '')
         || (ctx.kind === 'tv' ? H().episodePageUrl(tmdbId, ctx.season, ctx.episode) : '');
       let startPage = auto ? item.pageUrl : manualPage;
-      // 322.3.118: an fbox page opens on the first fbox name that answers; with no
-      // page for this film yet, the owner starts from fbox search (the title typed in).
+      // 322.3.121: fbox — the chosen name (✓) opens.
+      //   owner adding / changing a server: exactly the chosen name. A film page
+      //   opens as it is; any other fbox page (their home) starts the search for
+      //   this film's title there.
+      //   playing a saved server: the chosen name first; the player moves to the
+      //   next names by itself (names that failed lately on this device last).
       let searchText = '', fboxHosts = [];
       if (isFboxAny(startPage) || isFboxPage(startPage)) {
-        startPage = await fboxLive(startPage);
-        if (!isFboxPage(startPage) && owner && !auto) {
-          searchText = String(selected.title || '').trim().slice(0, 80);
-        }
-        // 322.3.120: if the page does not open on this name, the player tries these, in order.
-        if (auto && isFboxPage(startPage)) {
-          try {
-            const h0 = new URL(startPage).hostname;
-            fboxHosts = fboxOrder().filter(function (h) { return h !== h0; }).slice(0, 11);
-          } catch (_) {}
-        }
+        await loadFboxDomains(false);
         if (current() !== selected) return;
+        if (!auto) {
+          const name = fboxChosen();
+          if (isFboxPage(startPage)) {
+            startPage = onFboxName(startPage, name);
+          } else {
+            startPage = 'https://' + name + '/';
+            searchText = String(selected.title || '').trim().slice(0, 80);
+          }
+        } else {
+          const order = fboxOrder();
+          startPage = onFboxName(startPage, order[0] || fboxChosen());
+          fboxHosts = order.slice(1, 12);
+        }
       }
       const base = String(selected.id || ('tmdb_' + kind + '_' + tmdbId)).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60);
       const stableKey = (base + (ctx.kind === 'tv' ? '_' + ekOf(ctx) : '') + '_' + (item ? item.id : 'new')).slice(0, 100);
@@ -585,8 +583,11 @@
         if (!isFboxPage(p.pageUrl)) return { ok: false, text: 'ادخل صفحة الفيلم في fbox أولاً، ثم اضغط السيرفر' };
         const sel = current();
         const title = sel ? String(sel.title || '') : '';
+        // 322.3.121: a saved page of ANOTHER film is simply replaced by this one; the
+        // owner is asked only when this page is not the film's, or when the film
+        // already has a different page that also looks like it (same title).
         const known = filmFboxUrl();
-        const otherId = known && fboxIdOf(known) && fboxIdOf(known) !== fboxIdOf(p.pageUrl);
+        const otherId = !!known && samePageFilm(known, title) && fboxIdOf(known) !== fboxIdOf(p.pageUrl);
         if (!samePageFilm(p.pageUrl, title) || otherId) {
           const msg = '⚠️ هذي صفحة «' + prettySlug(p.pageUrl) + '» في fbox — وفيلمك «' + title + '».'
             + (otherId ? '\nوهذا الفيلم محفوظ له صفحة ثانية: ' + fboxIdOf(known) : '')
@@ -621,12 +622,14 @@
       }
       await writeItems(ctx, items);
       st.slotId = id;
-      // 322.3.118: the first fbox server of a film also records the film's fbox page.
+      // 322.3.118: an fbox server also records the film's fbox page.
+      // 322.3.121: every time — the page saved from last is the film's page, so a
+      // wrong page saved earlier is replaced by the right one.
       if (ctx.kind !== 'tv' && isFboxPage(p.pageUrl)) {
         try {
-          const d = movieDoc();
-          if (!(d && isFboxPage(String(d.fboxUrl || '')))) {
-            const stored = fboxStoreUrl(p.pageUrl);
+          const stored = fboxStoreUrl(p.pageUrl);
+          const d = currentId() === String(ctx.movieId) ? movieDoc() : ownMovieDoc(ctx.movieId);
+          if (!d || String(d.fboxUrl || '') !== stored) {
             await db.collection('subtitles').doc(String(ctx.movieId)).set({ fboxUrl: stored }, { merge: true });
             syncDoc(ctx.movieId, function (x) { x.fboxUrl = stored; });
           }
@@ -667,6 +670,22 @@
     } catch (_) {
       notify('تعذّر حذف السيرفر.');
     }
+  }
+
+  // 322.3.121: «🗑️ مسح» — this film has no fbox page any more; the next
+  // «📦 إضافة» starts from the search. Saved servers keep their own page.
+  async function clearFilmPage(ctx) {
+    if (!isOwner()) return;
+    if (!confirm('مسح صفحة fbox المحفوظة لهذا الفيلم؟\nالإضافة القادمة تبدأ من البحث، والسيرفرات المحفوظة لا تتأثر.')) return;
+    try {
+      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
+      await db.collection('subtitles').doc(String(ctx.movieId)).set({ fboxUrl: '' }, { merge: true });
+      syncDoc(ctx.movieId, function (x) { x.fboxUrl = ''; });
+      notify('مُسحت صفحة fbox لهذا الفيلم ✓', 'success');
+    } catch (_) {
+      notify('تعذّر المسح.');
+    }
+    render(true);
   }
 
   async function moveItem(ctx, id, dir) {
@@ -773,17 +792,10 @@
   };
 
   // 322.3.120: the player reports an fbox name — its page did not open (tried last
-  // for 10 minutes), or it opened after another name failed (used first from now on).
+  // for 10 minutes on this device), or it opened (an old failure of it is forgotten).
   window.__subhubFboxHostV3120 = function (rawHost, ok) {
     const h = cleanHost(rawHost);
-    if (!h) return;
-    if (ok) {
-      fboxMark(h, false);
-      if (fboxDomainList.indexOf(h) >= 0) fboxPicked = { host: h, at: Date.now() };
-    } else {
-      fboxMark(h, true);
-      if (fboxPicked.host === h) fboxPicked = { host: '', at: 0 };
-    }
+    if (h) fboxMark(h, !ok);
   };
 
   // Native player closed itself after «سيرفر آخر»: choose again for the same slot.
@@ -1022,25 +1034,31 @@
     if (at >= 0 && at !== skipIndex) return '«' + h + '» موجود في القائمة';
     return '';
   }
+  // 322.3.121: a change counts AT ONCE on this device (the chosen name is the one
+  // that opens from this moment); the site copy follows, and on failure the list
+  // goes back to what it was.
   async function saveFboxNames(next, okText) {
-    if (namesBusy) return false;
-    if (!isOwner() || typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return false;
+    if (namesBusy || !isOwner()) return false;
     const arr = next.map(cleanHost).filter(Boolean).filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
     if (!arr.length) { notify('خلّ اسماً واحداً على الأقل في القائمة.'); return false; }
+    const before = fboxDomainList.slice();
+    fboxDomainList = arr; fboxDomainsLoaded = true;
     namesBusy = true;
     render(true);
+    let ok = false;
     try {
+      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) throw new Error('owner');
       await db.collection('subtitles').doc('_appSettings').set({ fboxDomains: arr }, { merge: true });
-      fboxDomainList = arr; fboxDomainsLoaded = true; fboxPicked = { host: '', at: 0 };
+      ok = true;
       if (okText) notify(okText, 'success');
-      return true;
     } catch (_) {
-      notify('تعذّر حفظ الأسماء.');
-      return false;
+      fboxDomainList = before;
+      notify('تعذّر حفظ الأسماء — رجعت القائمة كما كانت.');
     } finally {
       namesBusy = false;
       render(true);
     }
+    return ok;
   }
   async function addName() {
     const h = cleanHost(namesDraft);
@@ -1061,6 +1079,7 @@
     const next = fboxDomainList.slice();
     const h = next.splice(i, 1)[0];
     next.unshift(h);
+    fboxMark(h, false);   // 322.3.121: the owner says it works — no old failure kept for it
     saveFboxNames(next, 'صار «' + h + '» هو المختار ✓');
   }
   function moveName(i, dir) {
@@ -1089,7 +1108,7 @@
     head.textContent = '📦 أسماء fbox';
     const note = document.createElement('div');
     note.style.cssText = 'color:#a9b7cb;font-size:.64rem;line-height:1.7';
-    note.textContent = 'التطبيق يفتح الاسم المختار ✓، وإذا ما ردّ ينتقل للي بعده بالترتيب. السيرفرات المحفوظة تشتغل على كل الأسماء.';
+    note.textContent = 'الاسم المختار ✓ هو الذي يُفتح دائماً. وعند المشترك: إن لم تعمل صفحته ينتقل التطبيق إلى الاسم التالي بالترتيب. السيرفرات المحفوظة تعمل على كل الأسماء.';
     box.appendChild(head);
     box.appendChild(note);
     const list = fboxDomainList.slice();
@@ -1226,17 +1245,22 @@
     });
     // 322.3.117: servers can be added from fbox too.
     // 322.3.118: always — without a saved page it starts from fbox search.
+    // 322.3.121: on the chosen name only. The film's saved page opens when it is
+    // this film's page; a page of another film is not used (the search opens), and
+    // the line below says so with «🗑️ مسح».
     const fbox = filmFboxUrl();
+    const fboxFits = !!fbox && samePageFilm(fbox, filmTitle());
     add.textContent = full ? add.textContent : '➕ إضافة سيرفر من Moviesmod';
     const addF = document.createElement('button');
     addF.type = 'button';
-    addF.textContent = full ? 'وصلت للحد الأقصى (١٠ سيرفرات)' : (fbox ? '📦 إضافة سيرفر من fbox' : '📦 إضافة من fbox (بحث)');
-    addF.disabled = full || !film.loaded;
+    addF.textContent = full ? 'وصلت للحد الأقصى (١٠ سيرفرات)' : (fboxFits ? '📦 إضافة سيرفر من fbox' : '📦 إضافة من fbox (بحث)');
+    addF.disabled = full || !film.loaded || namesBusy;
     addF.style.cssText = add.style.cssText.replace(ACCENT, '#f6b93b');
+    addF.style.opacity = addF.disabled ? '.45' : '1';
     addF.addEventListener('click', function (ev) {
       ev.preventDefault();
-      if (addF.disabled) return;
-      openSession(ctx, null, true, fbox || ('https://' + (fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0]) + '/'));
+      if (addF.disabled || namesBusy) return;
+      openSession(ctx, null, true, fboxFits ? fbox : 'https://' + fboxChosen() + '/');
     });
     const pair = document.createElement('div');
     pair.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:6px';
@@ -1254,9 +1278,24 @@
     if (fboxDomainList.length > 1) domLine.appendChild(document.createTextNode(' · ' + arNum(fboxDomainList.length - 1) + ' احتياط'));
     domTx.appendChild(domLine);
     if (fbox) {
-      const pageId = ltrText(fboxIdOf(fbox), '');   // this film's page on fbox
-      pageId.style.cssText = 'display:block;direction:ltr;text-align:right;overflow-wrap:anywhere;opacity:.8';
-      domTx.appendChild(pageId);
+      // this film's page on fbox — 322.3.121: «⚠️ صفحة فيلم آخر» when it is not this
+      // film's page, and «🗑️ مسح» so the next «📦 إضافة» starts from the search.
+      const pageRow = document.createElement('div');
+      pageRow.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+      const pageId = ltrText(fboxIdOf(fbox), '');
+      pageId.style.cssText = 'direction:ltr;overflow-wrap:anywhere;opacity:.8';
+      pageRow.appendChild(pageId);
+      if (!fboxFits) {
+        const warn = document.createElement('span');
+        warn.style.cssText = 'color:#fbbf24;font-weight:900';
+        warn.textContent = '⚠️ صفحة فيلم آخر';
+        pageRow.appendChild(warn);
+      }
+      const clr = smallBtn('🗑️ مسح', 'danger', namesBusy, function () { clearFilmPage(ctx); });
+      clr.style.flex = 'none';
+      clr.style.padding = '2px 10px';
+      pageRow.appendChild(clr);
+      domTx.appendChild(pageRow);
     }
     const domBtn = smallBtn(namesOpen ? '✕ إغلاق' : '✏️ الأسماء', 'edit', false, async function () {
       if (namesOpen) { namesOpen = false; namesEditing = -1; render(true); return; }
