@@ -95,6 +95,9 @@ public final class DirectStreamPlayer {
         void nextEpisode();
         // 322.3.114: an episode picked in «حلقات» (menu ⋮).
         void episodeChosen(int season, int episode);
+        // 322.3.120: fbox under several names — the page did not open on this name
+        // (ok=false), or it opened on this name after another one failed (ok=true).
+        default void fboxHost(String host, boolean ok) {}
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -119,8 +122,10 @@ public final class DirectStreamPlayer {
     private final LinearLayout panelBody;
     private final TextView panelTitle;
     private final JSONArray catalog;
-    private final String source;
-    private final String allowedHost;
+    // 322.3.120: not final — an fbox page that does not open on its name moves to
+    // the next name (the same page path on another name of the same site).
+    private String source;
+    private String allowedHost;
     private final String resumeKey;
     private final String preferredServerKey;
     private final String preferredServerLabel;
@@ -329,6 +334,19 @@ public final class DirectStreamPlayer {
     private String subscriberStageBase = "";
     private int subscriberStageDots = 0;
     private int subscriberStageAnimationGeneration = 0;
+    // 322.3.120: fbox under several names (fbox.gd, vumoo.gd…, the owner's order).
+    // When the page does not open on this name — no answer, «not found», the site's
+    // server down, or a page without the server grid (blocked / ads) — the same
+    // server opens on the next name. The viewer gets no message until every name
+    // has failed. A page that shows the site's server grid has opened: a server
+    // missing from it is not the name's fault, so no other name is tried then.
+    private final ArrayList<String> fboxNextHosts = new ArrayList<>();
+    private final ArrayList<String> fboxTriedHosts = new ArrayList<>();
+    private boolean fboxSwitched = false;
+    private boolean fboxOkReported = false;
+    private int fboxGridSize = 0;
+    private String fboxReasons = "";
+    private static final int FBOX_GRID_ALIVE = 10;   // fbox lists about 50 servers
     private final String sourceChoiceToken = UUID.randomUUID().toString().replace("-", "");
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
@@ -1314,6 +1332,116 @@ public final class DirectStreamPlayer {
         return autoIndex >= 0 && !interactiveSource;
     }
 
+    // 322.3.120: the other fbox names, in order (the page chose this one first).
+    public void setFboxFallbackHosts(java.util.List<String> hosts) {
+        fboxNextHosts.clear();
+        fboxTriedHosts.clear();
+        if (closed || interactiveSource || hosts == null || allowedHost.isEmpty() || ownKind != OWN_NONE) return;
+        for (String raw : hosts) {
+            String h = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+            if (h.startsWith("www.")) h = h.substring(4);
+            if (h.isEmpty() || h.length() > 80 || h.equals(allowedHost) || fboxNextHosts.contains(h)
+                    || !h.matches("([a-z0-9-]+\\.)+[a-z]{2,12}")) continue;
+            fboxNextHosts.add(h);
+            if (fboxNextHosts.size() >= 11) break;
+        }
+        if (fboxNextHosts.isEmpty()) return;
+        fboxTriedHosts.add(allowedHost);
+        // The owner sees which name is tried from the first step on.
+        if (ownerMode && !subscriberStageBase.isEmpty()) showSubscriberStage(subscriberStageBase);
+    }
+
+    // The fbox page itself is still opening on this name (not a server opened from it).
+    private boolean fboxPageStep() {
+        return !fboxTriedHosts.isEmpty() && !interactiveSource && !closed && !playing && !playbackReady
+                && directEmbedUrl.isEmpty() && !gateShown
+                && subscriberStartupPhase >= 1 && subscriberStartupPhase <= 2;
+    }
+
+    private boolean isFboxPageRequest(Uri u) {
+        if (fboxTriedHosts.isEmpty() || u == null || u.getHost() == null) return false;
+        String h = u.getHost().toLowerCase(Locale.ROOT);
+        return h.equals(allowedHost) || h.endsWith("." + allowedHost);
+    }
+
+    private void fboxNote(String host, String reason) {
+        String r = reason == null || reason.trim().isEmpty() ? "لم تفتح الصفحة" : reason.trim();
+        // Starts with an Arabic word so every line reads right to left.
+        if (fboxReasons.length() < 1500) fboxReasons += (fboxReasons.isEmpty() ? "" : "\n") + "• على " + host + ": " + r;
+    }
+
+    // The same server on the next name. False when there is none (or it is not
+    // the name's fault) — then the usual steps go on.
+    private boolean tryNextFboxHost(String reason) {
+        if (!fboxPageStep() || fboxGridSize >= FBOX_GRID_ALIVE || fboxNextHosts.isEmpty()) return false;
+        final String failed = allowedHost;
+        final String next = fboxNextHosts.get(0);
+        String moved;
+        try {
+            Uri u = Uri.parse(source);
+            if (!"https".equalsIgnoreCase(u.getScheme()) || u.getHost() == null) return false;
+            moved = u.buildUpon().authority(next).build().toString();
+        } catch (Exception e) {
+            return false;
+        }
+        fboxNextHosts.remove(0);
+        fboxNote(failed, reason);
+        source = moved;
+        allowedHost = next;
+        fboxTriedHosts.add(next);
+        fboxSwitched = true;
+        try { listener.fboxHost(failed, false); } catch (Exception ignored) {}
+        subscriberStartupGeneration++;
+        stopSubscriberStageAnimation();
+        cleanupPlayerForRetry();
+        destroyProbe();
+        removeDirectCover();
+        firstFailureReason = "";
+        fboxGridSize = 0;
+        discoveredServerPageUrl = "";
+        showSubscriberStage(ownerMode ? "جارٍ التجربة على اسم آخر" : "جارٍ إعادة المحاولة");
+        handler.postDelayed(() -> {
+            if (closed || interactiveSource || playbackReady) return;
+            beginCapture();
+        }, 300L);
+        return true;
+    }
+
+    // The page did not open at all on this name (no answer, «not found», the site's
+    // server down): the next name at once, without waiting for the time limit.
+    private boolean fboxPageFailed(WebView v, String reason) {
+        if (closed || v != probe || !fboxPageStep() || fboxGridSize >= FBOX_GRID_ALIVE) return false;
+        firstFailureReason = reason == null ? "" : reason;
+        if (tryNextFboxHost(firstFailureReason)) return true;
+        if (!fboxSwitched) return false;
+        retrySubscriberStartup();   // every name was tried: the message
+        return true;
+    }
+
+    // How many servers this name's page lists — the site's own page shows its grid.
+    private void noteServerGrid(String json) {
+        if (fboxTriedHosts.isEmpty() || interactiveSource || closed || probe == null
+                || json == null || json.length() > 30000) return;
+        try {
+            JSONArray arr = new JSONArray(json);
+            java.util.HashSet<String> seen = new java.util.HashSet<>();
+            for (int i = 0; i < arr.length() && i < 300; i++) {
+                String name = normalizeServerLabel(arr.optString(i));
+                if (isProviderServerLabel(name)) seen.add(name.toLowerCase(Locale.ROOT));
+            }
+            if (seen.size() > fboxGridSize) fboxGridSize = seen.size();
+            if (fboxGridSize >= FBOX_GRID_ALIVE) fboxNameWorks();
+        } catch (Exception ignored) {}
+    }
+
+    // This name's page opened: the site uses it first from now on (and forgets a
+    // failure it may remember for it). Once per player.
+    private void fboxNameWorks() {
+        if (fboxTriedHosts.isEmpty() || fboxOkReported || interactiveSource || closed) return;
+        fboxOkReported = true;
+        try { listener.fboxHost(allowedHost, true); } catch (Exception ignored) {}
+    }
+
     private String autoLine(int index) {
         return autoTotal > 1 && index < autoTotal
                 ? "السيرفر " + toArabicDigits(index + 1) + " من " + toArabicDigits(autoTotal) : "";
@@ -1762,6 +1890,13 @@ public final class DirectStreamPlayer {
             int cut = base.indexOf('\n');
             if (cut >= 0) base = base.substring(0, cut);
             if (!line.isEmpty()) base = base + "\n" + line;
+        } else if (ownerMode && fboxTriedHosts.size() + fboxNextHosts.size() > 1) {
+            // 322.3.120: the owner sees which fbox name is tried («📦 الاسم ٢ من ٤: vumoo.gd»).
+            base = base.trim();
+            int cut = base.indexOf('\n');
+            if (cut >= 0) base = base.substring(0, cut);
+            base = base + "\n📦 الاسم " + toArabicDigits(fboxTriedHosts.size()) + " من "
+                    + toArabicDigits(fboxTriedHosts.size() + fboxNextHosts.size()) + ": " + allowedHost;
         }
         if (directCover != null) {
             subscriberStageAnimationGeneration++;
@@ -1895,10 +2030,24 @@ public final class DirectStreamPlayer {
         if (closed || interactiveSource || playbackReady) return;
         subscriberStartupGeneration++;
         stopSubscriberStageAnimation();
+        // 322.3.120: the fbox page did not open on this name → the same server on the next name.
+        if (tryNextFboxHost(firstFailureReason)) return;
         // 322.3.110: in the automatic search each server gets one try.
         if (autoActive() && autoMore && autoFail(firstFailureReason)) return;
         // 322.3.113: the saved player link first, then this server's Moviesmod page.
         if (tryEmbedFallback(firstFailureReason)) return;
+        // 322.3.120: the page opened on no fbox name — the message now (no second round).
+        if (fboxSwitched && fboxPageStep() && fboxGridSize < FBOX_GRID_ALIVE) {
+            final String last = allowedHost;
+            fboxNote(last, firstFailureReason);
+            try { listener.fboxHost(last, false); } catch (Exception ignored) {}
+            cleanupPlayerForRetry();
+            destroyProbe();
+            removeDirectCover();
+            subscriberStartupPhase = 0;
+            showServerFailure("لم تفتح صفحة السيرفرات على أي اسم من أسماء fbox:\n" + fboxReasons);
+            return;
+        }
         if (subscriberStartupAttempt >= 2) {
             cleanupPlayerForRetry();
             destroyProbe();
@@ -1966,6 +2115,7 @@ public final class DirectStreamPlayer {
             showStage("تم اختيار السيرفر " + label + "…");
         } else {
             startSubscriberStartupTimer(3);
+            fboxNameWorks();   // 322.3.120: the server was found on this name's page
         }
     }
 
@@ -2246,7 +2396,10 @@ public final class DirectStreamPlayer {
         @JavascriptInterface
         public void servers(String token, String json) {
             if (!sourceChoiceToken.equals(token)) return;
-            handler.post(() -> showServerChooser(json));
+            handler.post(() -> {
+                noteServerGrid(json);   // 322.3.120: this fbox name's page has opened
+                showServerChooser(json);
+            });
         }
 
         @JavascriptInterface
@@ -2653,13 +2806,32 @@ public final class DirectStreamPlayer {
                 try { if (e != null && e.getDescription() != null) why += " (" + e.getDescription() + ")"; }
                 catch (Exception ignored) {}
                 final String reason = why;
-                handler.post(() -> autoPageFailed(v, reason));
+                // 322.3.120: the fbox page itself (not a server opened from it) → the next name at once.
+                final boolean fboxPage = isFboxPageRequest(r.getUrl());
+                handler.post(() -> {
+                    if (fboxPage && fboxPageFailed(v, reason)) return;
+                    autoPageFailed(v, reason);
+                });
             }
 
             @Override public void onReceivedHttpError(WebView v, WebResourceRequest r,
                                                       WebResourceResponse resp) {
                 if (closed || v != probe || r == null || resp == null || !r.isForMainFrame()) return;
                 int code = resp.getStatusCode();
+                // 322.3.120: an fbox name that answers «not found / gone», «blocked» (451)
+                // or Cloudflare's «the site's server is down» (521–523, 525, 526, 530) →
+                // the next name at once. Never 403/503: check pages answer like that.
+                if (isFboxPageRequest(r.getUrl()) && (code == 404 || code == 410 || code == 451
+                        || code == 521 || code == 522 || code == 523 || code == 525 || code == 526 || code == 530)) {
+                    final String why = code == 451 ? "الصفحة محجوبة (451)"
+                            : code >= 500 ? "خادم الموقع متوقف (" + code + ")"
+                            : "الصفحة غير موجودة (" + code + ")";
+                    handler.post(() -> {
+                        if (fboxPageFailed(v, why)) return;
+                        if (code == 404 || code == 410) autoPageFailed(v, why);
+                    });
+                    return;
+                }
                 if (code != 404 && code != 410) return;
                 handler.post(() -> autoPageFailed(v, "الصفحة غير موجودة (" + code + ")"));
             }

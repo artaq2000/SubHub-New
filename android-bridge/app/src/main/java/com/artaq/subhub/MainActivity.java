@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 128;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 129;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2159,6 +2159,8 @@ public class MainActivity extends Activity {
                             : "list".equals(mode) ? "window.__subhubAppList"
                             : "window.__subhubMoviesmod";
                     String directEmbedUrl = "";
+                    // 322.3.120: the other fbox names (in order) for when this page does not open.
+                    final java.util.ArrayList<String> fboxFallbackHosts = new java.util.ArrayList<>();
                     // 322.3.103: ⏱ timing saved on this device belongs to this film
                     // (or episode) on this card only.
                     String syncScopeValue = "";
@@ -2258,6 +2260,21 @@ public class MainActivity extends Activity {
                         interactiveSource = config.optBoolean("interactiveSource", false);
                         ownerMode = config.optBoolean("ownerMode", interactiveSource);
                         openChooser = config.optBoolean("openChooser", false);
+                        // 322.3.120: fbox under several names — the same page path on the next
+                        // name when this one does not open (blocked, ads, the site closed).
+                        org.json.JSONArray fboxHostList = config.optJSONArray("fboxHosts");
+                        if (!fboxHostValue.isEmpty() && !interactiveSource && fboxHostList != null) {
+                            for (int i = 0; i < fboxHostList.length() && i < 20 && fboxFallbackHosts.size() < 11; i++) {
+                                String fh = fboxHostList.optString(i, "").trim().toLowerCase(Locale.ROOT);
+                                if (fh.startsWith("www.")) fh = fh.substring(4);
+                                if (fh.length() <= 80 && fh.matches("([a-z0-9-]+\\.)+[a-z]{2,12}")
+                                        && !HOME_HOST.equalsIgnoreCase(fh) && !fh.equals(fboxHostValue)
+                                        && !fh.equals("moviesmod.gd") && !fh.endsWith(".moviesmod.gd")
+                                        && !fboxFallbackHosts.contains(fh)) {
+                                    fboxFallbackHosts.add(fh);
+                                }
+                            }
+                        }
                         if (preferredServerKey.length() > 80 || preferredServerLabel.length() > 80) return;
                         String rawEmbed = config.optString("embedUrl", "").trim();
                         // 322.3.113: every saved server (not only the yellow card) opens its
@@ -2453,9 +2470,21 @@ public class MainActivity extends Activity {
                             webView.evaluateJavascript("window.__subhubAutoOkV3110 && window.__subhubAutoOkV3110("
                                     + JSONObject.quote(autoChain) + ")", null);
                         }
+                        // 322.3.120: an fbox name did not open (tried last for 10 minutes on this
+                        // device), or opened after another one failed (used first from now on).
+                        public void fboxHost(String host, boolean ok) {
+                            if (webView == null || host == null || host.length() > 80
+                                    || !host.matches("([a-z0-9-]+\\.)+[a-z]{2,12}")) return;
+                            ui.post(() -> {
+                                if (webView == null || !isTrustedHomePage()) return;
+                                webView.evaluateJavascript("window.__subhubFboxHostV3120 && window.__subhubFboxHostV3120("
+                                        + JSONObject.quote(host) + "," + (ok ? "true" : "false") + ")", null);
+                            });
+                        }
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
+                    if (!fboxFallbackHosts.isEmpty()) directStreamPlayer.setFboxFallbackHosts(fboxFallbackHosts);
                     // 322.3.118: fbox with no page for this film yet — type its title into their search.
                     if ("list".equals(mode) && "fbox".equals(config.optString("site", "")) && interactiveSource) {
                         directStreamPlayer.setSearchText(config.optString("searchText", ""));

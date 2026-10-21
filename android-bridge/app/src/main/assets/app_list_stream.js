@@ -88,6 +88,40 @@
   let fboxDomainsLoaded = false;
   let fboxDomainsTried = false;
   let fboxPicked = { host: '', at: 0 };
+  // 322.3.120: a name whose page did not open in the player (or that did not answer
+  // here) is tried last for 10 minutes on this device. The player itself moves to
+  // the next name, so the viewer never has to change anything.
+  const FBOX_BAD_KEY = 'subhub_fbox_bad_v3120';
+  const FBOX_BAD_MS = 600000;
+  let fboxBadMem = null;
+  function fboxBadMap() {
+    if (!fboxBadMem) {
+      fboxBadMem = {};
+      try {
+        const m = JSON.parse(localStorage.getItem(FBOX_BAD_KEY) || '{}');
+        if (m && typeof m === 'object' && !Array.isArray(m)) fboxBadMem = m;
+      } catch (_) {}
+    }
+    const now = Date.now();
+    Object.keys(fboxBadMem).forEach(function (h) {
+      const t = Number(fboxBadMem[h]);
+      if (!cleanHost(h) || !(t > now - FBOX_BAD_MS && t <= now + 60000)) delete fboxBadMem[h];
+    });
+    return fboxBadMem;
+  }
+  function fboxMark(h, bad) {
+    const v = cleanHost(h);
+    if (!v) return;
+    const m = fboxBadMap();
+    if (bad) m[v] = Date.now(); else delete m[v];
+    try { localStorage.setItem(FBOX_BAD_KEY, JSON.stringify(m)); } catch (_) {}
+  }
+  // The owner's order, with the names that failed lately at the end.
+  function fboxOrder() {
+    const bad = fboxBadMap();
+    const list = fboxDomainList.length ? fboxDomainList.slice() : FBOX_DEFAULT_DOMAINS.slice();
+    return list.filter(function (h) { return !bad[h]; }).concat(list.filter(function (h) { return !!bad[h]; }));
+  }
   function cleanHost(h) {
     const v = String(h || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
     return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(v) && v.length <= 80 ? v : '';
@@ -149,13 +183,17 @@
     });
   }
   // The first name (in the owner's order) that answers; remembered 10 minutes.
+  // 322.3.120: names that failed in the last 10 minutes come last.
   async function pickFboxHost() {
     await loadFboxDomains(false);
-    if (fboxPicked.host && Date.now() - fboxPicked.at < 600000 && fboxDomainList.indexOf(fboxPicked.host) >= 0) return fboxPicked.host;
-    for (let i = 0; i < fboxDomainList.length; i++) {
-      if (await probeHost(fboxDomainList[i])) { fboxPicked = { host: fboxDomainList[i], at: Date.now() }; return fboxDomainList[i]; }
+    if (fboxPicked.host && Date.now() - fboxPicked.at < 600000 && fboxDomainList.indexOf(fboxPicked.host) >= 0
+        && !fboxBadMap()[fboxPicked.host]) return fboxPicked.host;
+    const order = fboxOrder();
+    for (let i = 0; i < order.length; i++) {
+      if (await probeHost(order[i])) { fboxPicked = { host: order[i], at: Date.now() }; return order[i]; }
+      fboxMark(order[i], true);
     }
-    return fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0];
+    return order[0] || FBOX_DEFAULT_DOMAINS[0];
   }
   async function fboxLive(raw) {
     const host = await pickFboxHost();
@@ -460,11 +498,18 @@
       let startPage = auto ? item.pageUrl : manualPage;
       // 322.3.118: an fbox page opens on the first fbox name that answers; with no
       // page for this film yet, the owner starts from fbox search (the title typed in).
-      let searchText = '';
+      let searchText = '', fboxHosts = [];
       if (isFboxAny(startPage) || isFboxPage(startPage)) {
         startPage = await fboxLive(startPage);
         if (!isFboxPage(startPage) && owner && !auto) {
           searchText = String(selected.title || '').trim().slice(0, 80);
+        }
+        // 322.3.120: if the page does not open on this name, the player tries these, in order.
+        if (auto && isFboxPage(startPage)) {
+          try {
+            const h0 = new URL(startPage).hostname;
+            fboxHosts = fboxOrder().filter(function (h) { return h !== h0; }).slice(0, 11);
+          } catch (_) {}
         }
         if (current() !== selected) return;
       }
@@ -490,6 +535,7 @@
         // 322.3.117: which page lists the servers — Moviesmod (by TMDB id) or fbox (saved page).
         site: isFboxAny(startPage) ? 'fbox' : 'moviesmod',
         searchText: searchText,
+        fboxHosts: fboxHosts,
         session: session,
         movieId: stableKey,
         resumeKey: stableKey,
@@ -723,6 +769,20 @@
     } catch (_) {
       syncReport(false, 'تعذّر تثبيت التوقيت');
       return false;
+    }
+  };
+
+  // 322.3.120: the player reports an fbox name — its page did not open (tried last
+  // for 10 minutes), or it opened after another name failed (used first from now on).
+  window.__subhubFboxHostV3120 = function (rawHost, ok) {
+    const h = cleanHost(rawHost);
+    if (!h) return;
+    if (ok) {
+      fboxMark(h, false);
+      if (fboxDomainList.indexOf(h) >= 0) fboxPicked = { host: h, at: Date.now() };
+    } else {
+      fboxMark(h, true);
+      if (fboxPicked.host === h) fboxPicked = { host: '', at: 0 };
     }
   };
 

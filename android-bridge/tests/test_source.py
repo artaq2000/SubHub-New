@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 128" in gradle
-assert "versionName '322.3.119'" in gradle
+assert "versionCode 129" in gradle
+assert "versionName '322.3.120'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 128' in mv107
-assert "versionCode 128" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 129' in mv107
+assert "versionCode 129" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1286,3 +1286,33 @@ assert "if (isFboxAny(startPage) || isFboxPage(startPage)) {" in al119
 assert "function namesBox()" in al119 and "'✓ اختيار'" in al119 and "'➕ إضافة'" in al119
 assert "prompt('أسماء fbox" not in al119                              # no more typing in a prompt
 print('322.3.119 fbox names box checks OK')
+
+# 322.3.120: the fbox page does not open on its name (blocked, ads, the site closed) →
+# the same server on the next name; the message only after every name failed; a failed
+# name is tried last for 10 minutes on this device.
+al120 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+m120 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+d120 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+assert "const FBOX_BAD_KEY = 'subhub_fbox_bad_v3120';" in al120 and "const FBOX_BAD_MS = 600000;" in al120
+assert "function fboxOrder()" in al120 and "fboxMark(order[i], true);" in al120
+assert "fboxHosts = fboxOrder().filter(function (h) { return h !== h0; }).slice(0, 11);" in al120
+assert "fboxHosts: fboxHosts," in al120
+assert "window.__subhubFboxHostV3120 = function (rawHost, ok) {" in al120
+assert 'org.json.JSONArray fboxHostList = config.optJSONArray("fboxHosts");' in m120
+assert "if (!fboxFallbackHosts.isEmpty()) directStreamPlayer.setFboxFallbackHosts(fboxFallbackHosts);" in m120
+assert "public void fboxHost(String host, boolean ok) {" in m120 and "window.__subhubFboxHostV3120(" in m120
+assert "default void fboxHost(String host, boolean ok) {}" in d120
+assert "private String source;" in d120 and "private String allowedHost;" in d120
+assert "public void setFboxFallbackHosts(java.util.List<String> hosts)" in d120
+assert "private boolean tryNextFboxHost(String reason)" in d120
+assert "moved = u.buildUpon().authority(next).build().toString();" in d120
+# the next name comes before the same-name retry, and a page with the site's grid is never left
+r120 = d120[d120.index('private void retrySubscriberStartup()'):]
+r120 = r120[:r120.index('subscriberStartupAttempt++;')]
+assert r120.index('if (tryNextFboxHost(firstFailureReason)) return;') < r120.index('if (subscriberStartupAttempt >= 2) {')
+assert "if (fboxSwitched && fboxPageStep() && fboxGridSize < FBOX_GRID_ALIVE) {" in r120
+assert "if (!fboxPageStep() || fboxGridSize >= FBOX_GRID_ALIVE || fboxNextHosts.isEmpty()) return false;" in d120
+assert "noteServerGrid(json);" in d120 and "fboxNameWorks();   // 322.3.120" in d120
+assert "final boolean fboxPage = isFboxPageRequest(r.getUrl());" in d120
+assert "code == 521 || code == 522 || code == 523" in d120 and "code == 403" not in d120
+print('322.3.120 fbox next-name checks OK')
