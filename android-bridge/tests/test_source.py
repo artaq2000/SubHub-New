@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 127" in gradle
-assert "versionName '322.3.118'" in gradle
+assert "versionCode 128" in gradle
+assert "versionName '322.3.119'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 127' in mv107
-assert "versionCode 127" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 128' in mv107
+assert "versionCode 128" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1275,3 +1275,14 @@ assert "searchText" in al118 and "⚠️ هذي صفحة «" in al118           
 assert "public void setSearchText(String text)" in d118 and "private String searchFillScript()" in d118
 assert "directStreamPlayer.setSearchText(config.optString(\"searchText\", \"\"));" in m118
 print('322.3.118 fbox names/search checks OK')
+
+# 322.3.119: fbox names box (choose ✓ + fallbacks, add / edit / delete / order), and saved
+# servers kept under one fixed name so a removed name never breaks or drops them.
+al119 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert "const FBOX_STORE_HOST = 'fbox.gd';" in al119 and "function fboxStoreUrl(raw)" in al119
+assert al119.count('pageUrl: fboxStoreUrl(p.pageUrl)') == 2 and "fboxUrl: stored" in al119
+assert "if (isFboxPage(u.href)) return u.href;" in al119               # items on any name are kept
+assert "if (isFboxAny(startPage) || isFboxPage(startPage)) {" in al119
+assert "function namesBox()" in al119 and "'✓ اختيار'" in al119 and "'➕ إضافة'" in al119
+assert "prompt('أسماء fbox" not in al119                              # no more typing in a prompt
+print('322.3.119 fbox names box checks OK')

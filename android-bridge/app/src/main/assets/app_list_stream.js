@@ -101,8 +101,20 @@
   function isFboxPage(raw) {
     try {
       const u = new URL(String(raw || ''));
-      return u.protocol === 'https:' && fboxHost(u.hostname) && /^\/watch\/(movie|tv)-[a-z0-9-]+/i.test(u.pathname);
+      // 322.3.119: a film page is known by its PATH on any name — a name taken out
+      // of the list must never turn a saved server into a Moviesmod one (or drop it).
+      return u.protocol === 'https:' && !!cleanHost(u.hostname) && !/(^|\.)moviesmod\.gd$/i.test(u.hostname)
+        && /^\/watch\/(movie|tv)-[a-z0-9-]+/i.test(u.pathname);
     } catch (_) { return false; }
+  }
+  // 322.3.119: a saved server keeps the film's path under ONE fixed name that every
+  // app version knows (fbox.gd). It still opens on the chosen name — or the next one
+  // that answers — so deleting / renaming names never breaks a saved server.
+  const FBOX_STORE_HOST = 'fbox.gd';
+  function fboxStoreUrl(raw) {
+    if (!isFboxPage(raw)) return String(raw || '');
+    try { const u = new URL(String(raw)); u.hostname = FBOX_STORE_HOST; u.hash = ''; return u.href; }
+    catch (_) { return String(raw || ''); }
   }
   function isFboxAny(raw) {
     try { const u = new URL(String(raw || '')); return u.protocol === 'https:' && fboxHost(u.hostname); }
@@ -182,6 +194,7 @@
       const u = new URL(v);
       const h = String(u.hostname || '').toLowerCase();
       if (u.protocol === 'https:' && fboxHost(h)) return u.href;   // 322.3.118: any page of the fbox family
+      if (isFboxPage(u.href)) return u.href;                        // 322.3.119: a film page on any name
       if (u.protocol !== 'https:' || !(h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd'))) return '';
       return u.href;
     } catch (_) { return ''; }
@@ -448,7 +461,7 @@
       // 322.3.118: an fbox page opens on the first fbox name that answers; with no
       // page for this film yet, the owner starts from fbox search (the title typed in).
       let searchText = '';
-      if (isFboxAny(startPage)) {
+      if (isFboxAny(startPage) || isFboxPage(startPage)) {
         startPage = await fboxLive(startPage);
         if (!isFboxPage(startPage) && owner && !auto) {
           searchText = String(selected.title || '').trim().slice(0, 80);
@@ -545,7 +558,7 @@
         items[idx] = Object.assign({}, old, {
           label: p.label,
           key: p.key,
-          pageUrl: p.pageUrl,
+          pageUrl: fboxStoreUrl(p.pageUrl),
           embedUrl: p.embedUrl || (same ? old.embedUrl : ''),
           // a different server is another video version: timing/pin start over
           subtitleOffsetMs: same ? clampOffset(Number.isFinite(Number(rawOffsetMs)) ? rawOffsetMs : old.subtitleOffsetMs) : 0,
@@ -556,7 +569,7 @@
         if (items.length >= MAX) return { ok: false, text: 'وصلت للحد الأقصى: ١٠ سيرفرات' };
         id = newId();
         items.push({
-          id: id, label: p.label, key: p.key, pageUrl: p.pageUrl, embedUrl: p.embedUrl || '',
+          id: id, label: p.label, key: p.key, pageUrl: fboxStoreUrl(p.pageUrl), embedUrl: p.embedUrl || '',
           subtitleOffsetMs: 0, subtitlePin: null, createdAt: now, updatedAt: now
         });
       }
@@ -567,8 +580,9 @@
         try {
           const d = movieDoc();
           if (!(d && isFboxPage(String(d.fboxUrl || '')))) {
-            await db.collection('subtitles').doc(String(ctx.movieId)).set({ fboxUrl: p.pageUrl }, { merge: true });
-            syncDoc(ctx.movieId, function (x) { x.fboxUrl = p.pageUrl; });
+            const stored = fboxStoreUrl(p.pageUrl);
+            await db.collection('subtitles').doc(String(ctx.movieId)).set({ fboxUrl: stored }, { merge: true });
+            syncDoc(ctx.movieId, function (x) { x.fboxUrl = stored; });
           }
         } catch (_) {}
       }
@@ -910,6 +924,177 @@
     return b;
   }
 
+  // 322.3.119: «📦 أسماء fbox» — the chosen name (✓, first in subtitles/_appSettings.fboxDomains)
+  // is tried first; the others are fallbacks in their order. Add / edit / delete /
+  // choose / reorder — each one saved at once.
+  let namesOpen = false;
+  let namesDraft = '';
+  let namesEditing = -1;
+  let namesEditDraft = '';
+  let namesBusy = false;
+  function ltrText(text, color) {
+    const s = document.createElement('bdi');
+    s.dir = 'ltr';
+    s.textContent = String(text || '');
+    if (color) s.style.color = color;
+    return s;
+  }
+  function namesInput(value, placeholder, onText, onEnter) {
+    const i = document.createElement('input');
+    i.type = 'text';
+    i.dir = 'ltr';
+    i.value = value;
+    i.placeholder = placeholder;
+    i.autocomplete = 'off';
+    i.spellcheck = false;
+    i.setAttribute('autocapitalize', 'off');
+    i.setAttribute('inputmode', 'url');
+    i.style.cssText = 'min-width:0;width:100%;box-sizing:border-box;min-height:36px;border-radius:9px;border:1px solid #36506b;' +
+      'background:#06131c;color:#fff;font:inherit;font-size:.78rem;padding:4px 10px;text-align:left';
+    i.addEventListener('input', function () { onText(i.value); });
+    i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); onEnter(); } });
+    return i;
+  }
+  function nameProblem(h, skipIndex) {
+    if (!h) return 'اكتب اسم موقع صحيح، مثل tinyzone.sx — أو الصق رابطاً من الموقع';
+    if (/(^|\.)moviesmod\.gd$/.test(h)) return 'هذا اسم Moviesmod — له زرّه الخاص';
+    const at = fboxDomainList.indexOf(h);
+    if (at >= 0 && at !== skipIndex) return '«' + h + '» موجود في القائمة';
+    return '';
+  }
+  async function saveFboxNames(next, okText) {
+    if (namesBusy) return false;
+    if (!isOwner() || typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return false;
+    const arr = next.map(cleanHost).filter(Boolean).filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
+    if (!arr.length) { notify('خلّ اسماً واحداً على الأقل في القائمة.'); return false; }
+    namesBusy = true;
+    render(true);
+    try {
+      await db.collection('subtitles').doc('_appSettings').set({ fboxDomains: arr }, { merge: true });
+      fboxDomainList = arr; fboxDomainsLoaded = true; fboxPicked = { host: '', at: 0 };
+      if (okText) notify(okText, 'success');
+      return true;
+    } catch (_) {
+      notify('تعذّر حفظ الأسماء.');
+      return false;
+    } finally {
+      namesBusy = false;
+      render(true);
+    }
+  }
+  async function addName() {
+    const h = cleanHost(namesDraft);
+    const bad = nameProblem(h, -1);
+    if (bad) { notify(bad); return; }
+    if (fboxDomainList.length >= 12) { notify('القائمة وصلت ١٢ اسماً — احذف اسماً أولاً.'); return; }
+    if (await saveFboxNames(fboxDomainList.concat([h]), 'أُضيف «' + h + '» ✓')) { namesDraft = ''; render(true); }
+  }
+  async function saveEditedName(i) {
+    const h = cleanHost(namesEditDraft);
+    const bad = nameProblem(h, i);
+    if (bad) { notify(bad); return; }
+    const next = fboxDomainList.slice();
+    next[i] = h;
+    if (await saveFboxNames(next, 'تم تعديل الاسم ✓')) { namesEditing = -1; namesEditDraft = ''; render(true); }
+  }
+  function chooseName(i) {
+    const next = fboxDomainList.slice();
+    const h = next.splice(i, 1)[0];
+    next.unshift(h);
+    saveFboxNames(next, 'صار «' + h + '» هو المختار ✓');
+  }
+  function moveName(i, dir) {
+    const j = i + dir;
+    if (i < 1 || j < 1 || j >= fboxDomainList.length) return;   // the chosen one moves by «اختيار» only
+    const next = fboxDomainList.slice();
+    const t = next[i]; next[i] = next[j]; next[j] = t;
+    saveFboxNames(next, '');
+  }
+  function deleteName(i) {
+    const h = fboxDomainList[i];
+    if (fboxDomainList.length < 2) { notify('خلّ اسماً واحداً على الأقل في القائمة.'); return; }
+    const after = i === 0 ? '\nويصير «' + fboxDomainList[1] + '» هو المختار.' : '';
+    if (!confirm('حذف «' + h + '» من أسماء fbox؟' + after + '\nالسيرفرات المحفوظة ما تتأثر.')) return;
+    const next = fboxDomainList.slice();
+    next.splice(i, 1);
+    if (namesEditing === i) namesEditing = -1;
+    saveFboxNames(next, 'حُذف «' + h + '» ✓');
+  }
+  function namesBox() {
+    const box = document.createElement('div');
+    box.id = 'subhub-fbox-names-box';
+    box.style.cssText = 'border:1px solid #6b5520;border-radius:12px;background:#0b1a26;padding:8px;display:flex;flex-direction:column;gap:6px';
+    const head = document.createElement('div');
+    head.style.cssText = 'color:#fcd34d;font-weight:900;font-size:.76rem;line-height:1.6';
+    head.textContent = '📦 أسماء fbox';
+    const note = document.createElement('div');
+    note.style.cssText = 'color:#a9b7cb;font-size:.64rem;line-height:1.7';
+    note.textContent = 'التطبيق يفتح الاسم المختار ✓، وإذا ما ردّ ينتقل للي بعده بالترتيب. السيرفرات المحفوظة تشتغل على كل الأسماء.';
+    box.appendChild(head);
+    box.appendChild(note);
+    const list = fboxDomainList.slice();
+    list.forEach(function (h, i) {
+      const chosen = i === 0;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;flex-direction:column;gap:5px;border-radius:10px;padding:6px 8px;' +
+        'border:1px solid ' + (chosen ? '#16a34a' : '#1f3b4d') + ';background:' + (chosen ? '#0d2a1b' : '#0b2230');
+      const top = document.createElement('div');
+      top.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0';
+      const num = document.createElement('span');
+      num.style.cssText = 'flex:none;min-width:22px;text-align:center;font-weight:900;font-size:.74rem;color:' + (chosen ? '#86efac' : '#94a3b8');
+      num.textContent = chosen ? '✓' : arNum(i + 1);
+      top.appendChild(num);
+      if (namesEditing === i) {
+        const ei = namesInput(namesEditDraft, h, function (v) { namesEditDraft = v; }, function () { saveEditedName(i); });
+        top.appendChild(ei);
+        row.appendChild(top);
+        const acts = document.createElement('div');
+        acts.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:5px';
+        acts.appendChild(smallBtn('💾 حفظ', 'play', namesBusy, function () { saveEditedName(i); }));
+        acts.appendChild(smallBtn('✕ إلغاء', 'edit', namesBusy, function () { namesEditing = -1; namesEditDraft = ''; render(true); }));
+        row.appendChild(acts);
+        box.appendChild(row);
+        return;
+      }
+      const nm = document.createElement('b');
+      nm.dir = 'ltr';
+      nm.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem;text-align:right';
+      nm.textContent = h;
+      top.appendChild(nm);
+      if (chosen) {
+        const tag = document.createElement('small');
+        tag.style.cssText = 'flex:none;color:#86efac;font-size:.62rem;font-weight:900';
+        tag.textContent = 'المستعمل';
+        top.appendChild(tag);
+      }
+      row.appendChild(top);
+      const acts = document.createElement('div');
+      acts.style.cssText = 'display:grid;gap:5px;grid-template-columns:' + (chosen ? '1fr 1fr' : '1.35fr .75fr .75fr 1fr 1fr');
+      if (!chosen) {
+        acts.appendChild(smallBtn('✓ اختيار', 'play', namesBusy, function () { chooseName(i); }));
+        acts.appendChild(smallBtn('⬆️', 'edit', namesBusy || i === 1, function () { moveName(i, -1); }));
+        acts.appendChild(smallBtn('⬇️', 'edit', namesBusy || i === list.length - 1, function () { moveName(i, 1); }));
+      }
+      acts.appendChild(smallBtn('✏️ تعديل', 'edit', namesBusy, function () { namesEditing = i; namesEditDraft = h; render(true); }));
+      acts.appendChild(smallBtn('🗑️ حذف', 'danger', namesBusy || list.length < 2, function () { deleteName(i); }));
+      row.appendChild(acts);
+      box.appendChild(row);
+    });
+    const addLabel = document.createElement('div');
+    addLabel.style.cssText = 'color:#cbd5e1;font-size:.66rem;font-weight:800;margin-top:2px';
+    addLabel.textContent = '➕ اسم جديد — اكتبه أو الصق رابطاً من الموقع';
+    const addRow = document.createElement('div');
+    addRow.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center';
+    const ai = namesInput(namesDraft, 'tinyzone.sx', function (v) { namesDraft = v; }, function () { addName(); });
+    const ab = smallBtn('➕ إضافة', 'play', namesBusy || list.length >= 12, function () { addName(); });
+    ab.style.padding = '4px 14px';
+    addRow.appendChild(ai);
+    addRow.appendChild(ab);
+    box.appendChild(addLabel);
+    box.appendChild(addRow);
+    return box;
+  }
+
   function buildSection(movieId) {
     const ctx = { movieId: movieId, kind: 'movie' };
     const sec = document.createElement('section');
@@ -1000,26 +1185,32 @@
     sec.appendChild(pair);
     const dom = document.createElement('div');
     dom.style.cssText = 'display:flex;align-items:center;gap:6px;color:#7f93ab;font-size:.62rem;line-height:1.6';
-    const domTx = document.createElement('span');
-    domTx.style.cssText = 'flex:1;min-width:0;direction:ltr;text-align:right';
-    domTx.textContent = '📦 fbox: ' + fboxDomainList.join(' · ') + (fbox ? '  ·  ' + fboxIdOf(fbox) : '');
-    const domBtn = smallBtn('✏️ الأسماء', 'edit', false, async function () {
+    // 322.3.119: «📦 fbox — المختار: tinyzone.sx · ٦ احتياط · movie-…» + the names box.
+    const domTx = document.createElement('div');
+    domTx.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px';
+    const domLine = document.createElement('span');
+    domLine.appendChild(document.createTextNode('📦 fbox — المختار: '));
+    domLine.appendChild(ltrText(fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0], '#cbd5e1'));
+    if (fboxDomainList.length > 1) domLine.appendChild(document.createTextNode(' · ' + arNum(fboxDomainList.length - 1) + ' احتياط'));
+    domTx.appendChild(domLine);
+    if (fbox) {
+      const pageId = ltrText(fboxIdOf(fbox), '');   // this film's page on fbox
+      pageId.style.cssText = 'display:block;direction:ltr;text-align:right;overflow-wrap:anywhere;opacity:.8';
+      domTx.appendChild(pageId);
+    }
+    const domBtn = smallBtn(namesOpen ? '✕ إغلاق' : '✏️ الأسماء', 'edit', false, async function () {
+      if (namesOpen) { namesOpen = false; namesEditing = -1; render(true); return; }
       if (!isOwner() || typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
-      const v = prompt('أسماء fbox بالترتيب (يجرّب الأول ثم اللي بعده). افصل بفاصلة:', fboxDomainList.join(', '));
-      if (v == null) return;
-      const arr = String(v).split(/[\s,،]+/).map(cleanHost).filter(Boolean).filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
-      if (!arr.length) { notify('اكتب اسماً واحداً على الأقل، مثل fbox.gd'); return; }
-      try {
-        await db.collection('subtitles').doc('_appSettings').set({ fboxDomains: arr }, { merge: true });
-        fboxDomainList = arr; fboxDomainsLoaded = true; fboxPicked = { host: '', at: 0 };
-        notify('تم حفظ أسماء fbox ✓', 'success');
-        render(true);
-      } catch (_) { notify('تعذّر حفظ الأسماء.'); }
+      namesOpen = true; namesEditing = -1;
+      render(true);
+      loadFboxDomains(true).then(function () { if (namesOpen) render(true); }).catch(function () {});
     });
     domBtn.style.flex = 'none';
+    domBtn.style.padding = '4px 10px';
     dom.appendChild(domTx);
     dom.appendChild(domBtn);
     sec.appendChild(dom);
+    if (namesOpen) sec.appendChild(namesBox());
     sec.appendChild(legacyBlock());   // moves the existing block (with its cards) here
     return sec;
   }
@@ -1102,6 +1293,7 @@
     const id = String(sel.id || '');
     if (film.movieId !== id) {
       film = { movieId: id, loaded: false, loading: false, failedAt: 0, items: [] };
+      namesOpen = false; namesEditing = -1;   // 322.3.119: the names box closes on another film
       removeFilmUi();
       lastSig = '';
     }
