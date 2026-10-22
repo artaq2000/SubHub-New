@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.121 fbox chosen name
+name: Build TEST SubHub 322.3.122 names check
 
 on:
   push:
     branches:
-      - 'test/fbox-chosen-322.3.121'
+      - 'test/name-check-322.3.122'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -73,6 +73,12 @@ jobs:
           NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/vidsrc_hit52.browser.cjs
           NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/vidsrc_native53.browser.cjs
 
+      - name: Test the fbox names check in Chromium
+        run: |
+          node --check app/src/main/assets/name_check_probe.js
+          NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/name_check_probe.browser.cjs
+          NODE_PATH=/tmp/subhub-ui-tests/node_modules node tests/name_check_box.browser.cjs
+
       - name: Test independent stream sessions
         run: node tests/direct_stream.test.cjs
 
@@ -120,6 +126,12 @@ jobs:
           javac -d /tmp/subhub-localsub-tests app/src/main/java/com/artaq/subhub/LocalSubtitleParser.java tests/LocalSubtitleParserTest.java
           java -cp /tmp/subhub-localsub-tests com.artaq.subhub.LocalSubtitleParserTest
 
+      - name: Test names check verdicts
+        run: |
+          mkdir -p /tmp/subhub-namecheck-tests
+          javac -d /tmp/subhub-namecheck-tests app/src/main/java/com/artaq/subhub/NameCheckRules.java tests/NameCheckRulesTest.java
+          java -cp /tmp/subhub-namecheck-tests NameCheckRulesTest
+
       - name: Test episode timing (next episode + smart waiting)
         run: |
           mkdir -p /tmp/subhub-timing-tests
@@ -165,8 +177,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='130'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.121'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='131'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.122'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -174,12 +186,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.121-fbox-chosen.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.122-name-check.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.121-fbox-chosen
-          path: SubHub-322.3.121-fbox-chosen.apk
+          name: SubHub-322.3.122-name-check
+          path: SubHub-322.3.122-name-check.apk
           retention-days: 7
 
       - name: Remove signing key from runner

@@ -1065,7 +1065,275 @@
     const bad = nameProblem(h, -1);
     if (bad) { notify(bad); return; }
     if (fboxDomainList.length >= 12) { notify('القائمة وصلت ١٢ اسماً — احذف اسماً أولاً.'); return; }
-    if (await saveFboxNames(fboxDomainList.concat([h]), 'أُضيف «' + h + '» ✓')) { namesDraft = ''; render(true); }
+    if (await saveFboxNames(fboxDomainList.concat([h]), 'أُضيف «' + h + '» ✓')) {
+      namesDraft = '';
+      render(true);
+      if (!checkRun) startCheck([h]);   // 322.3.122: a new name is checked at once
+    }
+  }
+  // 322.3.122: «➕ أضِف» on a name that sends to another name (the site moved).
+  async function addNameDirect(raw) {
+    const h = cleanHost(raw);
+    const bad = nameProblem(h, -1);
+    if (bad) { notify(bad); return; }
+    if (fboxDomainList.length >= 12) { notify('القائمة وصلت ١٢ اسماً — احذف اسماً أولاً.'); return; }
+    if (await saveFboxNames(fboxDomainList.concat([h]), 'أُضيف «' + h + '» ✓')) {
+      if (!checkRun) startCheck([h]);
+    }
+  }
+
+  // 322.3.122: «🩺 فحص» — the names are opened one after the other in a hidden page of
+  // the app (this device, this connection: SiteNameChecker), on this film's fbox page
+  // when it has one (its servers are counted) or on their front page. Each row says
+  // what its page answered; «🚫 محجوب على اتصالك (451)» is kept apart from a dead
+  // name, because it belongs to the connection the check ran on (a UK court order,
+  // applied by Cloudflare to connections it sees in the UK — some Saudi home lines
+  // reach it through London), not to the name. The last answers stay on this device.
+  const CHECK_KEY = 'subhub_fbox_check_v3122';
+  const CHECK_KEEP_MS = 7 * 24 * 3600 * 1000;
+  let checkRun = '';          // the run in progress ('' = none)
+  let checkQueue = [];        // its names
+  let checkDone = {};         // its names already answered
+  let checkCurrent = '';      // the name being opened now
+  let checkStore = null;      // {meta:{at,path,film,net,total,done,running,stopped}, results:{host:{…}}}
+  function checkData() {
+    if (!checkStore) {
+      checkStore = { meta: null, results: {} };
+      try {
+        const v = JSON.parse(localStorage.getItem(CHECK_KEY) || 'null');
+        if (v && typeof v === 'object' && v.results && typeof v.results === 'object') {
+          const now = Date.now();
+          Object.keys(v.results).forEach(function (h) {
+            const r = v.results[h];
+            if (cleanHost(h) === h && r && typeof r === 'object' && typeof r.state === 'string'
+              && Number(r.at) > now - CHECK_KEEP_MS && Number(r.at) <= now + 60000) checkStore.results[h] = r;
+          });
+          if (v.meta && typeof v.meta === 'object') { checkStore.meta = v.meta; checkStore.meta.running = false; }
+        }
+      } catch (_) {}
+    }
+    return checkStore;
+  }
+  function saveCheck() {
+    const d = checkData();
+    const out = { meta: d.meta, results: {} };
+    Object.keys(d.results)
+      .sort(function (a, b) { return (Number(d.results[b].at) || 0) - (Number(d.results[a].at) || 0); })
+      .slice(0, 40)
+      .forEach(function (h) { out.results[h] = d.results[h]; });
+    try { localStorage.setItem(CHECK_KEY, JSON.stringify(out)); } catch (_) {}
+  }
+  // This film's fbox page (its servers are counted), or their front page.
+  function checkPathNow() {
+    const fbox = filmFboxUrl();
+    if (fbox && samePageFilm(fbox, filmTitle())) {
+      try {
+        const p = new URL(fbox).pathname.toLowerCase();
+        if (/^\/watch\/(movie|tv)-[a-z0-9-]{1,120}$/.test(p)) return p;
+      } catch (_) {}
+    }
+    return '/';
+  }
+  function nameBridge() {
+    const b = window.SubHubAndroidBridge;
+    return b && typeof b.nameCheckStart === 'function' ? b : null;
+  }
+  function startCheck(hosts) {
+    if (!isOwner() || checkRun) return;
+    const b = nameBridge();
+    if (!b) { notify('الفحص يحتاج تطبيق SubHub بنسخة 322.3.122 أو أحدث.'); return; }
+    const list = (hosts || []).map(cleanHost).filter(Boolean)
+      .filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
+    if (!list.length) return;
+    const run = 'nc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const path = checkPathNow();
+    const d = checkData();
+    d.meta = { at: Date.now(), path: path, film: path === '/' ? '' : filmTitle(), net: '',
+      total: list.length, done: 0, running: true, stopped: false };
+    checkRun = run; checkQueue = list; checkDone = {}; checkCurrent = '';
+    try {
+      b.nameCheckStart(token, JSON.stringify({ run: run, names: list, path: path }));
+    } catch (_) {
+      checkRun = ''; checkQueue = [];
+      notify('تعذّر بدء الفحص.');
+    }
+    paintCheck();
+  }
+  function stopCheck() {
+    const b = window.SubHubAndroidBridge;
+    try { if (b && typeof b.nameCheckStop === 'function') b.nameCheckStop(token); } catch (_) {}
+    endCheck(true);
+  }
+  function endCheck(stopped) {
+    const d = checkData();
+    if (d.meta) { d.meta.running = false; d.meta.stopped = !!stopped; }
+    checkRun = ''; checkQueue = []; checkDone = {}; checkCurrent = '';
+    saveCheck();
+    paintCheck();
+  }
+  function checkSummary() {
+    const d = checkData();
+    let ok = 0, blocked = 0, dead = 0, other = 0;
+    Object.keys(checkDone).forEach(function (h) {
+      const r = d.results[h];
+      const s = r ? r.state : '';
+      if (s === 'ok') ok++;
+      else if (s === 'blocked') blocked++;
+      else if (s === 'notFound' || s === 'down' || s === 'noAnswer' || s === 'notSite') dead++;
+      else other++;
+    });
+    const parts = [];
+    if (ok) parts.push(arNum(ok) + ' يعمل');
+    if (blocked) parts.push(arNum(blocked) + ' محجوب عندك');
+    if (dead) parts.push(arNum(dead) + ' لا يعمل');
+    if (other) parts.push(arNum(other) + ' يحتاج نظرة');
+    return 'انتهى الفحص' + (parts.length ? ': ' + parts.join(' · ') : '');
+  }
+  window.__subhubNameCheckV3122 = function (raw) {
+    let e = null;
+    try { e = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { return; }
+    if (!e || !checkRun || e.run !== checkRun) return;
+    const d = checkData();
+    if (e.type === 'start') {
+      if (d.meta) d.meta.net = String(e.net || '').slice(0, 8);
+    } else if (e.type === 'name') {
+      checkCurrent = cleanHost(e.host);
+    } else if (e.type === 'result') {
+      const h = cleanHost(e.host);
+      if (!h) return;
+      d.results[h] = {
+        state: String(e.state || '').slice(0, 20), code: Number(e.code) || 0, err: Number(e.err) || 0,
+        servers: Number(e.servers) || 0, links: Number(e.links) || 0, to: cleanHost(e.to),
+        colo: String(e.colo || '').replace(/[^A-Za-z]/g, '').slice(0, 4), loc: String(e.loc || '').replace(/[^A-Za-z]/g, '').slice(0, 3),
+        uk: !!e.uk, ipv6: !!e.ipv6, path: d.meta ? d.meta.path : '', net: d.meta ? d.meta.net : '', at: Date.now()
+      };
+      checkDone[h] = 1;
+      if (d.meta) d.meta.done = Object.keys(checkDone).length;
+      if (checkCurrent === h) checkCurrent = '';
+      saveCheck();
+    } else if (e.type === 'done') {
+      const stopped = !!e.stopped;
+      const summary = checkSummary();
+      endCheck(stopped);
+      if (!stopped) notify(summary, 'success');
+      return;
+    }
+    paintCheck();
+  };
+  function agoText(at) {
+    const s = Math.max(0, Math.round((Date.now() - Number(at || 0)) / 1000));
+    if (s < 60) return 'الآن';
+    const m = Math.round(s / 60);
+    if (m < 60) return 'قبل ' + arNum(m) + ' د';
+    const hh = Math.round(m / 60);
+    if (hh < 24) return 'قبل ' + arNum(hh) + ' س';
+    return 'قبل ' + arNum(Math.round(hh / 24)) + ' يوم';
+  }
+  function netText(n) {
+    return n === 'wifi' ? 'واي فاي' : n === 'cell' ? 'بيانات الجوال' : n === 'vpn' ? 'VPN' : n === 'eth' ? 'سلكي' : '';
+  }
+  function checkWhere(m) {
+    const page = !m || m.path === '/' ? 'على الصفحة الرئيسية' : (m.film ? 'على صفحة «' + m.film + '»' : 'على صفحة الفيلم');
+    const net = netText(m && m.net);
+    return page + (net ? ' · ' + net : '');
+  }
+  function checkHead() {
+    const m = checkData().meta;
+    if (checkRun && m) {
+      return '🔄 جارٍ الفحص ' + arNum(Math.min((m.done || 0) + 1, m.total || 1)) + ' من ' + arNum(m.total || 1) + ' — ' + checkWhere(m);
+    }
+    if (m && m.at) return 'آخر فحص: ' + agoText(m.at) + ' — ' + checkWhere(m) + (m.stopped ? ' (أُوقف)' : '');
+    return 'افحص الأسماء لتعرف أيّها يعمل على اتصالك الآن.';
+  }
+  function errText(err) {
+    if (err === -2) return ' — الاسم غير معروف (DNS)';
+    if (err === -6) return ' — رُفض الاتصال';
+    if (err === -8) return ' — انتهت المهلة';
+    if (err === -11) return ' — فشل الاتصال الآمن';
+    if (!err) return ' — لم يصل رد خلال ٢٥ ثانية';
+    return '';
+  }
+  // What one row says: {t: text, c: colour, ltr: Latin part, to: the other name}.
+  function checkLine(h) {
+    if (checkRun && checkCurrent === h) return { t: '🔄 جارٍ الفحص…', c: '#7dd3fc' };
+    if (checkRun && checkQueue.indexOf(h) >= 0 && !checkDone[h]) return { t: '⏳ في الانتظار', c: '#94a3b8' };
+    const r = checkData().results[h];
+    if (!r) return null;
+    const film = !!r.path && r.path !== '/';
+    switch (r.state) {
+      case 'ok':
+        return { t: film ? '✅ يعمل — السيرفرات: ' + arNum(r.servers) : '✅ يعمل — الموقع يفتح', c: '#86efac' };
+      case 'noServers':
+        return { t: '⚠️ الموقع فتح، لكن بلا قائمة سيرفرات لهذا الفيلم', c: '#fbbf24' };
+      case 'blocked':
+        if (r.uk) return { t: '🚫 محجوب على اتصالك (451) — يمرّ عبر بريطانيا', c: '#fb923c', ltr: r.colo + (r.ipv6 ? ' · IPv6' : '') };
+        return { t: '🚫 محجوب على اتصالك (451)' + (r.loc === 'GB' ? ' — اتصالك يظهر بريطانياً' : ''), c: '#fb923c' };
+      case 'notFound':
+        return { t: (film ? '⛔ صفحة الفيلم غير موجودة على هذا الاسم' : '⛔ غير موجود'), c: '#f87171', ltr: String(r.code) };
+      case 'down':
+        return { t: '⛔ خادم الموقع متوقف', c: '#f87171', ltr: String(r.code) };
+      case 'noAnswer':
+        return { t: '⛔ لا يرد' + errText(r.err), c: '#f87171' };
+      case 'redirect':
+        return { t: '↪️ يحوّل إلى', c: '#93c5fd', to: r.to };
+      case 'checkPage':
+        return { t: '🛡️ صفحة تحقّق — افتحه بالإضافة للتأكد', c: '#fbbf24' };
+      case 'notSite':
+        return { t: '⚠️ فتح، لكنه ليس الموقع', c: '#f87171' };
+      case 'httpError':
+        return { t: '⚠️ خطأ', c: '#fbbf24', ltr: String(r.code) };
+    }
+    return null;
+  }
+  function anyBlocked() {
+    const d = checkData();
+    return fboxDomainList.some(function (h) { return !!d.results[h] && d.results[h].state === 'blocked'; });
+  }
+  function paintRow(el, h) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    const L = checkLine(h);
+    if (!L) { el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    const s = document.createElement('span');
+    s.style.color = L.c;
+    s.appendChild(document.createTextNode(L.t));
+    if (L.ltr) { s.appendChild(document.createTextNode(' ')); s.appendChild(ltrText('(' + L.ltr + ')', '')); }
+    if (L.to) {
+      s.appendChild(document.createTextNode(' '));
+      s.appendChild(ltrText(L.to, '#e0f2fe'));
+      if (fboxDomainList.indexOf(L.to) >= 0) s.appendChild(document.createTextNode(' (موجود في القائمة)'));
+    }
+    el.appendChild(s);
+    if (L.to && fboxDomainList.indexOf(L.to) < 0 && fboxDomainList.length < 12) {
+      const add = smallBtn('➕ أضِفه', 'play', namesBusy, function () { addNameDirect(L.to); });
+      add.style.flex = 'none';
+      add.style.minHeight = '26px';
+      add.style.padding = '2px 10px';
+      el.appendChild(add);
+    }
+  }
+  function paintAllBtn(b) {
+    b.textContent = checkRun ? '⏹ إيقاف الفحص' : '🩺 فحص الكل';
+    b.style.borderColor = checkRun ? '#7f1d1d' : '#166534';
+    b.style.background = checkRun ? '#2b1115' : '#10271a';
+  }
+  // Only the check's own parts change (no full redraw: the owner may be typing a name).
+  function paintCheck() {
+    const box = document.getElementById('subhub-fbox-names-box');
+    if (!box) return;
+    const head = box.querySelector('[data-ncheck-head]');
+    if (head) head.textContent = checkHead();
+    const all = box.querySelector('[data-ncheck-all]');
+    if (all) paintAllBtn(all);
+    [].slice.call(box.querySelectorAll('[data-ncheck-one]')).forEach(function (b) {
+      b.disabled = !!checkRun;
+      b.style.opacity = checkRun ? '.38' : '1';
+    });
+    [].slice.call(box.querySelectorAll('[data-ncheck-host]')).forEach(function (el) {
+      paintRow(el, el.getAttribute('data-ncheck-host'));
+    });
+    const note = box.querySelector('[data-ncheck-note]');
+    if (note) note.style.display = anyBlocked() ? '' : 'none';
   }
   async function saveEditedName(i) {
     const h = cleanHost(namesEditDraft);
@@ -1111,6 +1379,27 @@
     note.textContent = 'الاسم المختار ✓ هو الذي يُفتح دائماً. وعند المشترك: إن لم تعمل صفحته ينتقل التطبيق إلى الاسم التالي بالترتيب. السيرفرات المحفوظة تعمل على كل الأسماء.';
     box.appendChild(head);
     box.appendChild(note);
+    // 322.3.122: «🩺 فحص الكل» + where / when the last check ran.
+    const tools = document.createElement('div');
+    tools.style.cssText = 'display:flex;flex-direction:column;gap:5px;border:1px solid #1f3b4d;border-radius:10px;padding:6px 8px;background:#08161f';
+    const allBtn = smallBtn('🩺 فحص الكل', 'play', namesBusy, function () {
+      if (checkRun) stopCheck(); else startCheck(fboxDomainList.slice());
+    });
+    allBtn.setAttribute('data-ncheck-all', '1');
+    paintAllBtn(allBtn);
+    const checkInfo = document.createElement('div');
+    checkInfo.setAttribute('data-ncheck-head', '1');
+    checkInfo.style.cssText = 'color:#a9b7cb;font-size:.62rem;line-height:1.6';
+    checkInfo.textContent = checkHead();
+    const blockedNote = document.createElement('div');
+    blockedNote.setAttribute('data-ncheck-note', '1');
+    blockedNote.style.cssText = 'color:#fdba74;font-size:.6rem;line-height:1.7';
+    blockedNote.textContent = '🚫 «محجوب على اتصالك» يخصّ اتصالك أنت الآن، وقد يعمل عند المشتركين — جرّبه على البيانات قبل أن تحذفه.';
+    blockedNote.style.display = anyBlocked() ? '' : 'none';
+    tools.appendChild(allBtn);
+    tools.appendChild(checkInfo);
+    tools.appendChild(blockedNote);
+    box.appendChild(tools);
     const list = fboxDomainList.slice();
     list.forEach(function (h, i) {
       const chosen = i === 0;
@@ -1146,7 +1435,20 @@
         tag.textContent = 'المستعمل';
         top.appendChild(tag);
       }
+      // 322.3.122: check this one name (a name just added is checked by itself).
+      const one = smallBtn('🩺', 'edit', !!checkRun, function () { if (!checkRun) startCheck([h]); });
+      one.title = 'فحص هذا الاسم';
+      one.setAttribute('data-ncheck-one', '1');
+      one.style.flex = 'none';
+      one.style.minHeight = '28px';
+      one.style.padding = '2px 9px';
+      top.appendChild(one);
       row.appendChild(top);
+      const st = document.createElement('div');
+      st.setAttribute('data-ncheck-host', h);
+      st.style.cssText = 'align-items:center;gap:6px;flex-wrap:wrap;font-size:.62rem;line-height:1.6;font-weight:800';
+      paintRow(st, h);
+      row.appendChild(st);
       const acts = document.createElement('div');
       acts.style.cssText = 'display:grid;gap:5px;grid-template-columns:' + (chosen ? '1fr 1fr' : '1.35fr .75fr .75fr 1fr 1fr');
       if (!chosen) {

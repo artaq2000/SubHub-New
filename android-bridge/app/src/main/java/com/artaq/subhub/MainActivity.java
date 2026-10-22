@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 130;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 131;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -143,6 +143,8 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ValueCallback<Uri[]> fileChooserCallback;
     private DirectStreamPlayer directStreamPlayer;
+    // 322.3.122: «🩺 فحص» of the fbox names (a hidden page, one name after the other).
+    private SiteNameChecker nameChecker;
     private String directStreamSession = "";
     private FrameLayout fullScreenLayer;
     private View customView;
@@ -610,6 +612,13 @@ public class MainActivity extends Activity {
          * never see a popup-blocking message while watching.
          */
         lastVidSrcBlockedAt = SystemClock.elapsedRealtime();
+    }
+
+    // 322.3.122: one answer of the names check, to the page (only the SubHub page).
+    private void sendNameCheck(JSONObject event) {
+        if (webView == null || event == null || !isTrustedHomePage()) return;
+        webView.evaluateJavascript("window.__subhubNameCheckV3122 && window.__subhubNameCheckV3122("
+                + JSONObject.quote(event.toString()) + ")", null);
     }
 
     private boolean isTrustedHomePage() {
@@ -2098,6 +2107,7 @@ public class MainActivity extends Activity {
             fileChooserCallback = null;
         }
         if (directStreamPlayer != null) directStreamPlayer.close();
+        if (nameChecker != null) nameChecker.stop(false);
         ui.removeCallbacksAndMessages(null);
 
         if (webView != null) {
@@ -2357,6 +2367,8 @@ public class MainActivity extends Activity {
                             } catch (Exception ignored) {}
                         }
                     }
+                    // 322.3.122: a player opening stops a names check (they never run together).
+                    if (nameChecker != null) nameChecker.stop(true);
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     final String localSubtitleKey = localSubtitleKeyValue;
@@ -2542,6 +2554,43 @@ public class MainActivity extends Activity {
         public void directStreamAutoEnd(String token) {
             if (!vidSrcGuardToken.equals(token)) return;
             ui.post(() -> { pendingAuto = null; hideAutoCover(); });
+        }
+
+        // 322.3.122: «🩺 فحص» in «📦 أسماء fbox» — {run, names[], path}. The names are
+        // opened one after the other in a hidden page of this app (this device, this
+        // connection), on the film's fbox page or their front page; every answer goes
+        // back to the page as it comes (window.__subhubNameCheckV3122).
+        @JavascriptInterface
+        public void nameCheckStart(String token, String raw) {
+            if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 4000) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                try {
+                    JSONObject o = new JSONObject(raw);
+                    String run = o.optString("run", "");
+                    String path = o.optString("path", "/");
+                    org.json.JSONArray arr = o.optJSONArray("names");
+                    if (!run.matches("[A-Za-z0-9_-]{1,60}") || arr == null || !NameCheckRules.validPath(path)) return;
+                    ArrayList<String> names = new ArrayList<>();
+                    for (int i = 0; i < arr.length() && names.size() < 12; i++) {
+                        String h = NameCheckRules.cleanHost(arr.optString(i, ""));
+                        if (h.isEmpty() || HOME_HOST.equalsIgnoreCase(h) || names.contains(h)) continue;
+                        names.add(h);
+                    }
+                    if (names.isEmpty()) return;
+                    if (nameChecker == null) {
+                        nameChecker = new SiteNameChecker(MainActivity.this, root,
+                                readAsset("name_check_probe.js"), MainActivity.this::sendNameCheck);
+                    }
+                    nameChecker.start(run, names, path);
+                } catch (Exception ignored) {}
+            });
+        }
+
+        @JavascriptInterface
+        public void nameCheckStop(String token) {
+            if (!vidSrcGuardToken.equals(token)) return;
+            ui.post(() -> { if (nameChecker != null) nameChecker.stop(true); });
         }
 
         @JavascriptInterface

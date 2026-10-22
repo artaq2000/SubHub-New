@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 130" in gradle
-assert "versionName '322.3.121'" in gradle
+assert "versionCode 131" in gradle
+assert "versionName '322.3.122'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -985,8 +985,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 130' in mv107
-assert "versionCode 130" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 131' in mv107
+assert "versionCode 131" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1353,3 +1353,62 @@ assert "status.setMinHeight(dp(48));" in d121 and "slp.height = ViewGroup.Layout
 assert "sp = new FrameLayout.LayoutParams(-1, dp(48), Gravity.TOP);" in d121   # Moviesmod pages unchanged
 assert "if (!fboxNameValue.isEmpty()) directStreamPlayer.setFboxOwnerName(fboxNameValue);" in m121
 print('322.3.121 fbox chosen-name flow checks OK')
+
+# 322.3.122: «🩺 فحص» in «📦 أسماء fbox» — the names are opened one after the other in a
+# hidden page of the app (this device, this connection) on the film's fbox page (or
+# their front page); each row says what its page answered; 451 «blocked on this
+# connection» is kept apart from a dead name (a UK order applied by Cloudflare to
+# connections it sees in the UK — some Saudi home lines reach it through London).
+al122 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+m122 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+c122 = open('app/src/main/java/com/artaq/subhub/SiteNameChecker.java', encoding='utf-8').read()
+r122 = open('app/src/main/java/com/artaq/subhub/NameCheckRules.java', encoding='utf-8').read()
+p122 = open('app/src/main/assets/name_check_probe.js', encoding='utf-8').read()
+w122 = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+# the bridge: token, the SubHub page only, names cleaned, at most 12, a known page path
+n122 = m122[m122.index('public void nameCheckStart(String token, String raw) {'):m122.index('public void nameCheckStop(String token) {')]
+assert "if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 4000) return;" in n122
+assert "if (!isTrustedHomePage()) return;" in n122
+assert "!NameCheckRules.validPath(path)" in n122 and "names.size() < 12" in n122
+assert "String h = NameCheckRules.cleanHost(arr.optString(i, \"\"));" in n122
+assert "HOME_HOST.equalsIgnoreCase(h)" in n122                          # never our own site
+assert 'readAsset("name_check_probe.js"), MainActivity.this::sendNameCheck);' in n122
+assert "window.__subhubNameCheckV3122(" in m122 and "private void sendNameCheck(JSONObject event) {" in m122
+o122 = m122[m122.index('if (nameChecker != null) nameChecker.stop(true);'):]
+assert o122.index('if (directStreamPlayer != null) directStreamPlayer.close();') < 200   # a player opening stops the check
+assert "if (nameChecker != null) nameChecker.stop(false);" in m122      # and leaving the app
+# the hidden page: no bridge, no windows, no dialogs, no pictures, never another name
+assert "addJavascriptInterface" not in c122
+assert "@Override public boolean onCreateWindow(" in c122 and "return false;" in c122
+assert "result.cancel();" in c122 and "s.setBlockNetworkImage(true);" in c122
+assert "s.setMediaPlaybackRequiresUserGesture(true);" in c122
+assert "if (NameCheckRules.sameSite(host, name)) return false;" in c122
+assert "if (u == null || !\"https\".equalsIgnoreCase(u.getScheme())) return true;" in c122
+assert "parent.addView(v, 0, lp);" in c122 and "v.setAlpha(0f);" in c122
+assert 'page.loadUrl("https://" + name + "/cdn-cgi/trace");' in c122   # 451: which way the connection went
+assert "private static final long NAME_LIMIT_MS = 25000L;" in c122 and "private static final long SETTLE_MS = 12000L;" in c122
+assert "if (!NameCheckRules.sameSite(j.optString(\"host\", \"\"), name)) return;" in c122   # a blank page never counts
+for s in ('OK = "ok"', 'BLOCKED = "blocked"', 'REDIRECT = "redirect"', 'CHECK_PAGE = "checkPage"', 'NOT_SITE = "notSite"'):
+    assert s in r122, s
+assert 'return c.equals("LHR") || c.equals("MAN") || c.equals("EDI");' in r122
+# the page reader presses nothing and never takes a menu for servers
+assert ".click(" not in p122 and "dispatchEvent" not in p122
+assert "if (best && bn >= 10) { boxes.push(best); bigGroup = true; }" in p122
+assert "if (!kn && !bigGroup) servers = 0;" in p122
+# the box: check all / one name / a new name checked at once / «➕ أضِفه» / kept on the device
+assert "const CHECK_KEY = 'subhub_fbox_check_v3122';" in al122
+assert "window.__subhubNameCheckV3122 = function (raw) {" in al122
+assert "if (!e || !checkRun || e.run !== checkRun) return;" in al122   # answers of an old run are ignored
+assert "b.nameCheckStart(token, JSON.stringify({ run: run, names: list, path: path }));" in al122
+assert "if (!checkRun) startCheck([h]);   // 322.3.122: a new name is checked at once" in al122
+assert "async function addNameDirect(raw) {" in al122 and "'➕ أضِفه'" in al122
+assert "allBtn.setAttribute('data-ncheck-all', '1');" in al122 and "one.setAttribute('data-ncheck-one', '1');" in al122
+assert "'🚫 «محجوب على اتصالك» يخصّ اتصالك أنت الآن" in al122
+pc122 = al122[al122.index('function paintCheck()'):]
+pc122 = pc122[:pc122.index('\n  }\n')]
+assert "render(" not in pc122                                            # answers never redraw the box (typing is kept)
+assert "'الفحص يحتاج تطبيق SubHub بنسخة 322.3.122 أو أحدث.'" in al122
+# CI runs the new tests
+assert "java -cp /tmp/subhub-namecheck-tests NameCheckRulesTest" in w122
+assert "node tests/name_check_probe.browser.cjs" in w122 and "node tests/name_check_box.browser.cjs" in w122
+print('322.3.122 fbox names check checks OK')
