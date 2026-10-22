@@ -1532,8 +1532,14 @@ public final class DirectStreamPlayer {
             title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
             title.setGravity(Gravity.CENTER);
             title.setTextDirection(View.TEXT_DIRECTION_RTL);
-            title.setPadding(0, 0, 0, dp(14));
-            gateCard.addView(title, new LinearLayout.LayoutParams(-1, -2));
+            title.setPadding(dp(38), dp(4), dp(38), dp(14));
+            // 322.3.122: «✕» closes the card — it can never stay stuck on screen.
+            FrameLayout gateHead = new FrameLayout(activity);
+            gateHead.addView(title, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+            TextView gateClose = chip("✕", 15, this::gateClosed);
+            gateClose.setPadding(0, 0, 0, 0);
+            gateHead.addView(gateClose, new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.TOP | Gravity.RIGHT));
+            gateCard.addView(gateHead, new LinearLayout.LayoutParams(-1, -2));
             gateCardButton = chip("✓ تحقّق الآن", 16, this::gatePressed);
             gateCardButton.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
             gateCard.addView(gateCardButton, new LinearLayout.LayoutParams(-1, dp(48)));
@@ -1620,6 +1626,32 @@ public final class DirectStreamPlayer {
                 + "width:min(420px,92vw) !important;box-sizing:border-box !important;max-height:94vh !important;overflow:auto !important;margin:0 !important;z-index:2147483647 !important;}';"
                 + "(document.head||document.documentElement).appendChild(st);"
                 + "}catch(_){}})();";
+    }
+
+    // 322.3.122: the video came — the check is over, whatever the page said last.
+    // Before, a «gone» report that arrived after playback started was ignored (and the
+    // page is closed when the video starts, so none came after): the card stayed on
+    // «جارٍ التحقق…» over the playing film with no way to close it, and the stuck flag
+    // also kept the start-up time limit from ever giving its message.
+    private void gateDone() {
+        if (!gateShown) return;
+        gateShown = false;
+        gatePageVisible = false;
+        gateTapGeneration++;
+        if (gateCard != null) gateCard.setVisibility(View.GONE);
+    }
+
+    // 322.3.122: «✕» on the check card. A film already playing: only the card goes.
+    // Still on the check: the card goes and the search goes on (if the check really
+    // stays, the usual message to try another server follows).
+    private void gateClosed() {
+        if (!gateShown || closed) return;
+        if (playing) {
+            gateDone();
+            return;
+        }
+        hideGate();
+        startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
     }
 
     private void hideGate() {
@@ -2438,7 +2470,12 @@ public final class DirectStreamPlayer {
         public void gate(String token, boolean present) {
             if (!sourceChoiceToken.equals(token)) return;
             handler.post(() -> {
-                if (closed || interactiveSource || playing) return;
+                if (closed || interactiveSource) return;
+                // 322.3.122: playing already — a «gone» report still takes the card away.
+                if (playing) {
+                    if (!present) gateDone();
+                    return;
+                }
                 if (present) {
                     if (!gateShown) showGate();
                     else if (gatePageVisible && probe != null) {   // the page reloaded: only the box again
@@ -3857,6 +3894,7 @@ public final class DirectStreamPlayer {
     private void startStream() {
         if (candidate == null || closed) return;
         playing = true;
+        gateDone();   // 322.3.122: the video came, so the check passed — its card goes
         if (interactiveSource) showStage("جارٍ تشغيل الفيديو…");
         else startSubscriberStartupTimer(6);
 

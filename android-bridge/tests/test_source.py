@@ -1412,3 +1412,22 @@ assert "'الفحص يحتاج تطبيق SubHub بنسخة 322.3.122 أو أح�
 assert "java -cp /tmp/subhub-namecheck-tests NameCheckRulesTest" in w122
 assert "node tests/name_check_probe.browser.cjs" in w122 and "node tests/name_check_box.browser.cjs" in w122
 print('322.3.122 fbox names check checks OK')
+
+# 322.3.122 (b): the «تحقّق من أنك لست روبوتاً» card never stays stuck — it goes when
+# the video comes (before: a «gone» report after playback started was ignored, and the
+# page is closed when the video starts, so the card stayed on «جارٍ التحقق…» over the
+# playing film); and it has a «✕».
+d122b = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+s122b = d122b[d122b.index('    private void startStream() {'):]
+s122b = s122b[:s122b.index('destroyProbe();')]
+assert "playing = true;\n        gateDone();" in s122b                    # the video came: the card goes
+assert "private void gateDone() {" in d122b and "private void gateClosed() {" in d122b
+g122b = d122b[d122b.index('public void gate(String token, boolean present) {'):]
+g122b = g122b[:g122b.index('if (present) {')]
+assert "if (closed || interactiveSource) return;" in g122b
+assert "if (!present) gateDone();" in g122b                              # «gone» while playing still counts
+assert "TextView gateClose = chip(\"✕\", 15, this::gateClosed);" in d122b
+c122b = d122b[d122b.index('private void gateClosed() {'):]
+c122b = c122b[:c122b.index('\n    }\n')]
+assert "startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));" in c122b   # ✕ before the video: the search goes on
+print('322.3.122 check card fix checks OK')
