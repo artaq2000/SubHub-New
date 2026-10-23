@@ -21,8 +21,8 @@ public final class HlsMediaPlaylistTest {
         expectFailure("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nvariant.m3u8\n");
         expectFailure("#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\n000.ts\n");
         expectFailure("#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\n000.m4s\n");
-        expectFailure("#EXTM3U\\n#EXT-X-PART:DURATION=0.5,URI=\\\"part.ts\\\"\\n#EXTINF:4,\\n000.ts\\n");
-        expectFailure("#EXTM3U\\n#EXTINF:4,\\n#EXTINF:4,\\n000.ts\\n");
+        expectFailure("#EXTM3U\n#EXT-X-PART:DURATION=0.5,URI=\"part.ts\"\n#EXTINF:4,\n000.ts\n");
+        expectFailure("#EXTM3U\n#EXTINF:4,\n#EXTINF:4,\n000.ts\n");
         System.out.println("HLS parser smoke checks passed");
     }
 }
