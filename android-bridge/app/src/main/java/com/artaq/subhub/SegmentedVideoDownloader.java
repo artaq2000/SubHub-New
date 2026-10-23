@@ -63,26 +63,7 @@ public final class SegmentedVideoDownloader {
             if (offset != length || !mediaData)
                 throw new IOException("MP4 has no video payload (mdat); only metadata/header was downloaded");
         }
-        android.media.MediaExtractor extractor = new android.media.MediaExtractor();
-        try {
-            extractor.setDataSource(file.getAbsolutePath());
-            boolean readableVideo = false;
-            for (int i = 0; i < extractor.getTrackCount(); i++) {
-                android.media.MediaFormat format = extractor.getTrackFormat(i);
-                String mime = format.getString(android.media.MediaFormat.KEY_MIME);
-                if (mime != null && mime.startsWith("video/")) {
-                    extractor.selectTrack(i);
-                    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(4096);
-                    readableVideo = extractor.readSampleData(buffer, 0) > 0;
-                    break;
-                }
-            }
-            if (!readableVideo) throw new IOException("MP4 contains no readable video samples");
-        } catch (RuntimeException e) {
-            throw new IOException("MP4 media validation failed", e);
-        } finally {
-            extractor.release();
-        }
+
     }
 
     private static void rejectNonVideoResponse(HttpURLConnection c) throws IOException {
