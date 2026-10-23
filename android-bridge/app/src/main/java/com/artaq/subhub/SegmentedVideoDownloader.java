@@ -36,6 +36,55 @@ public final class SegmentedVideoDownloader {
                     && header[6] == 'y' && header[7] == 'p';
         }
     }
+    private static void requireMediaPayload(File file) throws IOException {
+        // A valid ftyp/moov header alone is NOT a video download.
+        // Inspect top-level ISO BMFF boxes for actual mdat payload bytes.
+        boolean mediaData = false;
+        try (RandomAccessFile in = new RandomAccessFile(file, "r")) {
+            long length = in.length();
+            long offset = 0;
+            while (offset <= length - 8) {
+                in.seek(offset);
+                long size = in.readInt() & 0xffffffffL;
+                int type = in.readInt();
+                long header = 8;
+                if (size == 1) {
+                    if (offset > length - 16) throw new IOException("Truncated MP4 box");
+                    size = in.readLong();
+                    header = 16;
+                } else if (size == 0) {
+                    size = length - offset;
+                }
+                if (size < header || size > length - offset)
+                    throw new IOException("Invalid or truncated MP4 box");
+                if (type == 0x6d646174 && size > header + 1024) mediaData = true; // mdat
+                offset += size;
+            }
+            if (offset != length || !mediaData)
+                throw new IOException("MP4 has no video payload (mdat); only metadata/header was downloaded");
+        }
+        android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+        try {
+            extractor.setDataSource(file.getAbsolutePath());
+            boolean readableVideo = false;
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                android.media.MediaFormat format = extractor.getTrackFormat(i);
+                String mime = format.getString(android.media.MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("video/")) {
+                    extractor.selectTrack(i);
+                    java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate(4096);
+                    readableVideo = extractor.readSampleData(buffer, 0) > 0;
+                    break;
+                }
+            }
+            if (!readableVideo) throw new IOException("MP4 contains no readable video samples");
+        } catch (RuntimeException e) {
+            throw new IOException("MP4 media validation failed", e);
+        } finally {
+            extractor.release();
+        }
+    }
+
     private static void rejectNonVideoResponse(HttpURLConnection c) throws IOException {
         String type = c.getContentType();
         if (type == null) return;
@@ -150,6 +199,7 @@ public final class SegmentedVideoDownloader {
             for (Future<?> job : jobs) job.get();
             if (completed[0] != size) throw new IOException("Incomplete file");
             if (!looksLikeMp4(temp)) throw new IOException("Downloaded response lacks MP4 signature (possibly an HTML page)");
+            requireMediaPayload(temp);
             if (destination.exists() && !destination.delete()) throw new IOException("Cannot replace destination");
             if (!temp.renameTo(destination)) throw new IOException("Cannot finalize download");
             return new Result(useRanges, size);
