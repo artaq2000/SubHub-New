@@ -34,10 +34,14 @@ public final class HlsMasterPlaylist {
             throw new IllegalArgumentException("Invalid HLS master playlist");
         List<Variant> variants = new ArrayList<>();
         String streamAttributes = null;
-        for (String raw : text.split("\\r?\\n")) {
+        for (String raw : text.split("\\r?\
+")) {
             String line = raw.trim();
             if (line.isEmpty()) continue;
-            if (line.startsWith("#EXT-X-MEDIA:") || line.startsWith("#EXT-X-I-FRAME-STREAM-INF:")\n                    || line.startsWith("#EXT-X-SESSION-KEY:"))\n                throw new IllegalArgumentException("Alternative tracks or encrypted master playlists require mux-aware processing");\n            if (line.startsWith("#EXT-X-STREAM-INF:")) {
+            if (line.startsWith("#EXT-X-MEDIA:") || line.startsWith("#EXT-X-I-FRAME-STREAM-INF:")
+                    || line.startsWith("#EXT-X-SESSION-KEY:"))
+                throw new IllegalArgumentException("Alternative tracks or encrypted master playlists require mux-aware processing");
+            if (line.startsWith("#EXT-X-STREAM-INF:")) {
                 if (streamAttributes != null) throw new IllegalArgumentException("Missing variant URI");
                 streamAttributes = line.substring("#EXT-X-STREAM-INF:".length());
                 continue;
