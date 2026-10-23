@@ -27,6 +27,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix '.ownerdev'
+            versionNameSuffix '-ownerdev'
+        }
         release {
             signingConfig signingConfigs.release
             minifyEnabled false
