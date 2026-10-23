@@ -27,28 +27,36 @@ public final class HlsMediaPlaylist {
         boolean end = false;
         boolean ts = true;
         boolean segmentExpected = false;
+        boolean segmentListStarted = false;
         for (String raw : body.split("\\r?\\n")) {
             String line = raw.trim();
             if (line.isEmpty()) continue;
-            if (line.startsWith("#EXT-X-STREAM-INF") || line.startsWith("#EXT-X-MEDIA:"))
+            if (line.startsWith("#EXT-X-STREAM-INF") || line.startsWith("#EXT-X-MEDIA:")
+                    || line.startsWith("#EXT-X-I-FRAME-STREAM-INF"))
                 throw new IllegalArgumentException("Master playlist requires variant selection");
             if (line.startsWith("#EXT-X-KEY") || line.startsWith("#EXT-X-SESSION-KEY"))
                 throw new IllegalArgumentException("Encrypted playlist unsupported");
             if (line.startsWith("#EXT-X-MAP") || line.startsWith("#EXT-X-BYTERANGE")
+                    || line.startsWith("#EXT-X-PART") || line.startsWith("#EXT-X-PRELOAD-HINT")
                     || line.startsWith("#EXT-X-DISCONTINUITY"))
                 throw new IllegalArgumentException("Playlist requires container-aware processing");
             if (line.startsWith("#EXT-X-ENDLIST")) end = true;
-            if (line.startsWith("#EXTINF")) segmentExpected = true;
+            if (line.startsWith("#EXTINF:")) {
+                if (segmentExpected) throw new IllegalArgumentException("Missing segment URI");
+                segmentExpected = true;
+                segmentListStarted = true;
+            }
             if (line.startsWith("#")) continue;
             if (!segmentExpected) throw new IllegalArgumentException("Unexpected playlist URI");
             URI resolved = playlistUri.resolve(line);
             if (!"https".equalsIgnoreCase(resolved.getScheme()) && !"http".equalsIgnoreCase(resolved.getScheme()))
                 throw new IllegalArgumentException("Unsupported segment URL");
+            if (parts.size() >= 100000) throw new IllegalArgumentException("Too many HLS segments");
             parts.add(resolved);
             if (!resolved.getPath().toLowerCase(java.util.Locale.ROOT).endsWith(".ts")) ts = false;
             segmentExpected = false;
         }
-        if (parts.isEmpty() || segmentExpected) throw new IllegalArgumentException("No complete media segments");
+        if (!segmentListStarted || parts.isEmpty() || segmentExpected) throw new IllegalArgumentException("No complete media segments");
         return new HlsMediaPlaylist(parts, ts, end);
     }
 }
