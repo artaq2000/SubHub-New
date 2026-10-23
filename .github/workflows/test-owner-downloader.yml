@@ -9,6 +9,7 @@ on:
       - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsMediaPlaylist.java'
       - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsTransportStreamDownloader.java'
       - 'android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java'
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsPlaylistInspector.java'
       - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsMasterPlaylist.java'
       - 'android-bridge/tests/HlsMasterPlaylistTest.java'
       - 'android-bridge/tests/HlsMediaPlaylistTest.java'
@@ -34,6 +35,7 @@ jobs:
             android-bridge/app/src/main/java/com/artaq/subhub/HlsMediaPlaylist.java \
             android-bridge/app/src/main/java/com/artaq/subhub/HlsTransportStreamDownloader.java \
             android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java \
+            android-bridge/app/src/main/java/com/artaq/subhub/HlsPlaylistInspector.java \
             android-bridge/app/src/main/java/com/artaq/subhub/HlsMasterPlaylist.java \
             android-bridge/tests/HlsMasterPlaylistTest.java \
             android-bridge/tests/HlsMediaPlaylistTest.java \
