@@ -22,6 +22,28 @@ import java.util.List;
 public final class OwnerVideoDownloadDialog {
     private OwnerVideoDownloadDialog() {}
 
+    private static void requireReadableVideo(File file) throws java.io.IOException {
+        android.media.MediaExtractor extractor = new android.media.MediaExtractor();
+        try {
+            extractor.setDataSource(file.getAbsolutePath());
+            boolean readable = false;
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                android.media.MediaFormat format = extractor.getTrackFormat(i);
+                String mime = format.getString(android.media.MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("video/")) {
+                    extractor.selectTrack(i);
+                    readable = extractor.readSampleData(java.nio.ByteBuffer.allocate(65536), 0) > 0;
+                    break;
+                }
+            }
+            if (!readable) throw new java.io.IOException("ملف MP4 لا يحتوي على عينات فيديو قابلة للقراءة");
+        } catch (RuntimeException e) {
+            throw new java.io.IOException("تعذر التحقق من محتوى الفيديو", e);
+        } finally {
+            extractor.release();
+        }
+    }
+
     public static void show(Activity activity, String candidateUrl) {
         Handler main = new Handler(Looper.getMainLooper());
         LinearLayout layout = new LinearLayout(activity);
@@ -116,6 +138,7 @@ public final class OwnerVideoDownloadDialog {
                                 (done, total) -> main.post(() -> {
                                     if (dialog.isShowing()) status.setText("تحميل MP4: " + (100 * done / Math.max(1, total)) + "%");
                                 }));
+                            requireReadableVideo(destination);
                             result = destination;
                         } else {
                             result = OwnerVideoDownload.downloadHlsTransportStream(
@@ -137,8 +160,8 @@ public final class OwnerVideoDownloadDialog {
                             Toast.makeText(activity, "اكتمل حفظ الفيديو في التنزيلات", Toast.LENGTH_LONG).show();
                             new AlertDialog.Builder(activity)
                                 .setTitle("تم حفظ الفيديو")
-                                .setMessage("المجلد: Download/SubHub\\nالملف: " + name
-                                    + "\\nالحجم: " + bytes + " بايت")
+                                .setMessage("المجلد: Download/SubHub\nالملف: " + name
+                                    + "\nالحجم: " + bytes + " بايت")
                                 .setPositiveButton("فتح الملف", (d, w) -> {
                                     try {
                                         android.content.Intent intent = new android.content.Intent(
