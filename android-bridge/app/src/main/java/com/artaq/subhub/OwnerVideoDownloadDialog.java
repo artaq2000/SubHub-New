@@ -35,6 +35,7 @@ public final class OwnerVideoDownloadDialog {
         source.setText(candidateUrl == null ? "" : candidateUrl);
         layout.addView(source);
 
+        final boolean directMp4 = candidateUrl != null && candidateUrl.toLowerCase(java.util.Locale.ROOT).split("\\?")[0].endsWith(".mp4");
         Spinner quality = new Spinner(activity);
         layout.addView(quality);
         Spinner connections = new Spinner(activity);
@@ -61,6 +62,11 @@ public final class OwnerVideoDownloadDialog {
                 if (busy[0]) return;
                 busy[0] = true;
                 options[0] = null;
+                if (directMp4) {
+                    status.setText("رابط MP4 مباشر: اختر عدد الاتصالات ثم اضغط تحميل. الجودة هي جودة الملف الأصلي.");
+                    busy[0] = false;
+                    return;
+                }
                 status.setText("جاري فحص الجودات...");
                 String url = source.getText().toString().trim();
                 new Thread(() -> {
@@ -90,30 +96,39 @@ public final class OwnerVideoDownloadDialog {
                 }, "SubHub-owner-inspect").start();
             });
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
-                if (busy[0] || options[0] == null || quality.getSelectedItemPosition() < 0) return;
-                int selected = quality.getSelectedItemPosition();
-                URI uri = options[0].get(selected).url;
+                if (busy[0] || (!directMp4 && (options[0] == null || quality.getSelectedItemPosition() < 0))) return;
+                int selected = directMp4 ? 0 : quality.getSelectedItemPosition();
+                URI uri = directMp4 ? URI.create(source.getText().toString().trim()) : options[0].get(selected).url;
                 int workers = Integer.parseInt(counts[connections.getSelectedItemPosition()]);
                 File folder = activity.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES);
                 if (folder == null) {
                     status.setText("تعذر الوصول إلى مجلد الفيديو");
                     return;
                 }
-                File destination = new File(folder, "subhub-owner-" + System.currentTimeMillis() + ".ts");
+                File destination = new File(folder, "subhub-owner-" + System.currentTimeMillis() + (directMp4 ? ".mp4" : ".ts"));
                 busy[0] = true;
                 status.setText("جاري التحميل...");
                 new Thread(() -> {
                     try {
-                        File result = OwnerVideoDownload.downloadHlsTransportStream(
-                            uri, destination, workers, (stage, done, total) ->
-                                main.post(() -> {
-                                    if (dialog.isShowing()) status.setText(stage + ": " + done + "/" + total);
+                        File result;
+                        if (directMp4) {
+                            SegmentedVideoDownloader.download(uri.toString(), destination, workers,
+                                (done, total) -> main.post(() -> {
+                                    if (dialog.isShowing()) status.setText("تحميل MP4: " + (100 * done / Math.max(1, total)) + "%");
                                 }));
+                            result = destination;
+                        } else {
+                            result = OwnerVideoDownload.downloadHlsTransportStream(
+                                uri, destination, workers, (stage, done, total) ->
+                                    main.post(() -> {
+                                        if (dialog.isShowing()) status.setText(stage + ": " + done + "/" + total);
+                                    }));
+                        }
                         main.post(() -> {
                             if (!dialog.isShowing()) return;
                             busy[0] = false;
                             status.setText("تم حفظ ملف TS: " + result.getAbsolutePath());
-                            Toast.makeText(activity, "اكتمل تحميل TS", Toast.LENGTH_LONG).show();
+                            Toast.makeText(activity, "اكتمل تحميل الفيديو", Toast.LENGTH_LONG).show();
                         });
                     } catch (Exception e) {
                         main.post(() -> {
