@@ -58,7 +58,24 @@ public final class SegmentedVideoDownloader {
             ranged = size > 0 && "bytes".equalsIgnoreCase(probe.getHeaderField("Accept-Ranges"));
         } finally { probe.disconnect(); }
         if (size <= 0) throw new IOException("Unknown content length");
+        // Some servers advertise Accept-Ranges but ignore Range on actual GETs.
+        // Verify support before scheduling parallel writes. Never concatenate 200
+        // responses from range workers: that would corrupt the output.
+        if (ranged) {
+            HttpURLConnection check = open(source);
+            try {
+                check.setRequestProperty("Range", "bytes=0-0");
+                if (validator != null) check.setRequestProperty("If-Range", validator);
+                int status = check.getResponseCode();
+                String expected = "bytes 0-0/" + size;
+                if (status != 206 || !expected.equals(check.getHeaderField("Content-Range"))) {
+                    if (status != 200) throw new IOException("Range probe HTTP " + status);
+                    ranged = false; // Safely use one ordinary GET instead.
+                }
+            } finally { check.disconnect(); }
+        }
         int parts = ranged ? (int)Math.min(connections, Math.max(1, size / (1024 * 1024))) : 1;
+        final boolean useRanges = ranged;
         final String stableValidator = validator;
         final long total = size;
         final Object lock = new Object();
@@ -74,14 +91,14 @@ public final class SegmentedVideoDownloader {
                     HttpURLConnection c = null;
                     try {
                         c = open(source);
-                        if (ranged) {
+                        if (useRanges) {
                             c.setRequestProperty("Range", "bytes=" + start + "-" + end);
                             if (stableValidator != null) c.setRequestProperty("If-Range", stableValidator);
                         }
                         int status = c.getResponseCode();
-                        if (ranged && status != 206) throw new IOException("Server rejected byte range");
-                        if (!ranged && status != 200) throw new IOException("HTTP " + status);
-                        if (ranged) {
+                        if (useRanges && status != 206) throw new IOException("Server rejected byte range");
+                        if (!useRanges && status != 200) throw new IOException("HTTP " + status);
+                        if (useRanges) {
                             String expected = "bytes " + start + "-" + end + "/" + total;
                             if (!expected.equals(c.getHeaderField("Content-Range")))
                                 throw new IOException("Mismatched Content-Range");
@@ -111,7 +128,7 @@ public final class SegmentedVideoDownloader {
             if (completed[0] != size) throw new IOException("Incomplete file");
             if (destination.exists() && !destination.delete()) throw new IOException("Cannot replace destination");
             if (!temp.renameTo(destination)) throw new IOException("Cannot finalize download");
-            return new Result(ranged, size);
+            return new Result(useRanges, size);
         } catch (Exception e) {
             for (Future<?> job : jobs) job.cancel(true);
             temp.delete();
