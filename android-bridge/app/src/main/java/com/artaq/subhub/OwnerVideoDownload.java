@@ -29,8 +29,10 @@ public final class OwnerVideoDownload {
         if (progress != null) progress.onStage("inspect", 0, 1);
         HlsMediaPlaylist media = HlsPlaylistInspector.loadMediaPlaylist(selectedPlaylist);
         if (progress != null) progress.onStage("inspect", 1, 1);
-        if (!media.transportStream || !media.ended)
-            throw new IllegalArgumentException("Selected stream cannot be assembled as a finite MPEG-TS file");
+        if (!media.ended)
+            throw new IllegalArgumentException("القائمة لا تحتوي على علامة نهاية البث EXT-X-ENDLIST؛ لا يمكن تجميعها كملف مكتمل حالياً.");
+        if (!media.transportStream)
+            throw new IllegalArgumentException("مقاطع البث ليست بامتداد TS. يلزم فحص الحاوية ودعم fMP4 أو امتدادات المقاطع المختلفة قبل التنزيل.");
         HlsTransportStreamDownloader.download(
             media, destinationTs, connections,
             (done, total) -> {
