@@ -14,8 +14,8 @@ public final class HlsMasterPlaylistTest {
             throw new AssertionError("HLS quality variants were not parsed correctly");
         try {
             HlsMasterPlaylist.parse(URI.create("https://example.com/master.m3u8"),
-                "#EXTM3U\\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\\\"audio\\\",URI=\\\"audio.m3u8\\\"\\n"
-                + "#EXT-X-STREAM-INF:BANDWIDTH=2000000,AUDIO=\\\"audio\\\"\\nvideo.m3u8\\n");
+                "#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"audio\",URI=\"audio.m3u8\"\n"
+                + "#EXT-X-STREAM-INF:BANDWIDTH=2000000,AUDIO=\"audio\"\nvideo.m3u8\n");
             throw new AssertionError("Separate audio track must be rejected until muxing is supported");
         } catch (IllegalArgumentException expected) { }
         System.out.println("HLS master playlist variants passed");
