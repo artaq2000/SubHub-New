@@ -35,5 +35,11 @@ jobs:
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
-      - name: Compile Android debug sources (no release signing or publishing)
-        run: gradle :app:compileDebugJavaWithJavac --no-daemon --stacktrace
+      - name: Build isolated debug APK (no release signing or publishing)
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Upload debug test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SubHub-owner-downloader-debug-test
+          path: android-bridge/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
