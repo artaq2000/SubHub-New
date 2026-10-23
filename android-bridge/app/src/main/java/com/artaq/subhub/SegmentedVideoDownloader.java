@@ -24,6 +24,27 @@ public final class SegmentedVideoDownloader {
     }
     private static final int TIMEOUT_MS = 20000;
     private static final int BUFFER = 64 * 1024;
+    private static boolean looksLikeMp4(File file) throws IOException {
+        if (file.length() < 1024) return false;
+        try (RandomAccessFile in = new RandomAccessFile(file, "r")) {
+            byte[] header = new byte[12];
+            in.readFully(header);
+            long boxSize = ((header[0] & 255L) << 24) | ((header[1] & 255L) << 16)
+                    | ((header[2] & 255L) << 8) | (header[3] & 255L);
+            return boxSize >= 8 && boxSize <= file.length()
+                    && header[4] == 'f' && header[5] == 't'
+                    && header[6] == 'y' && header[7] == 'p';
+        }
+    }
+    private static void rejectNonVideoResponse(HttpURLConnection c) throws IOException {
+        String type = c.getContentType();
+        if (type == null) return;
+        String normalized = type.toLowerCase(java.util.Locale.ROOT);
+        if (normalized.contains("text/html") || normalized.contains("application/json")
+                || normalized.contains("text/plain") || normalized.contains("text/xml"))
+            throw new IOException("Server returned a web page or error instead of video: " + type);
+    }
+
     private SegmentedVideoDownloader() {}
 
     private static HttpURLConnection open(String source) throws IOException {
@@ -51,6 +72,7 @@ public final class SegmentedVideoDownloader {
             probe.setRequestMethod("HEAD");
             int status = probe.getResponseCode();
             if (status < 200 || status >= 300) throw new IOException("HEAD failed: " + status);
+            rejectNonVideoResponse(probe);
             size = probe.getContentLengthLong();
             validator = probe.getHeaderField("ETag");
             if (validator == null || validator.startsWith("W/"))
@@ -96,6 +118,7 @@ public final class SegmentedVideoDownloader {
                             if (stableValidator != null) c.setRequestProperty("If-Range", stableValidator);
                         }
                         int status = c.getResponseCode();
+                        rejectNonVideoResponse(c);
                         if (useRanges && status != 206) throw new IOException("Server rejected byte range");
                         if (!useRanges && status != 200) throw new IOException("HTTP " + status);
                         if (useRanges) {
@@ -126,6 +149,7 @@ public final class SegmentedVideoDownloader {
             }
             for (Future<?> job : jobs) job.get();
             if (completed[0] != size) throw new IOException("Incomplete file");
+            if (!looksLikeMp4(temp)) throw new IOException("Downloaded response lacks MP4 signature (possibly an HTML page)");
             if (destination.exists() && !destination.delete()) throw new IOException("Cannot replace destination");
             if (!temp.renameTo(destination)) throw new IOException("Cannot finalize download");
             return new Result(useRanges, size);
