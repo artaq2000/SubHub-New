@@ -10,6 +10,7 @@ on:
       - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsTransportStreamDownloader.java'
       - 'android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java'
       - 'android-bridge/tests/HlsMediaPlaylistTest.java'
+      - 'android-bridge/tests/HlsTransportStreamDownloaderTest.java'
       - '.github/workflows/test-owner-downloader.yml'
 
 permissions:
@@ -31,6 +32,9 @@ jobs:
             android-bridge/app/src/main/java/com/artaq/subhub/HlsMediaPlaylist.java \
             android-bridge/app/src/main/java/com/artaq/subhub/HlsTransportStreamDownloader.java \
             android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java \
-            android-bridge/tests/HlsMediaPlaylistTest.java
+            android-bridge/tests/HlsMediaPlaylistTest.java \
+            android-bridge/tests/HlsTransportStreamDownloaderTest.java
       - name: Test HLS playlist parsing
         run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsMediaPlaylistTest
+      - name: Test parallel HLS download and assembly
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsTransportStreamDownloaderTest
