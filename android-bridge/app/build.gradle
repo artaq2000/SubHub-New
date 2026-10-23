@@ -9,10 +9,12 @@ android {
 
     signingConfigs {
         release {
-            storeFile file(signingKeystorePath)
-            storePassword signingPassword
-            keyAlias 'subhub-release'
-            keyPassword signingPassword
+            if (signingKeystorePath && signingPassword) {
+                storeFile file(signingKeystorePath)
+                storePassword signingPassword
+                keyAlias 'subhub-release'
+                keyPassword signingPassword
+            }
         }
     }
 
