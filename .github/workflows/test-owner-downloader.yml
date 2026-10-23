@@ -1,0 +1,61 @@
+name: Test owner downloader components
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/owner-multiconnection-download-322-3-123
+    paths:
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsMediaPlaylist.java'
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsTransportStreamDownloader.java'
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java'
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/OwnerVideoDownload.java'
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsPlaylistInspector.java'
+      - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsMasterPlaylist.java'
+      - 'android-bridge/tests/OwnerVideoDownloadTest.java'
+      - 'android-bridge/tests/HlsPlaylistInspectorTest.java'
+      - 'android-bridge/tests/HlsMasterPlaylistTest.java'
+      - 'android-bridge/tests/HlsMediaPlaylistTest.java'
+      - 'android-bridge/tests/HlsTransportStreamDownloaderTest.java'
+      - '.github/workflows/test-owner-downloader.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  compile-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile downloader and parser
+        run: |
+          mkdir -p /tmp/subhub-downloader-classes
+          javac -d /tmp/subhub-downloader-classes \
+            android-bridge/app/src/main/java/com/artaq/subhub/HlsMediaPlaylist.java \
+            android-bridge/app/src/main/java/com/artaq/subhub/HlsTransportStreamDownloader.java \
+            android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java \
+            android-bridge/app/src/main/java/com/artaq/subhub/OwnerVideoDownload.java \
+            android-bridge/app/src/main/java/com/artaq/subhub/HlsPlaylistInspector.java \
+            android-bridge/app/src/main/java/com/artaq/subhub/HlsMasterPlaylist.java \
+            android-bridge/tests/OwnerVideoDownloadTest.java \
+            android-bridge/tests/HlsPlaylistInspectorTest.java \
+            android-bridge/tests/HlsMasterPlaylistTest.java \
+            android-bridge/tests/HlsMediaPlaylistTest.java \
+            android-bridge/tests/HlsTransportStreamDownloaderTest.java
+      - name: Test HLS playlist parsing
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsMediaPlaylistTest
+      - name: Test HLS master playlist quality options
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsMasterPlaylistTest
+      - name: Test HLS inspection and selected quality
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsPlaylistInspectorTest
+      - name: Test owner end-to-end HLS download
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.OwnerVideoDownloadTest
+      - name: Test parallel HLS download and assembly
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsTransportStreamDownloaderTest
