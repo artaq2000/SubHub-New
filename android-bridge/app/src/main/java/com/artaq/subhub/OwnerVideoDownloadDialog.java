@@ -124,11 +124,33 @@ public final class OwnerVideoDownloadDialog {
                                         if (dialog.isShowing()) status.setText(stage + ": " + done + "/" + total);
                                     }));
                         }
+                        String name = result.getName();
+                        String mime = directMp4 ? "video/mp4" : "video/mp2t";
+                        android.net.Uri published = OwnerDownloadPublisher.publish(activity, result, name, mime);
+                        long bytes = result.length();
+                        if (!result.delete()) android.util.Log.w("SubHubDownload", "Could not remove staging file");
                         main.post(() -> {
                             if (!dialog.isShowing()) return;
                             busy[0] = false;
-                            status.setText("تم حفظ ملف TS: " + result.getAbsolutePath());
-                            Toast.makeText(activity, "اكتمل تحميل الفيديو", Toast.LENGTH_LONG).show();
+                            status.setText("تم الحفظ في التنزيلات / SubHub: " + name
+                                + " (" + (bytes / (1024 * 1024)) + " MB)");
+                            Toast.makeText(activity, "اكتمل حفظ الفيديو في التنزيلات", Toast.LENGTH_LONG).show();
+                            new AlertDialog.Builder(activity)
+                                .setTitle("تم حفظ الفيديو")
+                                .setMessage("المجلد: Download/SubHub\\nالملف: " + name
+                                    + "\\nالحجم: " + bytes + " بايت")
+                                .setPositiveButton("فتح الملف", (d, w) -> {
+                                    try {
+                                        android.content.Intent intent = new android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW);
+                                        intent.setDataAndType(published, mime);
+                                        intent.addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                                        activity.startActivity(intent);
+                                    } catch (Exception e) {
+                                        Toast.makeText(activity, "افتح الملف من التنزيلات / SubHub", Toast.LENGTH_LONG).show();
+                                    }
+                                })
+                                .setNegativeButton("إغلاق", null).show();
                         });
                     } catch (Exception e) {
                         main.post(() -> {
