@@ -137,14 +137,7 @@ public final class OwnerDownloaderTestActivity extends Activity {
             .setTitle("روابط الفيديو المكتشفة")
             .setItems(labels, (dialog, index) -> {
                 String selected = links.get(index);
-                if (selected.toLowerCase(Locale.ROOT).contains(".m3u8")) {
-                    OwnerVideoDownloadDialog.show(this, selected);
-                } else {
-                    new AlertDialog.Builder(this)
-                        .setTitle("رابط MP4")
-                        .setMessage("تم اكتشاف رابط MP4، لكن واجهة تنزيل MP4 لم تُربط بعد. التحميل التجريبي الحالي يدعم HLS TS فقط.")
-                        .setPositiveButton("حسناً", null).show();
-                }
+                OwnerVideoDownloadDialog.show(this, selected);
             }).setNegativeButton("إغلاق", null).show();
     }
 
