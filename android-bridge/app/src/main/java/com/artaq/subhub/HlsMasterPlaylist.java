@@ -34,8 +34,7 @@ public final class HlsMasterPlaylist {
             throw new IllegalArgumentException("Invalid HLS master playlist");
         List<Variant> variants = new ArrayList<>();
         String streamAttributes = null;
-        for (String raw : text.split("\\r?\
-")) {
+        for (String raw : text.split("\\r?\\n")) {
             String line = raw.trim();
             if (line.isEmpty()) continue;
             if (line.startsWith("#EXT-X-MEDIA:") || line.startsWith("#EXT-X-I-FRAME-STREAM-INF:")
