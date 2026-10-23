@@ -11,6 +11,7 @@ on:
       - 'android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java'
       - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsPlaylistInspector.java'
       - 'android-bridge/app/src/main/java/com/artaq/subhub/HlsMasterPlaylist.java'
+      - 'android-bridge/tests/HlsPlaylistInspectorTest.java'
       - 'android-bridge/tests/HlsMasterPlaylistTest.java'
       - 'android-bridge/tests/HlsMediaPlaylistTest.java'
       - 'android-bridge/tests/HlsTransportStreamDownloaderTest.java'
@@ -37,6 +38,7 @@ jobs:
             android-bridge/app/src/main/java/com/artaq/subhub/SegmentedVideoDownloader.java \
             android-bridge/app/src/main/java/com/artaq/subhub/HlsPlaylistInspector.java \
             android-bridge/app/src/main/java/com/artaq/subhub/HlsMasterPlaylist.java \
+            android-bridge/tests/HlsPlaylistInspectorTest.java \
             android-bridge/tests/HlsMasterPlaylistTest.java \
             android-bridge/tests/HlsMediaPlaylistTest.java \
             android-bridge/tests/HlsTransportStreamDownloaderTest.java
@@ -44,5 +46,7 @@ jobs:
         run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsMediaPlaylistTest
       - name: Test HLS master playlist quality options
         run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsMasterPlaylistTest
+      - name: Test HLS inspection and selected quality
+        run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsPlaylistInspectorTest
       - name: Test parallel HLS download and assembly
         run: java -cp /tmp/subhub-downloader-classes com.artaq.subhub.HlsTransportStreamDownloaderTest
