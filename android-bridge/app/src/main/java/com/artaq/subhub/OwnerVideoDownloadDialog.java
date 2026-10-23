@@ -27,16 +27,25 @@ public final class OwnerVideoDownloadDialog {
         try {
             extractor.setDataSource(file.getAbsolutePath());
             boolean readable = false;
+            long durationUs = -1;
+            boolean hasAudio = false;
             for (int i = 0; i < extractor.getTrackCount(); i++) {
                 android.media.MediaFormat format = extractor.getTrackFormat(i);
                 String mime = format.getString(android.media.MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("audio/")) hasAudio = true;
                 if (mime != null && mime.startsWith("video/")) {
+                    if (format.containsKey(android.media.MediaFormat.KEY_DURATION))
+                        durationUs = format.getLong(android.media.MediaFormat.KEY_DURATION);
                     extractor.selectTrack(i);
                     readable = extractor.readSampleData(java.nio.ByteBuffer.allocate(65536), 0) > 0;
                     break;
                 }
             }
             if (!readable) throw new java.io.IOException("ملف MP4 لا يحتوي على عينات فيديو قابلة للقراءة");
+            if (durationUs < 10L * 60L * 1000000L)
+                throw new java.io.IOException("هذا الرابط أعاد مقطعاً قصيراً أو مدة غير معروفة، وليس فيلماً كاملاً (الحد الأدنى للتجربة 10 دقائق)");
+            if (!hasAudio)
+                throw new java.io.IOException("هذا الرابط أعاد فيديو بلا مسار صوتي؛ لا يُعتمد كفيلم كامل");
         } catch (RuntimeException e) {
             throw new java.io.IOException("تعذر التحقق من محتوى الفيديو", e);
         } finally {
