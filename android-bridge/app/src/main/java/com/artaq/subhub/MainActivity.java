@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 131;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 132;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -612,6 +612,55 @@ public class MainActivity extends Activity {
          * never see a popup-blocking message while watching.
          */
         lastVidSrcBlockedAt = SystemClock.elapsedRealtime();
+    }
+
+    // 322.3.123: the owner's site names, kept on this device as the page last gave them
+    // (siteNamesV3123): Moviesmod family ("mm") and fbox family ("fbox").
+    private static final String SITE_NAMES_KEY = "site_names_v3123";
+    private static final String MM_STORE_HOST = "moviesmod.gd";
+    private static final String[] MM_DEFAULT_NAMES = {"streamboppo.cyou", "streamdude.cyou", "streamzippy.cyou", "moviesmod.gd"};
+    private String siteMoveJs = null;
+    private String popupCloseJs = null;
+
+    private java.util.ArrayList<String> storedSiteNames(String family) {
+        java.util.ArrayList<String> out = new java.util.ArrayList<>();
+        try {
+            JSONObject o = new JSONObject(nativePrefs.getString(SITE_NAMES_KEY, "{}"));
+            org.json.JSONArray a = o.optJSONArray(family);
+            for (int i = 0; a != null && i < a.length() && out.size() < 12; i++) {
+                String h = NameCheckRules.cleanHost(a.optString(i, ""));
+                if (!h.isEmpty() && !HOME_HOST.equalsIgnoreCase(h) && !out.contains(h)) out.add(h);
+            }
+        } catch (Exception ignored) {}
+        if (out.isEmpty() && "mm".equals(family)) out.addAll(java.util.Arrays.asList(MM_DEFAULT_NAMES));
+        return out;
+    }
+
+    private static boolean isMoviesmodStoreHost(String h) {
+        return h != null && (h.equals(MM_STORE_HOST) || h.endsWith("." + MM_STORE_HOST));
+    }
+
+    // A page of a Moviesmod name (streamboppo.cyou/movie/27205) as it is saved: moviesmod.gd/movie/27205.
+    private String moviesmodStoreUrl(String raw) {
+        if (raw == null || raw.isEmpty() || raw.length() > 2200) return raw == null ? "" : raw;
+        try {
+            Uri u = Uri.parse(raw);
+            String h = NameCheckRules.cleanHost(u.getHost() == null ? "" : u.getHost());
+            if (!"https".equalsIgnoreCase(u.getScheme()) || h.isEmpty() || HOME_HOST.equalsIgnoreCase(h)) return raw;
+            return u.buildUpon().authority(MM_STORE_HOST).build().toString();
+        } catch (Exception ignored) {
+            return raw;
+        }
+    }
+
+    private String siteMoveScript() {
+        if (siteMoveJs == null) siteMoveJs = readAsset("site_move.js");
+        return siteMoveJs;
+    }
+
+    private String popupCloseScript() {
+        if (popupCloseJs == null) popupCloseJs = readAsset("popup_close.js");
+        return popupCloseJs;
     }
 
     // 322.3.122: one answer of the names check, to the page (only the SubHub page).
@@ -2172,7 +2221,10 @@ public class MainActivity extends Activity {
                     // 322.3.120: the other fbox names (in order) for when this page does not open.
                     final java.util.ArrayList<String> fboxFallbackHosts = new java.util.ArrayList<>();
                     // 322.3.121: the fbox name this page opens on (shown to the owner adding a server).
+                    // 322.3.123: also the Moviesmod name.
                     String fboxNameValue = "";
+                    // 322.3.123: "fbox" / "mm" (Moviesmod family) — the names system of this page.
+                    String siteFamilyValue = "";
                     // 322.3.103: ⏱ timing saved on this device belongs to this film
                     // (or episode) on this card only.
                     String syncScopeValue = "";
@@ -2243,21 +2295,40 @@ public class MainActivity extends Activity {
                                 }
                             } catch (Exception ignored) {}
                         }
-                        if (fboxHostValue.isEmpty() && !savedServerPageUrl.isEmpty() && savedServerPageUrl.length() <= 2200) {
-                            try {
-                                Uri savedUri = Uri.parse(savedServerPageUrl);
-                                String savedHost = savedUri.getHost();
-                                if ("https".equalsIgnoreCase(savedUri.getScheme())
-                                        && savedHost != null
-                                        && ("moviesmod.gd".equalsIgnoreCase(savedHost)
-                                        || savedHost.toLowerCase(Locale.ROOT).endsWith(".moviesmod.gd"))) {
-                                    resolvedSourceUrl = savedUri.toString();
-                                }
-                            } catch (Exception ignored) {}
+                        // 322.3.123: Moviesmod under several names (StreamBoppo, StreamDude… — the
+                        // same pages by TMDB number, the same servers). A saved page keeps moviesmod.gd
+                        // (every app version knows it) and opens on the chosen name; for viewers the
+                        // other names follow in order. The page sends its order (mmHosts) for the
+                        // servers list; the old cards use the owner's names kept on this device.
+                        String mmHostValue = "";
+                        final java.util.ArrayList<String> mmNames = storedSiteNames("mm");
+                        final org.json.JSONArray mmHostList = config.optJSONArray("mmHosts");
+                        if (fboxHostValue.isEmpty()) {
+                            Uri base = Uri.parse(fallbackSourceUrl);
+                            if (!savedServerPageUrl.isEmpty() && savedServerPageUrl.length() <= 2200) {
+                                try {
+                                    Uri savedUri = Uri.parse(savedServerPageUrl);
+                                    String sh = NameCheckRules.cleanHost(savedUri.getHost() == null ? "" : savedUri.getHost());
+                                    if ("https".equalsIgnoreCase(savedUri.getScheme()) && !sh.isEmpty()
+                                            && !HOME_HOST.equalsIgnoreCase(sh)
+                                            && (isMoviesmodStoreHost(sh) || mmNames.contains(sh)
+                                            || "moviesmod".equals(config.optString("site", "")))) {
+                                        base = savedUri;
+                                    }
+                                } catch (Exception ignored) {}
+                            }
+                            String bh = NameCheckRules.cleanHost(base.getHost() == null ? "" : base.getHost());
+                            if (bh.isEmpty() || isMoviesmodStoreHost(bh)) {
+                                bh = mmNames.isEmpty() ? MM_STORE_HOST : mmNames.get(0);
+                                base = base.buildUpon().authority(bh).build();
+                            }
+                            mmHostValue = bh;
+                            resolvedSourceUrl = base.toString();
                         }
                         sourceUrl = resolvedSourceUrl;
-                        allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;
-                        fboxNameValue = fboxHostValue;
+                        allowedHost = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;
+                        fboxNameValue = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;
+                        siteFamilyValue = fboxHostValue.isEmpty() ? "mm" : "fbox";
                         resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
                         syncScopeValue = mode + "_" + stableKey;
                         if ("tv".equals(kind)) {
@@ -2288,6 +2359,21 @@ public class MainActivity extends Activity {
                                 }
                             }
                         }
+                        // 322.3.123: the other Moviesmod names for viewers.
+                        if (!mmHostValue.isEmpty() && !interactiveSource) {
+                            java.util.ArrayList<String> mmOrder = new java.util.ArrayList<>();
+                            if (mmHostList != null) {
+                                for (int i = 0; i < mmHostList.length() && i < 20; i++) mmOrder.add(mmHostList.optString(i, ""));
+                            } else {
+                                mmOrder.addAll(mmNames);
+                            }
+                            for (String mmRaw : mmOrder) {
+                                String mh = NameCheckRules.cleanHost(mmRaw);
+                                if (mh.isEmpty() || HOME_HOST.equalsIgnoreCase(mh) || mh.equals(mmHostValue)
+                                        || fboxFallbackHosts.contains(mh) || fboxFallbackHosts.size() >= 11) continue;
+                                fboxFallbackHosts.add(mh);
+                            }
+                        }
                         if (preferredServerKey.length() > 80 || preferredServerLabel.length() > 80) return;
                         String rawEmbed = config.optString("embedUrl", "").trim();
                         // 322.3.113: every saved server (not only the yellow card) opens its
@@ -2301,7 +2387,8 @@ public class MainActivity extends Activity {
                                 if ("https".equalsIgnoreCase(embedUri.getScheme()) && embedHost != null) {
                                     String eh = embedHost.toLowerCase(Locale.ROOT);
                                     if (!eh.equals("moviesmod.gd") && !eh.endsWith(".moviesmod.gd")
-                                            && !eh.matches("([a-z0-9-]+\\.)*fbox\\.[a-z]{2,12}")) {
+                                            && !eh.matches("([a-z0-9-]+\\.)*fbox\\.[a-z]{2,12}")
+                                            && !mmNames.contains(eh)) {
                                         directEmbedUrl = embedUri.toString();
                                     }
                                 }
@@ -2372,6 +2459,7 @@ public class MainActivity extends Activity {
                     if (directStreamPlayer != null) directStreamPlayer.close();
                     directStreamSession = session;
                     final String localSubtitleKey = localSubtitleKeyValue;
+                    final String siteFamily = siteFamilyValue;
                     org.json.JSONArray catalog = config.optJSONArray("catalog");
                     if (catalog == null) catalog = new org.json.JSONArray();
                     directStreamPlayer = new DirectStreamPlayer(MainActivity.this, root,
@@ -2394,18 +2482,23 @@ public class MainActivity extends Activity {
                         }
                         public void serverSelected(String key, String label, String serverPageUrl, String embedUrl) {
                             if (!moviesmodFlow || webView == null) return;
+                            // 322.3.123: a Moviesmod page is kept as moviesmod.gd (it opens on the chosen name).
+                            String page = serverPageUrl == null ? "" : serverPageUrl;
+                            if ("mm".equals(siteFamily)) page = moviesmodStoreUrl(page);
                             String js = jsPrefix + "ServerSelected && " + jsPrefix + "ServerSelected("
                                     + JSONObject.quote(session) + ","
                                     + JSONObject.quote(key) + ","
                                     + JSONObject.quote(label) + ","
-                                    + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ","
+                                    + JSONObject.quote(page) + ","
                                     + JSONObject.quote(embedUrl == null ? "" : embedUrl) + ")";
                             webView.evaluateJavascript(js, null);
                         }
                         public void reopenManual(String serverPageUrl) {
                             if (!moviesmodFlow || webView == null) return;
+                            String page = serverPageUrl == null ? "" : serverPageUrl;
+                            if ("mm".equals(siteFamily)) page = moviesmodStoreUrl(page);   // 322.3.123
                             String js = jsPrefix + "ReopenManual && " + jsPrefix + "ReopenManual("
-                                    + JSONObject.quote(serverPageUrl == null ? "" : serverPageUrl) + ")";
+                                    + JSONObject.quote(page) + ")";
                             webView.evaluateJavascript(js, null);
                         }
                         public void saveRequested(long subtitleOffsetMs) {
@@ -2492,19 +2585,47 @@ public class MainActivity extends Activity {
                                     || !host.matches("([a-z0-9-]+\\.)+[a-z]{2,12}")) return;
                             ui.post(() -> {
                                 if (webView == null || !isTrustedHomePage()) return;
-                                webView.evaluateJavascript("window.__subhubFboxHostV3120 && window.__subhubFboxHostV3120("
-                                        + JSONObject.quote(host) + "," + (ok ? "true" : "false") + ")", null);
+                                // 322.3.123: the family goes with it (fbox / Moviesmod names).
+                                webView.evaluateJavascript("(window.__subhubSiteHostV3123 ? window.__subhubSiteHostV3123("
+                                        + JSONObject.quote(siteFamily) + "," + JSONObject.quote(host) + "," + (ok ? "true" : "false")
+                                        + ") : window.__subhubFboxHostV3120 && window.__subhubFboxHostV3120("
+                                        + JSONObject.quote(host) + "," + (ok ? "true" : "false") + "))", null);
+                            });
+                        }
+                        // 322.3.123: the site's own page said it moved (fromHost → toHost).
+                        public void siteMoved(String fromHost, String toHost) {
+                            final String f = NameCheckRules.cleanHost(fromHost);
+                            final String t = NameCheckRules.cleanHost(toHost);
+                            if (webView == null || f.isEmpty() || t.isEmpty() || HOME_HOST.equalsIgnoreCase(t)) return;
+                            ui.post(() -> {
+                                if (webView == null || !isTrustedHomePage()) return;
+                                webView.evaluateJavascript("window.__subhubSiteMovedV3123 && window.__subhubSiteMovedV3123("
+                                        + JSONObject.quote(siteFamily) + "," + JSONObject.quote(f) + "," + JSONObject.quote(t) + ")", null);
                             });
                         }
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
+                    // 322.3.123: the names system of this page, and the page scripts (move notices,
+                    // the site's pop-ups) — set before the fallback names, which use them.
+                    directStreamPlayer.setSiteFamily(siteFamily);
+                    directStreamPlayer.setPageScripts(siteMoveScript(), popupCloseScript());
                     if (!fboxFallbackHosts.isEmpty()) directStreamPlayer.setFboxFallbackHosts(fboxFallbackHosts);
+                    // 322.3.123: the owner's «⚙️» taps for this server (viewers and the owner's ▶).
+                    JSONObject tapRule = config.optJSONObject("tapRule");
+                    if (tapRule != null && !interactiveSource) {
+                        directStreamPlayer.setTapRule(tapRule.optInt("taps", -1), tapRule.optLong("gapMs", 2000L));
+                    }
                     // 322.3.118: fbox with no page for this film yet — type its title into their search.
                     if ("list".equals(mode) && "fbox".equals(config.optString("site", "")) && interactiveSource) {
                         directStreamPlayer.setSearchText(config.optString("searchText", ""));
                         // 322.3.121: the name he chose — on the page, and in the message if it does not open.
                         if (!fboxNameValue.isEmpty()) directStreamPlayer.setFboxOwnerName(fboxNameValue);
+                    }
+                    // 322.3.123: the owner adding a Moviesmod server sees the name it opens on too
+                    // (and a named message when that name does not open).
+                    if ("mm".equals(siteFamily) && interactiveSource && !fboxNameValue.isEmpty()) {
+                        directStreamPlayer.setFboxOwnerName(fboxNameValue);
                     }
                     if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);
                     if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);
@@ -2579,10 +2700,38 @@ public class MainActivity extends Activity {
                     }
                     if (names.isEmpty()) return;
                     if (nameChecker == null) {
+                        // 322.3.123: the move-notice reader goes first (the reader reports «moved»).
                         nameChecker = new SiteNameChecker(MainActivity.this, root,
-                                readAsset("name_check_probe.js"), MainActivity.this::sendNameCheck);
+                                siteMoveScript() + "\n" + readAsset("name_check_probe.js"), MainActivity.this::sendNameCheck);
                     }
                     nameChecker.start(run, names, path);
+                } catch (Exception ignored) {}
+            });
+        }
+
+        // 322.3.123: the site names as the owner keeps them — {mm:[…], fbox:[…]} — so every
+        // card opens Moviesmod on its chosen name, also the old cards that do not send names.
+        @JavascriptInterface
+        public void siteNamesV3123(String token, String raw) {
+            if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 4000) return;
+            ui.post(() -> {
+                if (!isTrustedHomePage()) return;
+                try {
+                    JSONObject in = new JSONObject(raw);
+                    JSONObject out = new JSONObject(nativePrefs.getString(SITE_NAMES_KEY, "{}"));
+                    for (String fam : new String[]{"mm", "fbox"}) {
+                        org.json.JSONArray a = in.optJSONArray(fam);
+                        if (a == null) continue;
+                        org.json.JSONArray keep = new org.json.JSONArray();
+                        java.util.HashSet<String> seen = new java.util.HashSet<>();
+                        for (int i = 0; i < a.length() && keep.length() < 12; i++) {
+                            String h = NameCheckRules.cleanHost(a.optString(i, ""));
+                            if (h.isEmpty() || HOME_HOST.equalsIgnoreCase(h) || !seen.add(h)) continue;
+                            keep.put(h);
+                        }
+                        if (keep.length() > 0) out.put(fam, keep);
+                    }
+                    nativePrefs.edit().putString(SITE_NAMES_KEY, out.toString()).apply();
                 } catch (Exception ignored) {}
             });
         }

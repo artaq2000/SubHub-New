@@ -5,18 +5,23 @@
 //            buttons counts, and real links to other pages never do, so a menu or
 //            a row of film cards is never taken for servers)
 //   known    how many of them are well-known server names
-//   links    distinct links to film / series pages (/watch/movie-…, /watch/tv-…)
+//   links    distinct links to film / series pages (/watch/movie-…, /watch/tv-…; 322.3.123: and
+//            the Moviesmod family's /movie/27205, /tv/1416, /watch/tv/1416/2/5)
+//   moved    322.3.123: the new address a moved site names on its own page (site_move.js,
+//            loaded before this script), '' when the page is not such a notice
 //   check    a «verify / continue» page is showing (Cloudflare's or the site's own)
 //   blocked  Cloudflare's «Unavailable For Legal Reasons» page
 // Nothing on the page is pressed or changed.
 (function () {
   try {
-    var FILM = /\/watch\/(movie|tv)-[a-z0-9-]+/i;
+    var FILM = /\/watch\/(movie|tv)-[a-z0-9-]+|\/watch\/(movie|tv)\/\d{1,12}(?:\/\d{1,3}\/\d{1,4})?|\/(movie|tv)\/\d{1,12}/i;
     function clean(v) { return String(v || '').replace(/[⭐★☆]/g, '').replace(/\s+/g, ' ').trim(); }
     function norm(v) { return clean(v).toLowerCase(); }
     function bad(t) {
       t = norm(t);
-      return !t || /^(watch now|play|play now|home|movies|select server|trailer|download|settings|view details)$/.test(t);
+      return !t || /^(watch now|play|play now|home|movies|select server|trailer|download|settings|view details)$/.test(t)
+        // 322.3.123: share buttons and pop-up buttons are never servers
+        || /^(whatsapp|telegram|facebook|twitter|x|reddit|pinterest|email|share|copy link|copy|more|more…|more\.\.\.|join|later)$/.test(t);
     }
     function known(t) {
       t = norm(t);
@@ -89,8 +94,10 @@
       /just a (moment|quick check)|checking your browser|verify(ing)? (that )?you are (a )?human|are you (a )?(human|robot)|real person,? not a bot|one more step|attention required|ddos protection|needs to review the security of your connection/i.test(flat) ||
       (flat.length < 700 && ln === 0 && servers === 0 && /\b(continue|verify|captcha|human|robot|security check)\b/i.test(flat));
     var blocked = /unavailable for legal reasons/i.test(flat) && /cloudflare/i.test(flat);
+    var moved = '';
+    try { if (typeof window.__subhubSiteMoveV3123 === 'function') moved = String(window.__subhubSiteMoveV3123() || ''); } catch (_) {}
     return JSON.stringify({ servers: servers, known: kn, links: ln, check: !!check, blocked: !!blocked,
-      host: String(location.hostname || '').toLowerCase(), len: flat.length });
+      host: String(location.hostname || '').toLowerCase(), len: flat.length, moved: moved });
   } catch (e) {
     return JSON.stringify({ servers: -1, known: 0, links: -1, check: false, blocked: false, error: String(e && e.message || e) });
   }

@@ -76,7 +76,12 @@ public final class NameCheckRules {
     }
 
     private static final Pattern HOST = Pattern.compile("([a-z0-9-]+\\.)+[a-z]{2,12}");
-    private static final Pattern FILM_PATH = Pattern.compile("/watch/(movie|tv)-[a-z0-9-]{1,120}");
+    // fbox family: /watch/movie-inception-2g84ihso. 322.3.123: Moviesmod family (StreamBoppo,
+    // StreamDude…): /movie/27205, /tv/1416, /watch/tv/1416/2/5 — TMDB numbers.
+    private static final Pattern FILM_PATH = Pattern.compile(
+            "/watch/(movie|tv)-[a-z0-9-]{1,120}"
+            + "|/(movie|tv)/[0-9]{1,12}"
+            + "|/watch/(movie|tv)/[0-9]{1,12}(/[0-9]{1,3}/[0-9]{1,4})?");
     private static final Pattern TRACE_VALUE = Pattern.compile("[A-Za-z0-9:._-]{0,60}");
 
     /** «HTTPS://WWW.Name.SX/x» → «name.sx»; "" when it is not a site name. */

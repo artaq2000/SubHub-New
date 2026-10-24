@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 131" in gradle
-assert "versionName '322.3.122'" in gradle
+assert "versionCode 132" in gradle
+assert "versionName '322.3.123'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -358,7 +358,8 @@ assert 'public boolean handleBack()' in direct_player
 assert 'readAsset("moviesmod_stream.js")' in main
 assert '"moviesmod".equals(mode)' in main
 assert 'fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tmdbId)' in main
-assert 'allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;' in main
+# 322.3.123: Moviesmod opens on the chosen name of its names (moviesmod.gd is the saved form).
+assert 'allowedHost = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;' in main
 # 322.3.98: purple/teal keys unchanged; open cards add their own prefix.
 assert 'resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey' in main
 assert 'resumePrefKey' in direct
@@ -464,7 +465,10 @@ assert 'ادخل يدوياً إلى الفيلم وأغلق الإعلانات'
 assert 'جارٍ الاتصال بالسيرفر' in direct
 assert 'function uncovered(e)' in direct
 assert 'elementFromPoint' in direct
-assert 'if(!hit||!uncovered(hit))return false' in direct
+# 322.3.123: the server is pressed inside the page (its own click) even when a pop-up covers
+# it; a finger tap stays only the fallback, and only on a button nothing covers.
+assert 'var hit=hits.find(shown)||hits[0];' in direct
+assert 'if(reportFrame(lab)||!uncovered(hit))return;' in direct
 assert 'tries>=240' in direct
 assert 'External top-frame navigations are ads often enough' in direct
 
@@ -477,7 +481,7 @@ assert 'location.href' in direct
 assert 'listener.serverSelected(key, label, discoveredServerPageUrl, resolvedProviderUrl)' in direct
 assert 'serverPageUrl' in main
 assert 'savedServerPageUrl' in main
-assert 'resolvedSourceUrl = savedUri.toString()' in main
+assert 'base = savedUri;' in main and 'resolvedSourceUrl = base.toString();' in main   # 322.3.123: on the chosen name
 assert 'moviesmodServerPageUrl' in moviesmod
 assert 'normalizeServerPageUrl' in moviesmod
 assert 'serverPageUrl: startPageUrl' in moviesmod
@@ -985,8 +989,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 131' in mv107
-assert "versionCode 131" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 132' in mv107
+assert "versionCode 132" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1258,10 +1262,10 @@ print('322.3.116 own check card checks OK')
 al117 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
 m117 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
 assert "function isFboxPage(raw)" in al117 and "function filmFboxUrl()" in al117
-assert "site: isFboxAny(startPage) ? 'fbox' : 'moviesmod'," in al117
+assert "site = 'fbox';" in al117 and "site: site," in al117   # 322.3.123: the family is known (a learned fbox name too)
 assert "openSession(ctx, null, true, fboxFits ? fbox : 'https://' + fboxChosen() + '/');" in al117   # 322.3.121: chosen name
 assert '"fbox".equals(config.optString("site", ""))' in m117
-assert 'allowedHost = fboxHostValue.isEmpty() ? "moviesmod.gd" : fboxHostValue;' in m117
+assert 'allowedHost = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;' in m117   # 322.3.123
 print('322.3.117 fbox source checks OK')
 
 # 322.3.118: fbox under several names, search by the film title, guard against another film's page.
@@ -1270,7 +1274,7 @@ m118 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='ut
 d118 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
 assert "const FBOX_DEFAULT_DOMAINS = ['fbox.gd', 'vumoo.gd', 'movies2watch.gs'];" in al118
 assert "function onFboxName(raw, host)" in al118 and "function samePageFilm(" in al118   # 322.3.121: no probing
-assert "fboxDomains: arr" in al118                                   # names editable from settings
+assert "field: 'fboxDomains'" in al118 and ".set({ [FAMS[f].field]: arr }, { merge: true })" in al118   # names editable (322.3.123: per family)
 assert "searchText" in al118 and "⚠️ هذي صفحة «" in al118            # search + wrong-film guard
 assert "public void setSearchText(String text)" in d118 and "private String searchFillScript()" in d118
 assert "directStreamPlayer.setSearchText(config.optString(\"searchText\", \"\"));" in m118
@@ -1283,7 +1287,7 @@ assert "const FBOX_STORE_HOST = 'fbox.gd';" in al119 and "function fboxStoreUrl(
 assert al119.count('pageUrl: fboxStoreUrl(p.pageUrl)') == 2 and "fboxUrl: stored" in al119
 assert "if (isFboxPage(u.href)) return u.href;" in al119               # items on any name are kept
 assert "if (isFboxAny(startPage) || isFboxPage(startPage)) {" in al119
-assert "function namesBox()" in al119 and "'✓ اختيار'" in al119 and "'➕ إضافة'" in al119
+assert "function namesBox(f)" in al119 and "'✓ اختيار'" in al119 and "'➕ إضافة'" in al119   # 322.3.123: one box per family
 assert "prompt('أسماء fbox" not in al119                              # no more typing in a prompt
 print('322.3.119 fbox names box checks OK')
 
@@ -1332,11 +1336,12 @@ o121 = al121[al121.index('async function openSession('):al121.index('async funct
 assert "if (!auto) {\n          const name = fboxChosen();" in o121           # owner: exactly the chosen name
 assert "startPage = 'https://' + name + '/';" in o121 and "searchText = String(selected.title || '').trim().slice(0, 80);" in o121
 assert "const order = fboxOrder();" in o121 and "fboxHosts = order.slice(1, 12);" in o121   # viewers: chosen first + next names
-s121 = al121[al121.index('async function saveFboxNames('):al121.index('async function addName(')]
-assert s121.index('fboxDomainList = arr;') < s121.index('await checkOwnerAccess()') < s121.index('.set({ fboxDomains: arr }')
-assert "fboxDomainList = before;" in s121                               # goes back when saving fails
+# 322.3.123: the same save for both families of names (fbox / Moviesmod)
+s121 = al121[al121.index('async function saveSiteNames('):al121.index('async function addName(')]
+assert s121.index('setFamList(f, arr);') < s121.index('await checkOwnerAccess()') < s121.index('.set({ [FAMS[f].field]: arr }')
+assert "setFamList(f, before);" in s121                                 # goes back when saving fails
 assert "if (namesBusy) return fboxDomainList;" in al121                 # a reload never undoes a change being saved
-assert "fboxMark(h, false);   // 322.3.121" in al121                    # choosing forgets an old failure of that name
+assert "siteMark(f, h, false);   // 322.3.121" in al121                 # choosing forgets an old failure of that name
 assert "const fboxFits = !!fbox && samePageFilm(fbox, filmTitle());" in al121
 assert "'⚠️ صفحة فيلم آخر'" in al121 and "async function clearFilmPage(ctx)" in al121
 assert "set({ fboxUrl: '' }, { merge: true })" in al121
@@ -1400,8 +1405,10 @@ assert "const CHECK_KEY = 'subhub_fbox_check_v3122';" in al122
 assert "window.__subhubNameCheckV3122 = function (raw) {" in al122
 assert "if (!e || !checkRun || e.run !== checkRun) return;" in al122   # answers of an old run are ignored
 assert "b.nameCheckStart(token, JSON.stringify({ run: run, names: list, path: path }));" in al122
-assert "if (!checkRun) startCheck([h]);   // 322.3.122: a new name is checked at once" in al122
-assert "async function addNameDirect(raw) {" in al122 and "'➕ أضِفه'" in al122
+assert "if (!checkRun) startCheck(f, [h]);   // 322.3.122: a new name is checked at once" in al122
+# 322.3.123: a moved name is replaced in place («🔁 استبدله»), never added (the list stays within 12)
+assert "async function replaceName(f, from, raw) {" in al122 and "'🔁 استبدله'" in al122
+assert "async function addNameDirect(" not in al122 and "'➕ أضِفه'" not in al122
 assert "allBtn.setAttribute('data-ncheck-all', '1');" in al122 and "one.setAttribute('data-ncheck-one', '1');" in al122
 assert "'🚫 «محجوب على اتصالك» يخصّ اتصالك أنت الآن" in al122
 pc122 = al122[al122.index('function paintCheck()'):]
@@ -1431,3 +1438,90 @@ c122b = d122b[d122b.index('private void gateClosed() {'):]
 c122b = c122b[:c122b.index('\n    }\n')]
 assert "startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));" in c122b   # ✕ before the video: the search goes on
 print('322.3.122 check card fix checks OK')
+
+# 322.3.123: Moviesmod moved (StreamBoppo, StreamDude… — the same pages by TMDB number and the
+# same servers), and so did the fbox family (DopeBox → FlixFrame). Moviesmod gets its own
+# names box like fbox; a saved page keeps moviesmod.gd and opens on the chosen name; a site's
+# own «new home» page is followed; the check says «انتقل إلى» and «🔁 استبدله» replaces in
+# place (the list stays within 12); the chosen server is pressed inside the page even under
+# a pop-up and the site's pop-ups are closed; a page with no server gives way at once; the
+# owner sets each server's taps on play («⚙️»).
+al123 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+m123 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+d123 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+c123 = open('app/src/main/java/com/artaq/subhub/SiteNameChecker.java', encoding='utf-8').read()
+r123 = open('app/src/main/java/com/artaq/subhub/NameCheckRules.java', encoding='utf-8').read()
+p123 = open('app/src/main/assets/name_check_probe.js', encoding='utf-8').read()
+sm123 = open('app/src/main/assets/site_move.js', encoding='utf-8').read()
+pc123 = open('app/src/main/assets/popup_close.js', encoding='utf-8').read()
+w123 = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+# the names: two families, the same box, its own key / field / answers
+assert "const MM_DEFAULT_DOMAINS = ['streamboppo.cyou', 'streamdude.cyou', 'streamzippy.cyou', 'moviesmod.gd'];" in al123
+assert "const MM_STORE_HOST = 'moviesmod.gd';" in al123 and "field: 'moviesmodDomains'" in al123
+assert "checkKey: 'subhub_mm_check_v3123'" in al123 and "boxId: 'subhub-mm-names-box'" in al123
+assert "if (u.protocol === 'https:' && isMmHost(h)) return mmStoreUrl(u.href);" in al123   # saved as moviesmod.gd
+assert "if (namesOpen === 'mm') sec.appendChild(namesBox('mm'));" in al123
+assert "b.setAttribute('data-names-fam', f);" in al123
+assert "if (famList(other).indexOf(h) >= 0) return" in al123            # one family per name
+# viewers: this device's order; the owner: exactly the chosen name
+o123 = al123[al123.index('async function openSession('):al123.index('async function savePending(')]
+assert "const order = siteOrder('mm');" in o123 and "mmHosts = order.slice(1, 12);" in o123
+assert "startPage = onName(page, mmDomainList[0] || MM_DEFAULT_DOMAINS[0]);" in o123
+assert "openChooser: owner && !auto && hadPage," in o123
+assert "tapRule: rule ? { taps: rule.taps, gapMs: rule.gap * 1000 } : null," in o123
+so123 = al123[al123.index('function siteOrder(f) {'):al123.index('function fboxOrder() {')]
+assert "const v = learned[h] || h;" in so123                            # a moved name: its new home
+assert "if (good && learned[good]) good = learned[good];" in so123
+assert "g.chosen !== (famList(f)[0] || '')" in al123                    # the owner's new ✓ wins over memory
+assert "window.__subhubSiteHostV3123 = function (fam, rawHost, ok) {" in al123
+assert "window.__subhubSiteMovedV3123 = function (fam, rawFrom, rawTo) {" in al123
+assert "b.siteNamesV3123(token, JSON.stringify({ mm: mmDomainList.slice(0, 12), fbox: fboxDomainList.slice(0, 12) }));" in al123
+# the check: moved → «🔁 استبدله» in place / «🗑️ احذفه» when listed; one run at a time
+assert "case 'redirect':\n        return { t: '↪️ انتقل إلى'" in al123
+rn123 = al123[al123.index('async function replaceName(f, from, raw) {'):al123.index('// 322.3.122: «🩺 فحص» — the names are opened')]
+assert "list[i] = to;" in rn123 and "list.splice(i, 1);" in rn123 and "list.unshift(to);" in rn123
+assert "concat([to])" not in rn123                                      # never grows
+assert "else if (checkRun) notify('فحص آخر يعمل الآن — انتظر حتى ينتهي.');" in al123
+# «⚙️» taps per server name
+assert "serverRules: { [key]: rule ? { taps: rule.taps, gap: rule.gap } : firebase.firestore.FieldValue.delete() }" in al123
+assert "if (key && Number.isInteger(taps) && taps >= 0 && taps <= 6) {" in al123
+# the activity: Moviesmod names kept on the device, every Moviesmod page on the chosen name
+assert 'private static final String[] MM_DEFAULT_NAMES = {"streamboppo.cyou", "streamdude.cyou", "streamzippy.cyou", "moviesmod.gd"};' in m123
+assert "public void siteNamesV3123(String token, String raw) {" in m123
+sn123 = m123[m123.index('public void siteNamesV3123(String token, String raw) {'):m123.index('public void nameCheckStop(String token) {')]
+assert "if (!vidSrcGuardToken.equals(token) || raw == null || raw.length() > 4000) return;" in sn123
+assert "if (!isTrustedHomePage()) return;" in sn123 and "HOME_HOST.equalsIgnoreCase(h)" in sn123
+assert "bh = mmNames.isEmpty() ? MM_STORE_HOST : mmNames.get(0);" in m123
+assert 'siteFamilyValue = fboxHostValue.isEmpty() ? "mm" : "fbox";' in m123
+assert 'if ("mm".equals(siteFamily)) page = moviesmodStoreUrl(page);' in m123   # saved as moviesmod.gd
+assert "return u.buildUpon().authority(MM_STORE_HOST).build().toString();" in m123
+assert "directStreamPlayer.setPageScripts(siteMoveScript(), popupCloseScript());" in m123
+assert 'directStreamPlayer.setTapRule(tapRule.optInt("taps", -1), tapRule.optLong("gapMs", 2000L));' in m123
+assert 'siteMoveScript() + "\\n" + readAsset("name_check_probe.js"), MainActivity.this::sendNameCheck);' in m123
+assert "window.__subhubSiteMovedV3123(" in m123 and "window.__subhubSiteHostV3123(" in m123
+# the player: move notices followed, no-server pages left at once, pop-ups closed, taps rule
+assert "public void moved(String token, String rawHost) {" in d123
+sm = d123[d123.index('private void siteMoved(String rawHost) {'):d123.index('private void injectPageScripts(final WebView v) {')]
+assert "fboxNextHosts.add(0, to);" in sm and 'tryNextFboxHost("انتقل إلى " + to);' in sm
+assert "allowedHost = to;" in sm and "probe.loadUrl(moved);" in sm and "!movesSeen.add(from + \">\" + to)" in sm
+assert "injectPageScripts(v);\n                    scheduleGridWait(v);" in d123
+assert "private static final long NO_GRID_WAIT_MS = 8000L;" in d123
+assert "if (!fboxPageStep() || fboxGridSize > 0 || fboxNextHosts.isEmpty()) return;" in d123
+assert "if (!verifyCard) recordProviderChoice(label);" in d123          # «💾 حفظ» only when the page took it
+assert '"for(var i=0;i<" + tapRuleTaps + ";i++)setTimeout(function(){play();tap();},700+i*" + tapRuleGapMs + ");"' in d123
+assert "if (tapRuleTaps >= 0) {   // 322.3.123: the owner's «⚙️» taps are the whole plan" in d123
+assert 'lower.matches("whatsapp|telegram|facebook|twitter|x|reddit|pinterest|email|share|copy link|copy|more|more…|more\\\\.\\\\.\\\\.|join|later")' in d123
+assert 'showServerFailure("لم تفتح صفحة السيرفرات على أي اسم من أسماء " + siteWord() + ":\\n" + fboxReasons);' in d123
+# the check: a «new home» page is «moved»; Moviesmod film pages are valid paths
+assert 'String moved = NameCheckRules.cleanHost(j.optString("moved", ""));' in c123
+assert "if (NameCheckRules.clearlyWorks(facts) || !facts.redirectHost.isEmpty()" in c123
+assert '"|/(movie|tv)/[0-9]{1,12}"' in r123
+assert "moved: moved" in p123 and "window.__subhubSiteMoveV3123" in p123
+assert ".click(" not in p123 and "dispatchEvent" not in p123 and ".click(" not in sm123   # readers press nothing
+assert "flixnetwork" in sm123                                           # the directory never counts as the new site
+assert "if (!PROMO.test(words) || CHECK.test(words)) continue;" in pc123   # never the check page
+assert "if (href && href !== '#' && !/^javascript:/i.test(href)) continue;" in pc123   # never a link out
+# CI runs the new tests
+assert "node tests/player_pages.browser.cjs" in w123 and "node tests/site_names.browser.cjs" in w123
+assert "node --check app/src/main/assets/site_move.js" in w123 and "node --check app/src/main/assets/popup_close.js" in w123
+print('322.3.123 site names checks OK')

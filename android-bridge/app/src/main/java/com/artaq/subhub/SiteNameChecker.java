@@ -289,7 +289,7 @@ final class SiteNameChecker {
                 startTrace(gen);
                 return;
             }
-            if (NameCheckRules.clearlyWorks(facts)
+            if (NameCheckRules.clearlyWorks(facts) || !facts.redirectHost.isEmpty()
                     || SystemClock.elapsedRealtime() - settleFrom >= SETTLE_MS) {
                 finish();
                 return;
@@ -310,6 +310,9 @@ final class SiteNameChecker {
             facts.filmLinks = j.optInt("links", facts.filmLinks);
             facts.checkPage = j.optBoolean("check", false);
             if (j.optBoolean("blocked", false)) facts.blockedText = true;
+            // 322.3.123: «X has a new home: Y» on the page itself — the site moved to Y.
+            String moved = NameCheckRules.cleanHost(j.optString("moved", ""));
+            if (!moved.isEmpty() && !NameCheckRules.sameSite(moved, name)) facts.redirectHost = moved;
         } catch (Exception ignored) {}
     }
 

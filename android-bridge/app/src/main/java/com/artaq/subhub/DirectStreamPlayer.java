@@ -98,6 +98,8 @@ public final class DirectStreamPlayer {
         // 322.3.120: fbox under several names — the page did not open on this name
         // (ok=false), or it opened on this name after another one failed (ok=true).
         default void fboxHost(String host, boolean ok) {}
+        // 322.3.123: the site's own page said it moved («X has a new home: Y»): fromHost → toHost.
+        default void siteMoved(String fromHost, String toHost) {}
     }
 
     private static final String PREFS = "subhub_direct_stream_ui_v1";
@@ -243,6 +245,8 @@ public final class DirectStreamPlayer {
     private String fboxOwnerName = "";
     private TextView fboxNameTag;
     private String fboxPageProblem = "";
+    // 322.3.123: «the site moved from X to Y» — shown to the owner on the new page.
+    private String ownerMoveNote = "";
     private boolean decisionShown = false;
     private boolean reopening = false;
     private LinearLayout decisionBar;
@@ -354,6 +358,25 @@ public final class DirectStreamPlayer {
     private int fboxGridSize = 0;
     private String fboxReasons = "";
     private static final int FBOX_GRID_ALIVE = 10;   // fbox lists about 50 servers
+    // 322.3.123: the same names system for both families of sites — "fbox" (fbox,
+    // FlixFrame, DopeBox…: /watch/movie-…) and "mm" (Moviesmod, StreamBoppo, StreamDude…:
+    // /movie/27205) — only the words shown differ.
+    private String siteFamily = "";
+    // 322.3.123: page scripts from the app (assets): one reads «X has a new home: Y» on the
+    // site's own page (site_move.js), one closes the site's own pop-ups over the server
+    // buttons with their «Later» / «✕» (popup_close.js).
+    private String siteMoveScript = "";
+    private String popupCloseScript = "";
+    private final java.util.HashSet<String> movesSeen = new java.util.HashSet<>();
+    private int pageScriptsGeneration = 0;
+    // 322.3.123: the owner's «⚙️» for this server — how many times the play button is
+    // pressed, and how long between the presses. -1 = the usual way.
+    private int tapRuleTaps = -1;
+    private long tapRuleGapMs = 2000L;
+    // 322.3.123: a page of the site that shows no server at all after this long (a dead
+    // name, an empty page) gives way to the next name at once (before: 18 s).
+    private static final long NO_GRID_WAIT_MS = 8000L;
+    private int gridWaitGeneration = 0;
     private final String sourceChoiceToken = UUID.randomUUID().toString().replace("-", "");
 
     public DirectStreamPlayer(Activity activity, FrameLayout parent, String source,
@@ -1339,6 +1362,36 @@ public final class DirectStreamPlayer {
         return autoIndex >= 0 && !interactiveSource;
     }
 
+    // 322.3.123: "fbox" or "mm" (Moviesmod family) — the words and the reports.
+    public void setSiteFamily(String family) {
+        siteFamily = "mm".equals(family) || "fbox".equals(family) ? family : "";
+    }
+
+    // 322.3.123: the move-notice reader and the pop-up closer (assets of the app).
+    public void setPageScripts(String moveScript, String popupScript) {
+        siteMoveScript = moveScript == null ? "" : moveScript;
+        popupCloseScript = popupScript == null ? "" : popupScript;
+    }
+
+    // 322.3.123: the owner's «⚙️» for this server: taps on play (0–6) and the time
+    // between them. A negative count keeps the usual way.
+    public void setTapRule(int taps, long gapMs) {
+        if (taps < 0) {
+            tapRuleTaps = -1;
+            return;
+        }
+        tapRuleTaps = Math.min(6, taps);
+        tapRuleGapMs = Math.max(500L, Math.min(6000L, gapMs));
+    }
+
+    private String siteIcon() {
+        return "mm".equals(siteFamily) ? "🎬" : "📦";
+    }
+
+    private String siteWord() {
+        return "mm".equals(siteFamily) ? "Moviesmod" : "fbox";
+    }
+
     // 322.3.120: the other fbox names, in order (the page chose this one first).
     public void setFboxFallbackHosts(java.util.List<String> hosts) {
         fboxNextHosts.clear();
@@ -1447,6 +1500,98 @@ public final class DirectStreamPlayer {
         if (fboxTriedHosts.isEmpty() || fboxOkReported || interactiveSource || closed) return;
         fboxOkReported = true;
         try { listener.fboxHost(allowedHost, true); } catch (Exception ignored) {}
+    }
+
+    // 322.3.123: the site's own page says it moved («X has a new home: Y», «Use the New
+    // X? Click here»). Only the address the notice names is taken — nothing on the page is
+    // pressed. The viewer goes to Y at once (the same page path), before the other names;
+    // the owner's page goes there too, and he is told so (he adopts Y for everyone with
+    // «🔁 استبدله» in the names box).
+    private void siteMoved(String rawHost) {
+        if (closed || probe == null || playing || playbackReady || rawHost == null) return;
+        String to = rawHost.trim().toLowerCase(Locale.ROOT);
+        if (to.startsWith("www.")) to = to.substring(4);
+        if (to.isEmpty() || to.length() > 80 || !to.matches("([a-z0-9-]+\\.)+[a-z]{2,12}")) return;
+        final String from = allowedHost;
+        if (from.isEmpty() || to.equals(from) || to.endsWith("." + from) || !movesSeen.add(from + ">" + to)) return;
+        try { listener.siteMoved(from, to); } catch (Exception ignored) {}
+        if (!interactiveSource) {
+            fboxNextHosts.remove(to);
+            fboxNextHosts.add(0, to);
+            if (fboxTriedHosts.isEmpty()) fboxTriedHosts.add(from);
+            tryNextFboxHost("انتقل إلى " + to);
+            return;
+        }
+        // The owner: the film page he is on, on the new name (the start page otherwise).
+        String moved;
+        try {
+            Uri base = Uri.parse(source);
+            String cu = probe.getUrl();
+            if (cu != null) {
+                Uri cur = Uri.parse(cu);
+                String ch = cur.getHost() == null ? "" : cur.getHost().toLowerCase(Locale.ROOT);
+                String cp = cur.getPath() == null ? "" : cur.getPath();
+                if ("https".equalsIgnoreCase(cur.getScheme()) && (ch.equals(from) || ch.endsWith("." + from))
+                        && !"/".equals(cp) && NameCheckRules.validPath(cp)) base = cur;
+            }
+            if (!"https".equalsIgnoreCase(base.getScheme())) return;
+            moved = base.buildUpon().authority(to).build().toString();
+        } catch (Exception e) {
+            return;
+        }
+        source = moved;
+        allowedHost = to;
+        discoveredServerPageUrl = "";
+        fboxPageProblem = "";
+        if (!fboxOwnerName.isEmpty()) setFboxOwnerName(to);
+        ownerMoveNote = "↪️ انتقل الموقع من «" + from + "» إلى «" + to + "» وفتحته لك.\n"
+                + "ليعتمده المشتركون: «🔁 استبدله» في «✏️ الأسماء» (بعد «🩺 فحص»).";
+        verifyStageGeneration++;
+        showStage(ownerMoveNote);
+        try { probe.loadUrl(moved); } catch (Exception ignored) {}
+    }
+
+    // 322.3.123: on a page of the site (never the server's own player): close the site's
+    // pop-ups over the server buttons and read a move notice — now, and a few times more
+    // while the page builds itself.
+    private void injectPageScripts(final WebView v) {
+        if (siteMoveScript.isEmpty() && popupCloseScript.isEmpty()) return;
+        final int g = ++pageScriptsGeneration;
+        final long[] delays = {0L, 1500L, 3500L, 7000L, 12000L};
+        for (long d : delays) {
+            handler.postDelayed(() -> {
+                if (closed || v != probe || g != pageScriptsGeneration || playing) return;
+                runPageScripts(v);
+            }, d);
+        }
+    }
+
+    private void runPageScripts(WebView v) {
+        StringBuilder js = new StringBuilder();
+        if (!popupCloseScript.isEmpty()) {
+            js.append(popupCloseScript)
+                    .append("\n;try{window.__subhubPopupCloseV3123&&window.__subhubPopupCloseV3123();}catch(_){}\n");
+        }
+        if (!siteMoveScript.isEmpty()) {
+            js.append(siteMoveScript)
+                    .append("\n;(function(){try{var h=window.__subhubSiteMoveV3123&&window.__subhubSiteMoveV3123();")
+                    .append("if(h&&window.SubHubSourceChoice&&window.SubHubSourceChoice.moved)window.SubHubSourceChoice.moved(")
+                    .append(JSONObject.quote(sourceChoiceToken)).append(",h);}catch(_){}})();");
+        }
+        try { v.evaluateJavascript(js.toString(), null); } catch (Exception ignored) {}
+    }
+
+    // 322.3.123: a viewer's page of the site that shows no server at all after a few
+    // seconds — a dead name, an empty page — gives way to the next name at once (before,
+    // the 18-second step limit). A check page («Just a quick check») never counts.
+    private void scheduleGridWait(final WebView v) {
+        if (interactiveSource || fboxNextHosts.isEmpty()) return;
+        final int g = ++gridWaitGeneration;
+        handler.postDelayed(() -> {
+            if (closed || v != probe || g != gridWaitGeneration || gateShown || playing || playbackReady) return;
+            if (!fboxPageStep() || fboxGridSize > 0 || fboxNextHosts.isEmpty()) return;
+            tryNextFboxHost("الصفحة بلا سيرفرات");
+        }, NO_GRID_WAIT_MS);
     }
 
     private String autoLine(int index) {
@@ -1934,7 +2079,7 @@ public final class DirectStreamPlayer {
             base = base.trim();
             int cut = base.indexOf('\n');
             if (cut >= 0) base = base.substring(0, cut);
-            base = base + "\n📦 الاسم " + toArabicDigits(fboxTriedHosts.size()) + " من "
+            base = base + "\n" + siteIcon() + " الاسم " + toArabicDigits(fboxTriedHosts.size()) + " من "
                     + toArabicDigits(fboxTriedHosts.size() + fboxNextHosts.size()) + ": " + allowedHost;
         }
         if (directCover != null) {
@@ -2084,7 +2229,7 @@ public final class DirectStreamPlayer {
             destroyProbe();
             removeDirectCover();
             subscriberStartupPhase = 0;
-            showServerFailure("لم تفتح صفحة السيرفرات على أي اسم من أسماء fbox:\n" + fboxReasons);
+            showServerFailure("لم تفتح صفحة السيرفرات على أي اسم من أسماء " + siteWord() + ":\n" + fboxReasons);
             return;
         }
         if (subscriberStartupAttempt >= 2) {
@@ -2126,7 +2271,9 @@ public final class DirectStreamPlayer {
                 || lower.equals("select server")
                 || lower.equals("trailer")
                 || lower.equals("download")
-                || lower.equals("settings"));
+                || lower.equals("settings")
+                // 322.3.123: a share row or a pop-up button is never a server.
+                || lower.matches("whatsapp|telegram|facebook|twitter|x|reddit|pinterest|email|share|copy link|copy|more|more…|more\\.\\.\\.|join|later"));
     }
 
     private String serverKey(String label) {
@@ -2348,11 +2495,22 @@ public final class DirectStreamPlayer {
         // 322.3.106: on a verify card the page stays visible and usable.
         if (manualServerButton != null && !verifyFirst) manualServerButton.setVisibility(View.GONE);
         probe.setAlpha(interactiveSource && !verifyFirst ? 0.02f : 1.0f);
-        recordProviderChoice(label);
+        // 322.3.123: on a verify card «💾 حفظ» names the server only when the page took
+        // it (the page reports the press). Before, it was named at once — also when the
+        // page's button was covered and the page kept playing its own server.
+        final boolean verifyCard = interactiveSource && verifyFirst;
+        if (!verifyCard) recordProviderChoice(label);
         showStage("جارٍ فتح السيرفر " + label + "…");
+        if (verifyCard && probe != null) runPageScripts(probe);   // the site's pop-ups first
+        final String wanted = label;
         String js = "window.__subhubSelectProvider && window.__subhubSelectProvider("
                 + JSONObject.quote(label) + ")";
-        try { probe.evaluateJavascript(js, null); } catch (Exception ignored) {}
+        try {
+            probe.evaluateJavascript(js, value -> {
+                if (closed || !verifyCard || "true".equals(value)) return;
+                showVerifyStage("ما لقيت «" + wanted + "» في الصفحة — اضغطه بيدك.");
+            });
+        } catch (Exception ignored) {}
     }
 
     private void recordServerPage(String rawUrl) {
@@ -2430,6 +2588,13 @@ public final class DirectStreamPlayer {
         public void serverPage(String token, String rawUrl) {
             if (!sourceChoiceToken.equals(token)) return;
             handler.post(() -> recordServerPage(rawUrl));
+        }
+
+        // 322.3.123: the page says the site moved («X has a new home: Y») — Y only.
+        @JavascriptInterface
+        public void moved(String token, String rawHost) {
+            if (!sourceChoiceToken.equals(token) || rawHost == null || rawHost.length() > 100) return;
+            handler.post(() -> siteMoved(rawHost));
         }
 
         @JavascriptInterface
@@ -2552,7 +2717,7 @@ public final class DirectStreamPlayer {
             lp.bottomMargin = dp(8);
             root.addView(fboxNameTag, lp);
         }
-        fboxNameTag.setText("📦 " + h);
+        fboxNameTag.setText(siteIcon() + " " + h);
         fboxNameTag.setVisibility(View.VISIBLE);
         fboxNameTag.bringToFront();
     }
@@ -2625,7 +2790,10 @@ public final class DirectStreamPlayer {
                 + ",ownerTap=" + (openServers && interactiveSource ? "true" : "false") + ";"
                 + "function clean(v){return String(v||'').replace(/[⭐★☆]/g,'').replace(/\\s+/g,' ').trim();}"
                 + "function norm(v){return clean(v).toLowerCase();}"
-                + "function bad(t){t=norm(t);return !t||/^(watch now|play|play now|home|movies|select server|trailer|download|settings|view details)$/.test(t);}"
+                + "function bad(t){t=norm(t);return !t||/^(watch now|play|play now|home|movies|select server|trailer|download|settings|view details)$/.test(t)"
+                // 322.3.123: share buttons and pop-up buttons are never servers (a moved site's
+                // page has no grid, and its share row was listed as «servers»).
+                + "||/^(whatsapp|telegram|facebook|twitter|x|reddit|pinterest|email|share|copy link|copy|more|more…|more\\.\\.\\.|join|later)$/.test(t);}"
                 + "function known(t){t=norm(t);return /^(vidsrc\\.mov|vidsrc\\.fyi|vidrock|vidnest|vidking|vidlink|vidfast|vidup|videasy|111movies|2embed|multiembed|superflix|peachify)$/.test(t);}"
                 + "var SEL='button,a,[role=button],[data-server],[data-src],[data-url],[data-embed]';"
                 + "function label(e){return clean(e.innerText||e.textContent||e.getAttribute('data-server')||'');}"
@@ -2655,14 +2823,19 @@ public final class DirectStreamPlayer {
                 + "function direct(e){var vals=[e.getAttribute('data-src'),e.getAttribute('data-url'),e.getAttribute('data-embed'),e.getAttribute('href')];"
                 + "for(var i=0;i<vals.length;i++){var v=String(vals[i]||'').trim();if(/^https:\\/\\//i.test(v)&&v.indexOf(location.host)<0)return v;}return '';}"
                 + "function reportFrame(label){try{var frames=[].slice.call(document.querySelectorAll('iframe[src]'));for(var i=0;i<frames.length;i++){var u=String(frames[i].src||'');if(/^https:\\/\\//i.test(u)&&u.indexOf(location.host)<0){window.SubHubSourceChoice.resolved(bridgeToken,label,u);return true;}}}catch(_){}return false;}"
-                + "function activate(label){try{var want=norm(label),els=serverEls(),hit=els.find(function(e){return norm(e.innerText||e.textContent||e.getAttribute('data-server')||'')===want;});"
-                + "if(!hit||!uncovered(hit))return false;var lab=clean(hit.innerText||hit.textContent||hit.getAttribute('data-server')||label);"
+                // 322.3.123: the server is pressed INSIDE the page (its own click), so an ad or a
+                // pop-up floating over the buttons no longer stops the choice (before: a covered
+                // button was not pressed at all). A finger tap is only the fallback, and only on
+                // a button nothing covers. A shown button wins over a hidden copy of it.
+                + "function shown(e){try{var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden';}catch(_){return false;}}"
+                + "function activate(label){try{var want=norm(label),els=serverEls(),hits=els.filter(function(e){return norm(e.innerText||e.textContent||e.getAttribute('data-server')||'')===want;});"
+                + "if(!hits.length)return false;var hit=hits.find(shown)||hits[0];var lab=clean(hit.innerText||hit.textContent||hit.getAttribute('data-server')||label);"
                 + "if(window.SubHubSourceChoice)window.SubHubSourceChoice.picked(bridgeToken,lab);"
                 + "var d=direct(hit);if(d){window.SubHubSourceChoice.resolved(bridgeToken,lab,d);return true;}"
                 + "var obs=new MutationObserver(function(){if(reportFrame(lab)){try{obs.disconnect();}catch(_){}}});"
                 + "try{obs.observe(document.documentElement,{subtree:true,childList:true,attributes:true,attributeFilter:['src']});}catch(_){}"
                 + "try{hit.click();}catch(_){}"
-                + "setTimeout(function(){if(reportFrame(lab))return;var p=point(hit);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.autoPick)window.SubHubSourceChoice.autoPick(bridgeToken,lab,p[0],p[1]);},180);"
+                + "setTimeout(function(){if(reportFrame(lab)||!uncovered(hit))return;var p=point(hit);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.autoPick)window.SubHubSourceChoice.autoPick(bridgeToken,lab,p[0],p[1]);},180);"
                 + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);return true;}catch(_){return false;}}"
                 // 322.3.98 open mode, owner only: a tap on ANY server button of the page
                 // (Web Video Caster style) is recorded like a choice from the list, so
@@ -2698,19 +2871,27 @@ public final class DirectStreamPlayer {
 
     private String providerPlayScript() {
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
+        // 322.3.123: the owner's «⚙️» for this server — exactly so many taps on play, this
+        // far apart (0 = never tap: the video starts by itself and a tap would pause it).
+        // Without it, the usual way: a tap now and then for about 8 seconds.
+        String schedule = tapRuleTaps < 0
+                ? "kick();setTimeout(kick,120);setTimeout(kick,320);setTimeout(kick,650);"
+                + "var n=0,t=setInterval(function(){n++;kick();if(n>=18)clearInterval(t);},420);"
+                : "play();setTimeout(play,400);setTimeout(play,1200);"
+                + "for(var i=0;i<" + tapRuleTaps + ";i++)setTimeout(function(){play();tap();},700+i*" + tapRuleGapMs + ");";
         return "(function(){try{"
                 + "if(window.__subhubProviderKickV3265)return;window.__subhubProviderKickV3265=true;"
                 + "var bridgeToken=" + bridgeToken + ";"
                 + "function vis(e){if(!e)return false;var r=e.getBoundingClientRect(),s=getComputedStyle(e);return r.width>25&&r.height>20&&r.bottom>0&&r.right>0&&r.top<(innerHeight||99999)&&s.display!=='none'&&s.visibility!=='hidden';}"
                 + "function point(e){var r=e.getBoundingClientRect(),vw=Math.max(1,innerWidth||document.documentElement.clientWidth||1),vh=Math.max(1,innerHeight||document.documentElement.clientHeight||1);return [Math.max(.02,Math.min(.98,(r.left+r.width/2)/vw)),Math.max(.02,Math.min(.98,(r.top+r.height/2)/vh))];}"
-                + "function kick(){try{var vids=[].slice.call(document.querySelectorAll('video')).filter(vis);vids.forEach(function(v){try{v.muted=false;var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(_){}});"
-                + "var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[class*=play],[id*=play]')).filter(vis);"
+                + "function play(){try{var vids=[].slice.call(document.querySelectorAll('video')).filter(vis);vids.forEach(function(v){try{v.muted=false;var p=v.play();if(p&&p.catch)p.catch(function(){});}catch(_){}});}catch(_){}}"
+                + "function tap(){try{var els=[].slice.call(document.querySelectorAll('button,a,[role=button],[class*=play],[id*=play]')).filter(vis);"
                 + "var b=els.find(function(e){var t=String(e.innerText||e.textContent||e.getAttribute('aria-label')||e.title||'').trim().toLowerCase();return /(^|\\s)(play|watch|start|continue|resume)(\\s|$)/.test(t)||/(play|triangle)/.test(String(e.className||'').toLowerCase());});"
                 + "if(!b){var frames=[].slice.call(document.querySelectorAll('iframe,[class*=player],[id*=player]')).filter(function(e){if(!vis(e))return false;var r=e.getBoundingClientRect();return r.width>160&&r.height>90;});b=frames[0];}"
                 + "if(b&&window.SubHubSourceChoice&&window.SubHubSourceChoice.playTarget){var p=point(b);window.SubHubSourceChoice.playTarget(bridgeToken,p[0],p[1]);}"
                 + "}catch(_){}}"
-                + "kick();setTimeout(kick,120);setTimeout(kick,320);setTimeout(kick,650);"
-                + "var n=0,t=setInterval(function(){n++;kick();if(n>=18)clearInterval(t);},420);"
+                + "function kick(){play();tap();}"
+                + schedule
                 + "}catch(_){}})();";
     }
 
@@ -2874,6 +3055,11 @@ public final class DirectStreamPlayer {
                         if (!fboxPageProblem.isEmpty()) {
                             verifyStageGeneration++;
                             showStage(fboxPageProblem);
+                        } else if (!ownerMoveNote.isEmpty()) {
+                            // 322.3.123: the site moved — said once, on its new page.
+                            verifyStageGeneration++;
+                            showStage(ownerMoveNote);
+                            ownerMoveNote = "";
                         } else if (verifyLabel.isEmpty()) {
                             showVerifyStage("اضغط أي سيرفر في الصفحة — يشتغل هنا في مشغّل الموقع. إن اشتغل الفيلم فعلاً اضغط «💾 حفظ هذا السيرفر».");
                         }
@@ -2887,6 +3073,9 @@ public final class DirectStreamPlayer {
                         startSubscriberStartupTimer(2);
                     }
                     try { v.evaluateJavascript(providerPickerScript(), null); } catch (Exception ignored) {}
+                    // 322.3.123: a move notice / the site's pop-ups; a page with no server → the next name.
+                    injectPageScripts(v);
+                    scheduleGridWait(v);
                     // 322.3.118: fbox search for this film's title (owner, no saved page yet).
                     // Only on their front page (also again after their «Continue» check), never on a
                     // results or film page, so what the owner types himself is left alone.
@@ -3077,6 +3266,13 @@ public final class DirectStreamPlayer {
     // target every few seconds until the stream is captured.
     private void scheduleDirectKick(WebView v) {
         if (directEmbedUrl.isEmpty()) return;
+        if (tapRuleTaps >= 0) {   // 322.3.123: the owner's «⚙️» taps are the whole plan
+            if (directKickRounds == 0) {
+                directKickRounds = 3;
+                scheduleDirectReveal(v);
+            }
+            return;
+        }
         handler.postDelayed(() -> {
             if (closed || playing || probe == null || v != probe || interactiveSource) return;
             if (directKickRounds >= 3) return;

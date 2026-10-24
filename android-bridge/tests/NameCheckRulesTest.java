@@ -89,6 +89,14 @@ public class NameCheckRulesTest {
     eq(NameCheckRules.validPath("/"), true, "front page");
     eq(NameCheckRules.validPath("/watch/movie-animals-li2ws86x"), true, "film page");
     eq(NameCheckRules.validPath("/watch/tv-the-bear-x1y2z3"), true, "series page");
+    // 322.3.123: Moviesmod family pages (TMDB numbers)
+    eq(NameCheckRules.validPath("/movie/27205"), true, "Moviesmod film page");
+    eq(NameCheckRules.validPath("/tv/1416"), true, "Moviesmod series page");
+    eq(NameCheckRules.validPath("/watch/tv/1416/2/5"), true, "Moviesmod episode page");
+    eq(NameCheckRules.validPath("/watch/tv/220542"), true, "Moviesmod series watch page");
+    eq(NameCheckRules.validPath("/movie/abc"), false, "Moviesmod pages are numbers");
+    eq(NameCheckRules.validPath("/movie/123/x"), false, "nothing after the number");
+    eq(NameCheckRules.validPath("/watch/tv/1/2"), false, "an episode has season and episode");
     eq(NameCheckRules.validPath("/watch/movie-a?x=1"), false, "no query");
     eq(NameCheckRules.validPath("/search/x"), false, "only the two kinds");
     eq(NameCheckRules.validPath("//evil.com"), false, "never another site");

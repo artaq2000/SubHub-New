@@ -1,9 +1,9 @@
 // 322.3.122: «🩺 فحص» in «📦 أسماء fbox» (assets/app_list_stream.js) in Chromium, with
 // the app bridge and the site faked: check all on the film's page, live rows while
 // the answers come (typing a new name is never interrupted), 451 kept apart with its
-// note, «↪️ يحوّل إلى» + «➕ أضِفه» (added and checked at once), a new name checked by
-// itself, stop, late answers of an old run ignored, answers kept on the device, and
-// an old app without the bridge method told to update.
+// note, «↪️ انتقل إلى» + «🔁 استبدله» (322.3.123: replaced in place and checked at once),
+// a new name checked by itself, stop, late answers of an old run ignored, answers kept on
+// the device, and an old app without the bridge method told to update.
 const {chromium} = require('playwright');
 const fs = require('fs'), path = require('path'), assert = require('assert');
 const script = fs.readFileSync(path.join(__dirname, '../app/src/main/assets/app_list_stream.js'), 'utf8');
@@ -43,7 +43,7 @@ window.send = function (e) { window.__subhubNameCheckV3122(JSON.stringify(e)); }
   const box = '#subhub-fbox-names-box';
   await page.waitForSelector('#subhub-applist-section');
   // open the names box
-  await page.locator('#subhub-applist-section button', {hasText: '✏️ الأسماء'}).click();
+  await page.locator('#subhub-applist-section button[data-names-fam="fbox"]').click();
   await page.waitForSelector(box);
   await page.waitForFunction(() => document.querySelectorAll('[data-ncheck-host]').length === 3);
   assert.equal(await page.locator('[data-ncheck-all]').innerText(), '🩺 فحص الكل');
@@ -81,7 +81,7 @@ window.send = function (e) { window.__subhubNameCheckV3122(JSON.stringify(e)); }
   assert.match(await rowText('moviesjoy.sx'), /محجوب على اتصالك \(451\) — يمرّ عبر بريطانيا/);
   assert.match(await rowText('moviesjoy.sx'), /LHR · IPv6/);
   assert.match(await rowText('dopebox.sx'), /✅ يعمل — السيرفرات: ٤١/);
-  assert.match(await rowText('watch32.gd'), /يحوّل إلى watch32\.to/);
+  assert.match(await rowText('watch32.gd'), /انتقل إلى watch32\.to/);
   assert.equal(await page.locator('[data-ncheck-note]').isVisible(), true, 'the 451 note shows');
   // typing went on untouched
   assert.equal(await input.evaluate(e => e === document.activeElement), true, 'the input kept its focus');
@@ -90,7 +90,7 @@ window.send = function (e) { window.__subhubNameCheckV3122(JSON.stringify(e)); }
   assert.equal(await page.locator('[data-ncheck-all]').innerText(), '🩺 فحص الكل');
   assert.match(await page.locator('[data-ncheck-head]').innerText(), /آخر فحص: الآن — على صفحة «Animals» · واي فاي/);
   const toasts = await page.evaluate(() => window.toasts);
-  assert.equal(toasts[toasts.length - 1], 'انتهى الفحص: ١ يعمل · ١ محجوب عندك · ١ يحتاج نظرة');
+  assert.equal(toasts[toasts.length - 1], 'انتهى الفحص: ١ يعمل · ١ محجوب عندك · ١ انتقل');
   // late answers of an old run change nothing
   await page.evaluate(r => send({type: 'result', run: r, host: 'dopebox.sx', state: 'down', code: 522}), run);
   await page.evaluate(() => send({type: 'result', run: 'other', host: 'dopebox.sx', state: 'down', code: 522}));
@@ -102,18 +102,18 @@ window.send = function (e) { window.__subhubNameCheckV3122(JSON.stringify(e)); }
   assert.equal(kept.results['dopebox.sx'].servers, 41);
   assert.equal(kept.meta.net, 'wifi');
 
-  // «➕ أضِفه» on the moved name: added to the list, then checked by itself
-  await page.locator(`[data-ncheck-host="watch32.gd"] button`, {hasText: 'أضِفه'}).click();
+  // 322.3.123: «🔁 استبدله» on the moved name: the new name takes its place (the list does
+  // not grow), then it is checked by itself
+  await page.locator(`[data-ncheck-host="watch32.gd"] button`, {hasText: 'استبدله'}).click();
   await page.waitForFunction(() => window.calls.length === 2);
   let sets = await page.evaluate(() => window.sets);
-  assert.deepEqual(sets[sets.length - 1][1].fboxDomains, ['moviesjoy.sx', 'dopebox.sx', 'watch32.gd', 'watch32.to']);
+  assert.deepEqual(sets[sets.length - 1][1].fboxDomains, ['moviesjoy.sx', 'dopebox.sx', 'watch32.to']);
   calls = await page.evaluate(() => window.calls);
-  assert.deepEqual(calls[1][2].names, ['watch32.to'], 'the added name is checked at once');
+  assert.deepEqual(calls[1][2].names, ['watch32.to'], 'the new name is checked at once');
   const run2 = calls[1][2].run;
   assert.notEqual(run2, run);
   await page.waitForFunction(() => !!document.querySelector('[data-ncheck-host="watch32.to"]'));
-  assert.match(await rowText('watch32.gd'), /موجود في القائمة/);
-  assert.equal(await page.locator(`[data-ncheck-host="watch32.gd"] button`, {hasText: 'أضِفه'}).count(), 0);
+  assert.equal(await page.locator('[data-ncheck-host="watch32.gd"]').count(), 0, 'the old name is gone from the list');
   // stop it
   await page.locator('[data-ncheck-all]').click();
   calls = await page.evaluate(() => window.calls);
@@ -153,6 +153,6 @@ window.send = function (e) { window.__subhubNameCheckV3122(JSON.stringify(e)); }
   assert.equal(t2[t2.length - 1], 'الفحص يحتاج تطبيق SubHub بنسخة 322.3.122 أو أحدث.');
   assert.equal(await page.locator('[data-ncheck-all]').innerText(), '🩺 فحص الكل');
   if (process.exitCode) throw new Error('page errors');
-  console.log('Chromium: names check box (check all on the film page, live rows, typing kept, 451 apart with note, moved name added and checked, new name checked, one name, stop, old runs ignored, kept on device, front page, old app): PASS');
+  console.log('Chromium: names check box (check all on the film page, live rows, typing kept, 451 apart with note, moved name replaced in place and checked, new name checked, one name, stop, old runs ignored, kept on device, front page, old app): PASS');
   await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

@@ -95,34 +95,114 @@
   // minutes. No probing from here: a blocked page «answers» like a working one.
   const FBOX_BAD_KEY = 'subhub_fbox_bad_v3120';
   const FBOX_BAD_MS = 600000;
-  let fboxBadMem = null;
-  function fboxBadMap() {
-    if (!fboxBadMem) {
-      fboxBadMem = {};
+  // 322.3.123: Moviesmod moved too — StreamBoppo, StreamDude, StreamZippy… are the same site
+  // (the same pages by TMDB number, /movie/27205, and the same servers). Same names system
+  // as fbox, in its own box: the chosen name (✓) opens, viewers move on to the next names,
+  // and a saved page keeps moviesmod.gd (every app version knows it) and opens on the
+  // chosen name — so the servers saved before the move work again on the new names.
+  const MM_DEFAULT_DOMAINS = ['streamboppo.cyou', 'streamdude.cyou', 'streamzippy.cyou', 'moviesmod.gd'];
+  const MM_STORE_HOST = 'moviesmod.gd';
+  let mmDomainList = MM_DEFAULT_DOMAINS.slice();
+  const FAMS = {
+    fbox: { id: 'fbox', icon: '📦', word: 'fbox', field: 'fboxDomains', defaults: FBOX_DEFAULT_DOMAINS,
+      badKey: FBOX_BAD_KEY, checkKey: 'subhub_fbox_check_v3122', boxId: 'subhub-fbox-names-box', sample: 'tinyzone.sx' },
+    mm: { id: 'mm', icon: '🎬', word: 'Moviesmod', field: 'moviesmodDomains', defaults: MM_DEFAULT_DOMAINS,
+      badKey: 'subhub_mm_bad_v3123', checkKey: 'subhub_mm_check_v3123', boxId: 'subhub-mm-names-box', sample: 'streamboppo.cyou' }
+  };
+  function famOf(raw) { return raw === 'mm' ? 'mm' : raw === 'fbox' ? 'fbox' : ''; }
+  function famList(f) { return f === 'mm' ? mmDomainList : fboxDomainList; }
+  function setFamList(f, arr) { if (f === 'mm') mmDomainList = arr; else fboxDomainList = arr; }
+  const badMem = { fbox: null, mm: null };
+  function siteBadMap(f) {
+    if (!badMem[f]) {
+      badMem[f] = {};
       try {
-        const m = JSON.parse(localStorage.getItem(FBOX_BAD_KEY) || '{}');
-        if (m && typeof m === 'object' && !Array.isArray(m)) fboxBadMem = m;
+        const m = JSON.parse(localStorage.getItem(FAMS[f].badKey) || '{}');
+        if (m && typeof m === 'object' && !Array.isArray(m)) badMem[f] = m;
       } catch (_) {}
     }
-    const now = Date.now();
-    Object.keys(fboxBadMem).forEach(function (h) {
-      const t = Number(fboxBadMem[h]);
-      if (!cleanHost(h) || !(t > now - FBOX_BAD_MS && t <= now + 60000)) delete fboxBadMem[h];
+    const now = Date.now(), m = badMem[f];
+    Object.keys(m).forEach(function (h) {
+      const t = Number(m[h]);
+      if (!cleanHost(h) || !(t > now - FBOX_BAD_MS && t <= now + 60000)) delete m[h];
     });
-    return fboxBadMem;
+    return m;
   }
-  function fboxMark(h, bad) {
+  function siteMark(f, h, bad) {
     const v = cleanHost(h);
-    if (!v) return;
-    const m = fboxBadMap();
+    if (!v || !FAMS[f]) return;
+    const m = siteBadMap(f);
     if (bad) m[v] = Date.now(); else delete m[v];
-    try { localStorage.setItem(FBOX_BAD_KEY, JSON.stringify(m)); } catch (_) {}
+    try { localStorage.setItem(FAMS[f].badKey, JSON.stringify(m)); } catch (_) {}
   }
-  // The owner's order, with the names that failed lately at the end.
-  function fboxOrder() {
-    const bad = fboxBadMap();
-    const list = fboxDomainList.length ? fboxDomainList.slice() : FBOX_DEFAULT_DOMAINS.slice();
+  function fboxBadMap() { return siteBadMap('fbox'); }
+  function fboxMark(h, bad) { siteMark('fbox', h, bad); }
+  // 322.3.123: what this device learned by itself — the name that worked last (used first
+  // while the owner's chosen name is still the one it was then), and the new home a site
+  // said it moved to (it takes the old name's place). Kept 3 days.
+  const GOOD_KEY = 'subhub_site_good_v3123';
+  const LEARNED_KEY = 'subhub_site_learned_v3123';
+  const MEMORY_MS = 3 * 24 * 3600 * 1000;
+  function memRead(key) {
+    try {
+      const v = JSON.parse(localStorage.getItem(key) || '{}');
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch (_) { return {}; }
+  }
+  function memWrite(key, v) {
+    try { localStorage.setItem(key, JSON.stringify(v)); } catch (_) {}
+  }
+  function fresh(at) {
+    const t = Number(at), now = Date.now();
+    return t > now - MEMORY_MS && t <= now + 60000;
+  }
+  function goodHost(f) {
+    const g = memRead(GOOD_KEY)[f];
+    if (!g || !fresh(g.at) || g.chosen !== (famList(f)[0] || '')) return '';
+    return cleanHost(g.host);
+  }
+  function setGood(f, h) {
+    const m = memRead(GOOD_KEY);
+    m[f] = { host: h, chosen: famList(f)[0] || '', at: Date.now() };
+    memWrite(GOOD_KEY, m);
+  }
+  function learnedMap(f) {
+    const all = memRead(LEARNED_KEY);
+    const m = all[f] && typeof all[f] === 'object' ? all[f] : {};
+    const out = {};
+    Object.keys(m).forEach(function (from) {
+      const e = m[from], to = e ? cleanHost(e.to) : '';
+      if (cleanHost(from) === from && to && to !== from && fresh(e.at)) out[from] = to;
+    });
+    return out;
+  }
+  function setLearned(f, from, to) {
+    const all = memRead(LEARNED_KEY);
+    const m = all[f] && typeof all[f] === 'object' ? all[f] : {};
+    m[from] = { to: to, at: Date.now() };
+    const keys = Object.keys(m);
+    if (keys.length > 20) delete m[keys[0]];
+    all[f] = m;
+    memWrite(LEARNED_KEY, all);
+  }
+  // The owner's order as this device should try it: a name a site said it left is replaced
+  // by its new home, the name that worked last comes first, names that failed lately last.
+  function siteOrder(f) {
+    const bad = siteBadMap(f), learned = learnedMap(f);
+    const base = famList(f).length ? famList(f) : FAMS[f].defaults;
+    const list = [];
+    base.forEach(function (h) { const v = learned[h] || h; if (list.indexOf(v) < 0) list.push(v); });
+    let good = goodHost(f);
+    if (good && learned[good]) good = learned[good];   // it worked, then said it moved
+    if (good) {
+      const k = list.indexOf(good);
+      if (k > 0) list.splice(k, 1);
+      if (k !== 0) list.unshift(good);
+    }
     return list.filter(function (h) { return !bad[h]; }).concat(list.filter(function (h) { return !!bad[h]; }));
+  }
+  function fboxOrder() {
+    return siteOrder('fbox');
   }
   function cleanHost(h) {
     const v = String(h || '').trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
@@ -152,6 +232,32 @@
     try { const u = new URL(String(raw)); u.hostname = FBOX_STORE_HOST; u.hash = ''; return u.href; }
     catch (_) { return String(raw || ''); }
   }
+  // 322.3.123: a Moviesmod name (the owner's list, the known ones, moviesmod.gd itself).
+  function isMmHost(h) {
+    const v = cleanHost(h);
+    if (!v) return false;
+    if (v === MM_STORE_HOST || /\.moviesmod\.gd$/.test(v)) return true;
+    return mmDomainList.concat(MM_DEFAULT_DOMAINS).indexOf(v) >= 0;
+  }
+  // A Moviesmod page as it is saved: on moviesmod.gd (it opens on the chosen name).
+  function mmStoreUrl(raw) {
+    try {
+      const u = new URL(String(raw || ''));
+      if (u.protocol !== 'https:' || !isMmHost(u.hostname)) return String(raw || '');
+      u.hostname = MM_STORE_HOST; u.hash = '';
+      return u.href;
+    } catch (_) { return String(raw || ''); }
+  }
+  function isMmPage(raw) {
+    try { const u = new URL(String(raw || '')); return u.protocol === 'https:' && isMmHost(u.hostname); }
+    catch (_) { return false; }
+  }
+  // The Moviesmod film / episode page path (the 🩺 check of the Moviesmod names opens it).
+  const MM_PATH = /^\/(movie|tv)\/\d{1,12}$|^\/watch\/(movie|tv)\/\d{1,12}(\/\d{1,3}\/\d{1,4})?$/;
+  function onName(raw, host) {
+    try { const u = new URL(String(raw || '')); u.hostname = host; u.hash = ''; return u.href; }
+    catch (_) { return String(raw || ''); }
+  }
   function isFboxAny(raw) {
     try { const u = new URL(String(raw || '')); return u.protocol === 'https:' && fboxHost(u.hostname); }
     catch (_) { return false; }
@@ -168,11 +274,45 @@
     if (namesBusy) return fboxDomainList;   // 322.3.121: a change being saved is already in place
     try {
       const d = await db.collection('subtitles').doc('_appSettings').get();
-      const arr = d.exists && Array.isArray(d.data().fboxDomains) ? d.data().fboxDomains.map(cleanHost).filter(Boolean) : [];
+      const data = d.exists ? (d.data() || {}) : {};
+      const arr = Array.isArray(data.fboxDomains) ? data.fboxDomains.map(cleanHost).filter(Boolean) : [];
       if (arr.length) fboxDomainList = arr.slice(0, 12);
+      // 322.3.123: the Moviesmod names and the servers' «⚙️» taps live in the same document.
+      const mm = Array.isArray(data.moviesmodDomains) ? data.moviesmodDomains.map(cleanHost).filter(Boolean) : [];
+      if (mm.length) mmDomainList = mm.slice(0, 12);
+      serverRules = cleanRules(data.serverRules);
       fboxDomainsLoaded = true;
+      pushSiteNames();
     } catch (_) {}
     return fboxDomainList;
+  }
+  // 322.3.123: the app keeps the names too, so the old cards (that send no names) also open
+  // Moviesmod on the chosen name.
+  function pushSiteNames() {
+    try {
+      const b = window.SubHubAndroidBridge;
+      if (b && typeof b.siteNamesV3123 === 'function') {
+        b.siteNamesV3123(token, JSON.stringify({ mm: mmDomainList.slice(0, 12), fbox: fboxDomainList.slice(0, 12) }));
+      }
+    } catch (_) {}
+  }
+  // 322.3.123: the owner's «⚙️» per server name (all films): {taps: 0–6, gap: 1–5 s}.
+  let serverRules = {};
+  function cleanRules(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    Object.keys(raw).slice(0, 200).forEach(function (k) {
+      const key = String(k).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').slice(0, 60);
+      const r = raw[k];
+      const taps = r ? Number(r.taps) : NaN, gap = r ? Number(r.gap) : NaN;
+      if (key && Number.isInteger(taps) && taps >= 0 && taps <= 6) {
+        out[key] = { taps: taps, gap: Number.isInteger(gap) && gap >= 1 && gap <= 5 ? gap : 2 };
+      }
+    });
+    return out;
+  }
+  function ruleFor(label) {
+    return serverRules[keyOf(label)] || null;
   }
   function fboxChosen() {
     return fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0];
@@ -224,6 +364,7 @@
       const h = String(u.hostname || '').toLowerCase();
       if (u.protocol === 'https:' && fboxHost(h)) return u.href;   // 322.3.118: any page of the fbox family
       if (isFboxPage(u.href)) return u.href;                        // 322.3.119: a film page on any name
+      if (u.protocol === 'https:' && isMmHost(h)) return mmStoreUrl(u.href);   // 322.3.123: kept as moviesmod.gd
       if (u.protocol !== 'https:' || !(h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd'))) return '';
       return u.href;
     } catch (_) { return ''; }
@@ -234,7 +375,7 @@
     try {
       const u = new URL(v);
       const h = String(u.hostname || '').toLowerCase();
-      if (u.protocol !== 'https:' || h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd') || fboxHost(h)) return '';
+      if (u.protocol !== 'https:' || h === 'moviesmod.gd' || h.endsWith('.moviesmod.gd') || fboxHost(h) || isMmHost(h)) return '';
       return u.href;
     } catch (_) { return ''; }
   }
@@ -487,14 +628,18 @@
       const manualPage = normalizePageUrl(overridePageUrl || '') || (item ? item.pageUrl : '')
         || (ctx.kind === 'tv' ? H().episodePageUrl(tmdbId, ctx.season, ctx.episode) : '');
       let startPage = auto ? item.pageUrl : manualPage;
+      const hadPage = !!startPage;
       // 322.3.121: fbox — the chosen name (✓) opens.
       //   owner adding / changing a server: exactly the chosen name. A film page
       //   opens as it is; any other fbox page (their home) starts the search for
       //   this film's title there.
       //   playing a saved server: the chosen name first; the player moves to the
       //   next names by itself (names that failed lately on this device last).
-      let searchText = '', fboxHosts = [];
+      // 322.3.123: Moviesmod the same way (its own names): the owner gets exactly the
+      // chosen name, viewers this device's order (siteOrder) — the same page path.
+      let searchText = '', fboxHosts = [], mmHosts = [], site = 'moviesmod';
       if (isFboxAny(startPage) || isFboxPage(startPage)) {
+        site = 'fbox';
         await loadFboxDomains(false);
         if (current() !== selected) return;
         if (!auto) {
@@ -510,7 +655,22 @@
           startPage = onFboxName(startPage, order[0] || fboxChosen());
           fboxHosts = order.slice(1, 12);
         }
+      } else {
+        await loadFboxDomains(false);
+        if (current() !== selected) return;
+        const page = startPage || ('https://' + MM_STORE_HOST + '/' + kind + '/' + encodeURIComponent(tmdbId));
+        if (isMmPage(page)) {
+          if (!auto) {
+            startPage = onName(page, mmDomainList[0] || MM_DEFAULT_DOMAINS[0]);
+          } else {
+            const order = siteOrder('mm');
+            startPage = onName(page, order[0] || mmDomainList[0] || MM_DEFAULT_DOMAINS[0]);
+            mmHosts = order.slice(1, 12);
+          }
+        }
       }
+      // 322.3.123: the owner's «⚙️» taps for this server (all films) — saved servers only.
+      const rule = auto && item ? ruleFor(item.label) : null;
       const base = String(selected.id || ('tmdb_' + kind + '_' + tmdbId)).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60);
       const stableKey = (base + (ctx.kind === 'tv' ? '_' + ekOf(ctx) : '') + '_' + (item ? item.id : 'new')).slice(0, 100);
       const session = 'applist_' + Date.now() + '_' + Math.random().toString(36).slice(2);
@@ -531,9 +691,12 @@
       bridge.openDirectStream(token, JSON.stringify({
         mode: 'list',
         // 322.3.117: which page lists the servers — Moviesmod (by TMDB id) or fbox (saved page).
-        site: isFboxAny(startPage) ? 'fbox' : 'moviesmod',
+        site: site,
         searchText: searchText,
         fboxHosts: fboxHosts,
+        // 322.3.123: the next Moviesmod names (viewers), and the owner's «⚙️» taps.
+        mmHosts: mmHosts,
+        tapRule: rule ? { taps: rule.taps, gapMs: rule.gap * 1000 } : null,
         session: session,
         movieId: stableKey,
         resumeKey: stableKey,
@@ -551,7 +714,7 @@
           ? H().episodeList(ctx.movieId, ctx.season, ctx.episode) : [],
         interactiveSource: owner && !auto,
         ownerMode: owner,
-        openChooser: owner && !auto && !!startPage,
+        openChooser: owner && !auto && hadPage,
         serverKey: auto ? item.key : '',
         serverLabel: auto ? item.label : '',
         serverPageUrl: startPage,
@@ -797,6 +960,20 @@
     const h = cleanHost(rawHost);
     if (h) fboxMark(h, !ok);
   };
+  // 322.3.123: the same for both families (fbox / Moviesmod); a name that opened is used
+  // first on this device while the owner's chosen name stays the same.
+  window.__subhubSiteHostV3123 = function (fam, rawHost, ok) {
+    const f = famOf(fam), h = cleanHost(rawHost);
+    if (!f || !h) return;
+    siteMark(f, h, !ok);
+    if (ok) setGood(f, h);
+  };
+  // 322.3.123: a site's own page said it moved (from → to): this device opens «to» in its place.
+  window.__subhubSiteMovedV3123 = function (fam, rawFrom, rawTo) {
+    const f = famOf(fam), from = cleanHost(rawFrom), to = cleanHost(rawTo);
+    if (!f || !from || !to || from === to) return;
+    setLearned(f, from, to);
+  };
 
   // Native player closed itself after «سيرفر آخر»: choose again for the same slot.
   window.__subhubAppListReopenManual = function (rawPageUrl) {
@@ -914,6 +1091,9 @@
     }));
     row.appendChild(btn('⬆️ تقديم', 'border:1px solid #36506b;background:#0c1d2d', index <= 0, function () { moveItem(ctx, item.id, -1); }));
     row.appendChild(btn('⬇️ تأخير', 'border:1px solid #36506b;background:#0c1d2d', index >= count - 1, function () { moveItem(ctx, item.id, 1); }));
+    // 322.3.123: the server's taps on play (all films and episodes)
+    row.appendChild(btn('⚙️ ضغطات' + (ruleFor(item.label) ? ' ' + ruleText(ruleFor(item.label)) : ''),
+      'border:1px solid #36506b;background:#0c1d2d', false, function () { ruleSheet(item.label); }));
     row.appendChild(btn('إلغاء', 'border:1px solid #475569;background:#1e293b', false, function () {}));
     box.appendChild(title);
     box.appendChild(msg);
@@ -921,6 +1101,115 @@
     bg.appendChild(box);
     bg.addEventListener('click', function (e) { if (e.target === bg) bg.remove(); });
     document.body.appendChild(bg);
+  }
+
+  // 322.3.123: «⚙️» — the owner's taps for a server NAME (all films and episodes): how
+  // many times the app presses play in that server's own player, and how long between the
+  // presses. «تلقائي» = the usual way (a press now and then for about 8 seconds). 0 = never
+  // press (the video starts by itself, and a press would pause it). Viewers get it at once.
+  function ruleText(rule) {
+    if (!rule) return '';
+    return '👆' + arNum(rule.taps) + (rule.taps ? ' · ' + arNum(rule.gap) + 'ث' : '');
+  }
+  async function saveRule(label, rule) {
+    const key = keyOf(label);
+    if (!key || !isOwner()) return false;
+    try {
+      if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return false;
+      await db.collection('subtitles').doc('_appSettings').set({
+        serverRules: { [key]: rule ? { taps: rule.taps, gap: rule.gap } : firebase.firestore.FieldValue.delete() }
+      }, { merge: true });
+      if (rule) serverRules[key] = { taps: rule.taps, gap: rule.gap }; else delete serverRules[key];
+      notify(rule ? 'حُفظ لـ «' + label + '»: ' + arNum(rule.taps) + ' ضغطات' + (rule.taps ? '، كل ' + arNum(rule.gap) + ' ث' : '') + ' ✓'
+        : 'رجع «' + label + '» للطريقة المعتادة ✓', 'success');
+      lastSig = '';
+      render(true);
+      return true;
+    } catch (_) {
+      notify('تعذّر حفظ الإعداد.');
+      return false;
+    }
+  }
+  function ruleSheet(label) {
+    const old = document.getElementById('subhub-applist-rule');
+    if (old) old.remove();
+    const cur = ruleFor(label);
+    let taps = cur ? cur.taps : -1;
+    let gap = cur ? cur.gap : 2;
+    const bg = document.createElement('div');
+    bg.id = 'subhub-applist-rule';
+    bg.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.72);display:flex;align-items:flex-end;justify-content:center;padding:18px;direction:rtl';
+    const box = document.createElement('div');
+    box.style.cssText = 'width:min(520px,96vw);border:1px solid ' + ACCENT + ';border-radius:18px;background:#0b1625;color:#fff;padding:16px;box-shadow:0 16px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;gap:10px';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight:900;font-size:.98rem;line-height:1.7';
+    title.appendChild(document.createTextNode('⚙️ ضغطات التشغيل — '));
+    title.appendChild(ltrText(label, ''));
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#b8c5d6;font-size:.8rem;line-height:1.7';
+    msg.textContent = 'كم مرة يضغط التطبيق على زر التشغيل في مشغّل هذا السيرفر، وكم ثانية بين كل ضغطة. ينطبق على هذا السيرفر في كل الأفلام والحلقات، ويصل للمشتركين فوراً. «تلقائي» = الطريقة المعتادة، و٠ = لا يضغط أبداً (لسيرفر يبدأ وحده).';
+    function group(name, items, get, set) {
+      const wrap = document.createElement('div');
+      const h = document.createElement('div');
+      h.style.cssText = 'font-weight:800;font-size:.78rem;margin-bottom:6px;color:#e2e8f0';
+      h.textContent = name;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px';
+      function paint() {
+        [].slice.call(row.children).forEach(function (b) {
+          const on = Number(b.getAttribute('data-v')) === get();
+          b.style.background = on ? '#0e7490' : '#0c1d2d';
+          b.style.borderColor = on ? ACCENT : '#36506b';
+        });
+      }
+      items.forEach(function (it) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = it[1];
+        b.setAttribute('data-v', String(it[0]));
+        b.style.cssText = 'min-width:44px;min-height:38px;border-radius:10px;border:1px solid #36506b;color:#fff;font:inherit;font-weight:900;font-size:.8rem;padding:2px 10px;background:#0c1d2d';
+        b.addEventListener('click', function () { set(it[0]); paint(); gapWrap.style.opacity = taps > 0 ? '1' : '.4'; });
+        row.appendChild(b);
+      });
+      wrap.appendChild(h);
+      wrap.appendChild(row);
+      paint();
+      return wrap;
+    }
+    const tapsWrap = group('عدد الضغطات', [[-1, 'تلقائي'], [0, '٠'], [1, '١'], [2, '٢'], [3, '٣'], [4, '٤'], [5, '٥'], [6, '٦']],
+      function () { return taps; }, function (v) { taps = v; });
+    tapsWrap.setAttribute('data-rule', 'taps');
+    const gapWrap = group('الوقت بين الضغطات', [[1, '١ ث'], [2, '٢ ث'], [3, '٣ ث'], [4, '٤ ث'], [5, '٥ ث']],
+      function () { return gap; }, function (v) { gap = v; });
+    gapWrap.setAttribute('data-rule', 'gap');
+    gapWrap.style.opacity = taps > 0 ? '1' : '.4';
+    const acts = document.createElement('div');
+    acts.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = '💾 حفظ';
+    save.style.cssText = 'min-height:44px;border-radius:11px;font:inherit;font-weight:900;color:#fff;border:1px solid #166534;background:#12301d';
+    save.addEventListener('click', async function () {
+      save.disabled = true;
+      if (await saveRule(label, taps < 0 ? null : { taps: taps, gap: gap })) bg.remove();
+      else save.disabled = false;
+    });
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'إلغاء';
+    cancel.style.cssText = 'min-height:44px;border-radius:11px;font:inherit;font-weight:900;color:#fff;border:1px solid #475569;background:#1e293b';
+    cancel.addEventListener('click', function () { bg.remove(); });
+    acts.appendChild(save);
+    acts.appendChild(cancel);
+    box.appendChild(title);
+    box.appendChild(msg);
+    box.appendChild(tapsWrap);
+    box.appendChild(gapWrap);
+    box.appendChild(acts);
+    bg.appendChild(box);
+    bg.addEventListener('click', function (e) { if (e.target === bg) bg.remove(); });
+    document.body.appendChild(bg);
+    loadFboxDomains(true).catch(function () {});   // the latest rules
   }
 
   // ------------------------------------------------------------- film UI
@@ -999,7 +1288,9 @@
   // 322.3.119: «📦 أسماء fbox» — the chosen name (✓, first in subtitles/_appSettings.fboxDomains)
   // is tried first; the others are fallbacks in their order. Add / edit / delete /
   // choose / reorder — each one saved at once.
-  let namesOpen = false;
+  // 322.3.123: two boxes of the same kind — «📦 أسماء fbox» and «🎬 أسماء Moviesmod»
+  // (subtitles/_appSettings.moviesmodDomains). One is open at a time: namesOpen = its family.
+  let namesOpen = '';
   let namesDraft = '';
   let namesEditing = -1;
   let namesEditDraft = '';
@@ -1027,32 +1318,36 @@
     i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); onEnter(); } });
     return i;
   }
-  function nameProblem(h, skipIndex) {
-    if (!h) return 'اكتب اسم موقع صحيح، مثل tinyzone.sx — أو الصق رابطاً من الموقع';
-    if (/(^|\.)moviesmod\.gd$/.test(h)) return 'هذا اسم Moviesmod — له زرّه الخاص';
-    const at = fboxDomainList.indexOf(h);
+  function nameProblem(f, h, skipIndex) {
+    if (!h) return 'اكتب اسم موقع صحيح، مثل ' + FAMS[f].sample + ' — أو الصق رابطاً من الموقع';
+    if (f === 'fbox' && /(^|\.)moviesmod\.gd$/.test(h)) return 'هذا اسم Moviesmod — له صندوقه «🎬 أسماء Moviesmod»';
+    // 322.3.123: a name belongs to one family only (fbox pages ≠ Moviesmod pages).
+    const other = f === 'fbox' ? 'mm' : 'fbox';
+    if (famList(other).indexOf(h) >= 0) return '«' + h + '» في أسماء ' + FAMS[other].word + ' — احذفه من هناك أولاً';
+    const at = famList(f).indexOf(h);
     if (at >= 0 && at !== skipIndex) return '«' + h + '» موجود في القائمة';
     return '';
   }
   // 322.3.121: a change counts AT ONCE on this device (the chosen name is the one
   // that opens from this moment); the site copy follows, and on failure the list
   // goes back to what it was.
-  async function saveFboxNames(next, okText) {
-    if (namesBusy || !isOwner()) return false;
+  async function saveSiteNames(f, next, okText) {
+    if (namesBusy || !isOwner() || !FAMS[f]) return false;
     const arr = next.map(cleanHost).filter(Boolean).filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
     if (!arr.length) { notify('خلّ اسماً واحداً على الأقل في القائمة.'); return false; }
-    const before = fboxDomainList.slice();
-    fboxDomainList = arr; fboxDomainsLoaded = true;
+    const before = famList(f).slice();
+    setFamList(f, arr); fboxDomainsLoaded = true;
     namesBusy = true;
     render(true);
     let ok = false;
     try {
       if (typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) throw new Error('owner');
-      await db.collection('subtitles').doc('_appSettings').set({ fboxDomains: arr }, { merge: true });
+      await db.collection('subtitles').doc('_appSettings').set({ [FAMS[f].field]: arr }, { merge: true });
       ok = true;
       if (okText) notify(okText, 'success');
+      pushSiteNames();
     } catch (_) {
-      fboxDomainList = before;
+      setFamList(f, before);
       notify('تعذّر حفظ الأسماء — رجعت القائمة كما كانت.');
     } finally {
       namesBusy = false;
@@ -1060,25 +1355,42 @@
     }
     return ok;
   }
-  async function addName() {
+  async function addName(f) {
     const h = cleanHost(namesDraft);
-    const bad = nameProblem(h, -1);
+    const bad = nameProblem(f, h, -1);
     if (bad) { notify(bad); return; }
-    if (fboxDomainList.length >= 12) { notify('القائمة وصلت ١٢ اسماً — احذف اسماً أولاً.'); return; }
-    if (await saveFboxNames(fboxDomainList.concat([h]), 'أُضيف «' + h + '» ✓')) {
+    if (famList(f).length >= 12) { notify('القائمة وصلت ١٢ اسماً — احذف اسماً أولاً، أو استبدل اسماً انتقل («🔁 استبدله» بعد «🩺 فحص»).'); return; }
+    if (await saveSiteNames(f, famList(f).concat([h]), 'أُضيف «' + h + '» ✓')) {
       namesDraft = '';
       render(true);
-      if (!checkRun) startCheck([h]);   // 322.3.122: a new name is checked at once
+      if (!checkRun) startCheck(f, [h]);   // 322.3.122: a new name is checked at once
     }
   }
-  // 322.3.122: «➕ أضِف» on a name that sends to another name (the site moved).
-  async function addNameDirect(raw) {
-    const h = cleanHost(raw);
-    const bad = nameProblem(h, -1);
-    if (bad) { notify(bad); return; }
-    if (fboxDomainList.length >= 12) { notify('القائمة وصلت ١٢ اسماً — احذف اسماً أولاً.'); return; }
-    if (await saveFboxNames(fboxDomainList.concat([h]), 'أُضيف «' + h + '» ✓')) {
-      if (!checkRun) startCheck([h]);
+  // 322.3.123: «🔁 استبدله» on a name whose site moved (it sends to Y, or its page says «a
+  // new home: Y»): Y takes its place, so the list never grows (it stays within 12). When Y
+  // is already in the list the old name just goes — and if the old one was the chosen ✓,
+  // Y becomes the chosen one.
+  async function replaceName(f, from, raw) {
+    const to = cleanHost(raw);
+    const list = famList(f).slice();
+    const i = list.indexOf(from);
+    if (!to || i < 0 || to === from) return;
+    const there = list.indexOf(to) >= 0;
+    if (there) {
+      if (list.length < 2) return;
+      list.splice(i, 1);
+      if (i === 0) { list.splice(list.indexOf(to), 1); list.unshift(to); }
+    } else {
+      const bad = nameProblem(f, to, i);
+      if (bad) { notify(bad); return; }
+      list[i] = to;
+    }
+    siteMark(f, to, false);
+    const text = there
+      ? 'حُذف «' + from + '» — «' + to + '» موجود في القائمة' + (i === 0 ? ' وصار هو المختار ✓' : ' ✓')
+      : 'صار «' + to + '» مكان «' + from + '» ✓';
+    if (await saveSiteNames(f, list, text)) {
+      if (!there && !checkRun) startCheck(f, [to]);   // the new name is checked at once
     }
   }
 
@@ -1089,42 +1401,61 @@
   // name, because it belongs to the connection the check ran on (a UK court order,
   // applied by Cloudflare to connections it sees in the UK — some Saudi home lines
   // reach it through London), not to the name. The last answers stay on this device.
+  // 322.3.123: each box has its own answers (the fbox ones keep their key); one run at a
+  // time (checkFam = the box of the run). A site's own «new home: Y» page counts as moved.
   const CHECK_KEY = 'subhub_fbox_check_v3122';
   const CHECK_KEEP_MS = 7 * 24 * 3600 * 1000;
   let checkRun = '';          // the run in progress ('' = none)
+  let checkFam = '';          // its box (fbox / mm)
   let checkQueue = [];        // its names
   let checkDone = {};         // its names already answered
   let checkCurrent = '';      // the name being opened now
-  let checkStore = null;      // {meta:{at,path,film,net,total,done,running,stopped}, results:{host:{…}}}
-  function checkData() {
-    if (!checkStore) {
-      checkStore = { meta: null, results: {} };
+  const checkStores = { fbox: null, mm: null };   // {meta:{at,path,film,net,total,done,running,stopped}, results:{host:{…}}}
+  function checkKeyOf(f) {
+    return f === 'mm' ? FAMS.mm.checkKey : CHECK_KEY;
+  }
+  function checkData(raw) {
+    const f = famOf(raw) || 'fbox';
+    if (!checkStores[f]) {
+      const st = { meta: null, results: {} };
       try {
-        const v = JSON.parse(localStorage.getItem(CHECK_KEY) || 'null');
+        const v = JSON.parse(localStorage.getItem(checkKeyOf(f)) || 'null');
         if (v && typeof v === 'object' && v.results && typeof v.results === 'object') {
           const now = Date.now();
           Object.keys(v.results).forEach(function (h) {
             const r = v.results[h];
             if (cleanHost(h) === h && r && typeof r === 'object' && typeof r.state === 'string'
-              && Number(r.at) > now - CHECK_KEEP_MS && Number(r.at) <= now + 60000) checkStore.results[h] = r;
+              && Number(r.at) > now - CHECK_KEEP_MS && Number(r.at) <= now + 60000) st.results[h] = r;
           });
-          if (v.meta && typeof v.meta === 'object') { checkStore.meta = v.meta; checkStore.meta.running = false; }
+          if (v.meta && typeof v.meta === 'object') { st.meta = v.meta; st.meta.running = false; }
         }
       } catch (_) {}
+      checkStores[f] = st;
     }
-    return checkStore;
+    return checkStores[f];
   }
-  function saveCheck() {
-    const d = checkData();
+  function saveCheck(f) {
+    const d = checkData(f);
     const out = { meta: d.meta, results: {} };
     Object.keys(d.results)
       .sort(function (a, b) { return (Number(d.results[b].at) || 0) - (Number(d.results[a].at) || 0); })
       .slice(0, 40)
       .forEach(function (h) { out.results[h] = d.results[h]; });
-    try { localStorage.setItem(CHECK_KEY, JSON.stringify(out)); } catch (_) {}
+    try { localStorage.setItem(checkKeyOf(f), JSON.stringify(out)); } catch (_) {}
   }
-  // This film's fbox page (its servers are counted), or their front page.
-  function checkPathNow() {
+  // This film's page of the family (its servers are counted), or their front page.
+  function checkPathNow(f) {
+    if (f === 'mm') {
+      // 322.3.123: the film's saved Moviesmod page (/movie/27205), on every Moviesmod name.
+      const it = (film.items || []).find(function (x) { return isMmPage(x.pageUrl); });
+      if (it) {
+        try {
+          const p = new URL(it.pageUrl).pathname.toLowerCase();
+          if (MM_PATH.test(p)) return p;
+        } catch (_) {}
+      }
+      return '/';
+    }
     const fbox = filmFboxUrl();
     if (fbox && samePageFilm(fbox, filmTitle())) {
       try {
@@ -1138,23 +1469,23 @@
     const b = window.SubHubAndroidBridge;
     return b && typeof b.nameCheckStart === 'function' ? b : null;
   }
-  function startCheck(hosts) {
-    if (!isOwner() || checkRun) return;
+  function startCheck(f, hosts) {
+    if (!isOwner() || checkRun || !FAMS[f]) return;
     const b = nameBridge();
     if (!b) { notify('الفحص يحتاج تطبيق SubHub بنسخة 322.3.122 أو أحدث.'); return; }
     const list = (hosts || []).map(cleanHost).filter(Boolean)
       .filter(function (h, i, a) { return a.indexOf(h) === i; }).slice(0, 12);
     if (!list.length) return;
     const run = 'nc' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const path = checkPathNow();
-    const d = checkData();
+    const path = checkPathNow(f);
+    const d = checkData(f);
     d.meta = { at: Date.now(), path: path, film: path === '/' ? '' : filmTitle(), net: '',
       total: list.length, done: 0, running: true, stopped: false };
-    checkRun = run; checkQueue = list; checkDone = {}; checkCurrent = '';
+    checkRun = run; checkFam = f; checkQueue = list; checkDone = {}; checkCurrent = '';
     try {
       b.nameCheckStart(token, JSON.stringify({ run: run, names: list, path: path }));
     } catch (_) {
-      checkRun = ''; checkQueue = [];
+      checkRun = ''; checkFam = ''; checkQueue = [];
       notify('تعذّر بدء الفحص.');
     }
     paintCheck();
@@ -1165,26 +1496,29 @@
     endCheck(true);
   }
   function endCheck(stopped) {
-    const d = checkData();
+    const f = checkFam || 'fbox';
+    const d = checkData(f);
     if (d.meta) { d.meta.running = false; d.meta.stopped = !!stopped; }
-    checkRun = ''; checkQueue = []; checkDone = {}; checkCurrent = '';
-    saveCheck();
+    checkRun = ''; checkFam = ''; checkQueue = []; checkDone = {}; checkCurrent = '';
+    saveCheck(f);
     paintCheck();
   }
   function checkSummary() {
-    const d = checkData();
-    let ok = 0, blocked = 0, dead = 0, other = 0;
+    const d = checkData(checkFam);
+    let ok = 0, blocked = 0, dead = 0, moved = 0, other = 0;
     Object.keys(checkDone).forEach(function (h) {
       const r = d.results[h];
       const s = r ? r.state : '';
       if (s === 'ok') ok++;
       else if (s === 'blocked') blocked++;
+      else if (s === 'redirect') moved++;
       else if (s === 'notFound' || s === 'down' || s === 'noAnswer' || s === 'notSite') dead++;
       else other++;
     });
     const parts = [];
     if (ok) parts.push(arNum(ok) + ' يعمل');
     if (blocked) parts.push(arNum(blocked) + ' محجوب عندك');
+    if (moved) parts.push(arNum(moved) + ' انتقل');
     if (dead) parts.push(arNum(dead) + ' لا يعمل');
     if (other) parts.push(arNum(other) + ' يحتاج نظرة');
     return 'انتهى الفحص' + (parts.length ? ': ' + parts.join(' · ') : '');
@@ -1193,7 +1527,8 @@
     let e = null;
     try { e = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (_) { return; }
     if (!e || !checkRun || e.run !== checkRun) return;
-    const d = checkData();
+    const f = checkFam;
+    const d = checkData(f);
     if (e.type === 'start') {
       if (d.meta) d.meta.net = String(e.net || '').slice(0, 8);
     } else if (e.type === 'name') {
@@ -1210,7 +1545,7 @@
       checkDone[h] = 1;
       if (d.meta) d.meta.done = Object.keys(checkDone).length;
       if (checkCurrent === h) checkCurrent = '';
-      saveCheck();
+      saveCheck(f);
     } else if (e.type === 'done') {
       const stopped = !!e.stopped;
       const summary = checkSummary();
@@ -1237,9 +1572,12 @@
     const net = netText(m && m.net);
     return page + (net ? ' · ' + net : '');
   }
-  function checkHead() {
-    const m = checkData().meta;
-    if (checkRun && m) {
+  function runningHere(f) {
+    return !!checkRun && checkFam === f;
+  }
+  function checkHead(f) {
+    const m = checkData(f).meta;
+    if (runningHere(f) && m) {
       return '🔄 جارٍ الفحص ' + arNum(Math.min((m.done || 0) + 1, m.total || 1)) + ' من ' + arNum(m.total || 1) + ' — ' + checkWhere(m);
     }
     if (m && m.at) return 'آخر فحص: ' + agoText(m.at) + ' — ' + checkWhere(m) + (m.stopped ? ' (أُوقف)' : '');
@@ -1254,10 +1592,10 @@
     return '';
   }
   // What one row says: {t: text, c: colour, ltr: Latin part, to: the other name}.
-  function checkLine(h) {
-    if (checkRun && checkCurrent === h) return { t: '🔄 جارٍ الفحص…', c: '#7dd3fc' };
-    if (checkRun && checkQueue.indexOf(h) >= 0 && !checkDone[h]) return { t: '⏳ في الانتظار', c: '#94a3b8' };
-    const r = checkData().results[h];
+  function checkLine(f, h) {
+    if (runningHere(f) && checkCurrent === h) return { t: '🔄 جارٍ الفحص…', c: '#7dd3fc' };
+    if (runningHere(f) && checkQueue.indexOf(h) >= 0 && !checkDone[h]) return { t: '⏳ في الانتظار', c: '#94a3b8' };
+    const r = checkData(f).results[h];
     if (!r) return null;
     const film = !!r.path && r.path !== '/';
     switch (r.state) {
@@ -1275,7 +1613,7 @@
       case 'noAnswer':
         return { t: '⛔ لا يرد' + errText(r.err), c: '#f87171' };
       case 'redirect':
-        return { t: '↪️ يحوّل إلى', c: '#93c5fd', to: r.to };
+        return { t: '↪️ انتقل إلى', c: '#93c5fd', to: r.to };
       case 'checkPage':
         return { t: '🛡️ صفحة تحقّق — افتحه بالإضافة للتأكد', c: '#fbbf24' };
       case 'notSite':
@@ -1285,95 +1623,103 @@
     }
     return null;
   }
-  function anyBlocked() {
-    const d = checkData();
-    return fboxDomainList.some(function (h) { return !!d.results[h] && d.results[h].state === 'blocked'; });
+  function anyBlocked(f) {
+    const d = checkData(f);
+    return famList(f).some(function (h) { return !!d.results[h] && d.results[h].state === 'blocked'; });
   }
-  function paintRow(el, h) {
+  function paintRow(f, el, h) {
     while (el.firstChild) el.removeChild(el.firstChild);
-    const L = checkLine(h);
+    const L = checkLine(f, h);
     if (!L) { el.style.display = 'none'; return; }
     el.style.display = 'flex';
     const s = document.createElement('span');
     s.style.color = L.c;
     s.appendChild(document.createTextNode(L.t));
     if (L.ltr) { s.appendChild(document.createTextNode(' ')); s.appendChild(ltrText('(' + L.ltr + ')', '')); }
+    const list = famList(f);
     if (L.to) {
       s.appendChild(document.createTextNode(' '));
       s.appendChild(ltrText(L.to, '#e0f2fe'));
-      if (fboxDomainList.indexOf(L.to) >= 0) s.appendChild(document.createTextNode(' (موجود في القائمة)'));
+      if (list.indexOf(L.to) >= 0) s.appendChild(document.createTextNode(' (موجود في القائمة)'));
     }
     el.appendChild(s);
-    if (L.to && fboxDomainList.indexOf(L.to) < 0 && fboxDomainList.length < 12) {
-      const add = smallBtn('➕ أضِفه', 'play', namesBusy, function () { addNameDirect(L.to); });
-      add.style.flex = 'none';
-      add.style.minHeight = '26px';
-      add.style.padding = '2px 10px';
-      el.appendChild(add);
+    // 322.3.123: the moved name is replaced in place (the list never grows past 12).
+    if (L.to && list.indexOf(h) >= 0 && L.to !== h) {
+      const there = list.indexOf(L.to) >= 0;
+      const rep = smallBtn(there ? '🗑️ احذفه' : '🔁 استبدله', there ? 'danger' : 'play', namesBusy || (there && list.length < 2),
+        function () { replaceName(f, h, L.to); });
+      rep.style.flex = 'none';
+      rep.style.minHeight = '26px';
+      rep.style.padding = '2px 10px';
+      el.appendChild(rep);
     }
   }
-  function paintAllBtn(b) {
-    b.textContent = checkRun ? '⏹ إيقاف الفحص' : '🩺 فحص الكل';
-    b.style.borderColor = checkRun ? '#7f1d1d' : '#166534';
-    b.style.background = checkRun ? '#2b1115' : '#10271a';
+  function paintAllBtn(b, f) {
+    b.textContent = runningHere(f) ? '⏹ إيقاف الفحص' : '🩺 فحص الكل';
+    b.style.borderColor = runningHere(f) ? '#7f1d1d' : '#166534';
+    b.style.background = runningHere(f) ? '#2b1115' : '#10271a';
   }
   // Only the check's own parts change (no full redraw: the owner may be typing a name).
   function paintCheck() {
-    const box = document.getElementById('subhub-fbox-names-box');
+    const f = namesOpen;
+    const box = f && FAMS[f] ? document.getElementById(FAMS[f].boxId) : null;
     if (!box) return;
     const head = box.querySelector('[data-ncheck-head]');
-    if (head) head.textContent = checkHead();
+    if (head) head.textContent = checkHead(f);
     const all = box.querySelector('[data-ncheck-all]');
-    if (all) paintAllBtn(all);
+    if (all) paintAllBtn(all, f);
     [].slice.call(box.querySelectorAll('[data-ncheck-one]')).forEach(function (b) {
       b.disabled = !!checkRun;
       b.style.opacity = checkRun ? '.38' : '1';
     });
     [].slice.call(box.querySelectorAll('[data-ncheck-host]')).forEach(function (el) {
-      paintRow(el, el.getAttribute('data-ncheck-host'));
+      paintRow(f, el, el.getAttribute('data-ncheck-host'));
     });
     const note = box.querySelector('[data-ncheck-note]');
-    if (note) note.style.display = anyBlocked() ? '' : 'none';
+    if (note) note.style.display = anyBlocked(f) ? '' : 'none';
   }
-  async function saveEditedName(i) {
+  async function saveEditedName(f, i) {
     const h = cleanHost(namesEditDraft);
-    const bad = nameProblem(h, i);
+    const bad = nameProblem(f, h, i);
     if (bad) { notify(bad); return; }
-    const next = fboxDomainList.slice();
+    const next = famList(f).slice();
     next[i] = h;
-    if (await saveFboxNames(next, 'تم تعديل الاسم ✓')) { namesEditing = -1; namesEditDraft = ''; render(true); }
+    if (await saveSiteNames(f, next, 'تم تعديل الاسم ✓')) { namesEditing = -1; namesEditDraft = ''; render(true); }
   }
-  function chooseName(i) {
-    const next = fboxDomainList.slice();
+  function chooseName(f, i) {
+    const next = famList(f).slice();
     const h = next.splice(i, 1)[0];
     next.unshift(h);
-    fboxMark(h, false);   // 322.3.121: the owner says it works — no old failure kept for it
-    saveFboxNames(next, 'صار «' + h + '» هو المختار ✓');
+    siteMark(f, h, false);   // 322.3.121: the owner says it works — no old failure kept for it
+    saveSiteNames(f, next, 'صار «' + h + '» هو المختار ✓');
   }
-  function moveName(i, dir) {
+  function moveName(f, i, dir) {
+    const list = famList(f);
     const j = i + dir;
-    if (i < 1 || j < 1 || j >= fboxDomainList.length) return;   // the chosen one moves by «اختيار» only
-    const next = fboxDomainList.slice();
+    if (i < 1 || j < 1 || j >= list.length) return;   // the chosen one moves by «اختيار» only
+    const next = list.slice();
     const t = next[i]; next[i] = next[j]; next[j] = t;
-    saveFboxNames(next, '');
+    saveSiteNames(f, next, '');
   }
-  function deleteName(i) {
-    const h = fboxDomainList[i];
-    if (fboxDomainList.length < 2) { notify('خلّ اسماً واحداً على الأقل في القائمة.'); return; }
-    const after = i === 0 ? '\nويصير «' + fboxDomainList[1] + '» هو المختار.' : '';
-    if (!confirm('حذف «' + h + '» من أسماء fbox؟' + after + '\nالسيرفرات المحفوظة ما تتأثر.')) return;
-    const next = fboxDomainList.slice();
+  function deleteName(f, i) {
+    const list = famList(f);
+    const h = list[i];
+    if (list.length < 2) { notify('خلّ اسماً واحداً على الأقل في القائمة.'); return; }
+    const after = i === 0 ? '\nويصير «' + list[1] + '» هو المختار.' : '';
+    if (!confirm('حذف «' + h + '» من أسماء ' + FAMS[f].word + '؟' + after + '\nالسيرفرات المحفوظة ما تتأثر.')) return;
+    const next = list.slice();
     next.splice(i, 1);
     if (namesEditing === i) namesEditing = -1;
-    saveFboxNames(next, 'حُذف «' + h + '» ✓');
+    saveSiteNames(f, next, 'حُذف «' + h + '» ✓');
   }
-  function namesBox() {
+  function namesBox(f) {
     const box = document.createElement('div');
-    box.id = 'subhub-fbox-names-box';
+    box.id = FAMS[f].boxId;
+    box.setAttribute('data-names-box', f);
     box.style.cssText = 'border:1px solid #6b5520;border-radius:12px;background:#0b1a26;padding:8px;display:flex;flex-direction:column;gap:6px';
     const head = document.createElement('div');
     head.style.cssText = 'color:#fcd34d;font-weight:900;font-size:.76rem;line-height:1.6';
-    head.textContent = '📦 أسماء fbox';
+    head.textContent = FAMS[f].icon + ' أسماء ' + FAMS[f].word;
     const note = document.createElement('div');
     note.style.cssText = 'color:#a9b7cb;font-size:.64rem;line-height:1.7';
     note.textContent = 'الاسم المختار ✓ هو الذي يُفتح دائماً. وعند المشترك: إن لم تعمل صفحته ينتقل التطبيق إلى الاسم التالي بالترتيب. السيرفرات المحفوظة تعمل على كل الأسماء.';
@@ -1383,24 +1729,26 @@
     const tools = document.createElement('div');
     tools.style.cssText = 'display:flex;flex-direction:column;gap:5px;border:1px solid #1f3b4d;border-radius:10px;padding:6px 8px;background:#08161f';
     const allBtn = smallBtn('🩺 فحص الكل', 'play', namesBusy, function () {
-      if (checkRun) stopCheck(); else startCheck(fboxDomainList.slice());
+      if (runningHere(f)) stopCheck();
+      else if (checkRun) notify('فحص آخر يعمل الآن — انتظر حتى ينتهي.');
+      else startCheck(f, famList(f).slice());
     });
     allBtn.setAttribute('data-ncheck-all', '1');
-    paintAllBtn(allBtn);
+    paintAllBtn(allBtn, f);
     const checkInfo = document.createElement('div');
     checkInfo.setAttribute('data-ncheck-head', '1');
     checkInfo.style.cssText = 'color:#a9b7cb;font-size:.62rem;line-height:1.6';
-    checkInfo.textContent = checkHead();
+    checkInfo.textContent = checkHead(f);
     const blockedNote = document.createElement('div');
     blockedNote.setAttribute('data-ncheck-note', '1');
     blockedNote.style.cssText = 'color:#fdba74;font-size:.6rem;line-height:1.7';
     blockedNote.textContent = '🚫 «محجوب على اتصالك» يخصّ اتصالك أنت الآن، وقد يعمل عند المشتركين — جرّبه على البيانات قبل أن تحذفه.';
-    blockedNote.style.display = anyBlocked() ? '' : 'none';
+    blockedNote.style.display = anyBlocked(f) ? '' : 'none';
     tools.appendChild(allBtn);
     tools.appendChild(checkInfo);
     tools.appendChild(blockedNote);
     box.appendChild(tools);
-    const list = fboxDomainList.slice();
+    const list = famList(f).slice();
     list.forEach(function (h, i) {
       const chosen = i === 0;
       const row = document.createElement('div');
@@ -1413,12 +1761,12 @@
       num.textContent = chosen ? '✓' : arNum(i + 1);
       top.appendChild(num);
       if (namesEditing === i) {
-        const ei = namesInput(namesEditDraft, h, function (v) { namesEditDraft = v; }, function () { saveEditedName(i); });
+        const ei = namesInput(namesEditDraft, h, function (v) { namesEditDraft = v; }, function () { saveEditedName(f, i); });
         top.appendChild(ei);
         row.appendChild(top);
         const acts = document.createElement('div');
         acts.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:5px';
-        acts.appendChild(smallBtn('💾 حفظ', 'play', namesBusy, function () { saveEditedName(i); }));
+        acts.appendChild(smallBtn('💾 حفظ', 'play', namesBusy, function () { saveEditedName(f, i); }));
         acts.appendChild(smallBtn('✕ إلغاء', 'edit', namesBusy, function () { namesEditing = -1; namesEditDraft = ''; render(true); }));
         row.appendChild(acts);
         box.appendChild(row);
@@ -1436,7 +1784,7 @@
         top.appendChild(tag);
       }
       // 322.3.122: check this one name (a name just added is checked by itself).
-      const one = smallBtn('🩺', 'edit', !!checkRun, function () { if (!checkRun) startCheck([h]); });
+      const one = smallBtn('🩺', 'edit', !!checkRun, function () { if (!checkRun) startCheck(f, [h]); });
       one.title = 'فحص هذا الاسم';
       one.setAttribute('data-ncheck-one', '1');
       one.style.flex = 'none';
@@ -1447,17 +1795,17 @@
       const st = document.createElement('div');
       st.setAttribute('data-ncheck-host', h);
       st.style.cssText = 'align-items:center;gap:6px;flex-wrap:wrap;font-size:.62rem;line-height:1.6;font-weight:800';
-      paintRow(st, h);
+      paintRow(f, st, h);
       row.appendChild(st);
       const acts = document.createElement('div');
       acts.style.cssText = 'display:grid;gap:5px;grid-template-columns:' + (chosen ? '1fr 1fr' : '1.35fr .75fr .75fr 1fr 1fr');
       if (!chosen) {
-        acts.appendChild(smallBtn('✓ اختيار', 'play', namesBusy, function () { chooseName(i); }));
-        acts.appendChild(smallBtn('⬆️', 'edit', namesBusy || i === 1, function () { moveName(i, -1); }));
-        acts.appendChild(smallBtn('⬇️', 'edit', namesBusy || i === list.length - 1, function () { moveName(i, 1); }));
+        acts.appendChild(smallBtn('✓ اختيار', 'play', namesBusy, function () { chooseName(f, i); }));
+        acts.appendChild(smallBtn('⬆️', 'edit', namesBusy || i === 1, function () { moveName(f, i, -1); }));
+        acts.appendChild(smallBtn('⬇️', 'edit', namesBusy || i === list.length - 1, function () { moveName(f, i, 1); }));
       }
       acts.appendChild(smallBtn('✏️ تعديل', 'edit', namesBusy, function () { namesEditing = i; namesEditDraft = h; render(true); }));
-      acts.appendChild(smallBtn('🗑️ حذف', 'danger', namesBusy || list.length < 2, function () { deleteName(i); }));
+      acts.appendChild(smallBtn('🗑️ حذف', 'danger', namesBusy || list.length < 2, function () { deleteName(f, i); }));
       row.appendChild(acts);
       box.appendChild(row);
     });
@@ -1466,8 +1814,8 @@
     addLabel.textContent = '➕ اسم جديد — اكتبه أو الصق رابطاً من الموقع';
     const addRow = document.createElement('div');
     addRow.style.cssText = 'display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center';
-    const ai = namesInput(namesDraft, 'tinyzone.sx', function (v) { namesDraft = v; }, function () { addName(); });
-    const ab = smallBtn('➕ إضافة', 'play', namesBusy || list.length >= 12, function () { addName(); });
+    const ai = namesInput(namesDraft, FAMS[f].sample, function (v) { namesDraft = v; }, function () { addName(f); });
+    const ab = smallBtn('➕ إضافة', 'play', namesBusy || list.length >= 12, function () { addName(f); });
     ab.style.padding = '4px 14px';
     addRow.appendChild(ai);
     addRow.appendChild(ab);
@@ -1516,13 +1864,21 @@
       meta.style.cssText = 'margin-inline-start:auto;flex:none;color:#86efac;font-size:.62rem;font-weight:800';
       const off = clampOffset(it.subtitleOffsetMs);
       meta.textContent = Math.abs(off) < 50 ? '' : ('⏱ ' + (off > 0 ? '+' : '−') + (Math.abs(off) / 1000).toFixed(1) + ' ث');
+      // 322.3.123: the server's «⚙️» taps, when the owner set them
+      const rt = ruleText(ruleFor(it.label));
+      if (rt) meta.textContent = (meta.textContent ? meta.textContent + '  ' : '') + rt;
       top.appendChild(badge);
       top.appendChild(name);
       top.appendChild(meta);
       const acts = document.createElement('div');
-      acts.style.cssText = 'display:grid;grid-template-columns:1.3fr 1fr .7fr .7fr .8fr;gap:5px';
+      acts.style.cssText = 'display:grid;grid-template-columns:1.25fr 1fr .62fr .62fr .62fr .7fr;gap:5px';
       acts.appendChild(smallBtn('▶ تشغيل', 'play', false, function () { openSession(ctx, it.id, false, ''); }));
       acts.appendChild(smallBtn('✏️ تعديل', 'edit', false, function () { openSession(ctx, it.id, true, ''); }));
+      // 322.3.123: the server's taps on play (all films)
+      const gear = smallBtn('⚙️', 'edit', false, function () { ruleSheet(it.label); });
+      gear.title = 'ضغطات التشغيل لهذا السيرفر';
+      gear.setAttribute('data-rule-btn', it.id);
+      acts.appendChild(gear);
       acts.appendChild(smallBtn('⬆️', 'edit', i === 0, function () { moveItem(ctx, it.id, -1); }));
       acts.appendChild(smallBtn('⬇️', 'edit', i === film.items.length - 1, function () { moveItem(ctx, it.id, 1); }));
       acts.appendChild(smallBtn('🗑️', 'danger', false, function () {
@@ -1569,16 +1925,44 @@
     pair.appendChild(add);
     pair.appendChild(addF);
     sec.appendChild(pair);
+    // 322.3.123: one line per family of names — «🎬 Moviesmod — المختار: …» and «📦 fbox —
+    // المختار: …» — each with its own «✏️ الأسماء» box (one box open at a time).
+    function namesButton(f) {
+      const b = smallBtn(namesOpen === f ? '✕ إغلاق' : '✏️ الأسماء', 'edit', false, async function () {
+        if (namesOpen === f) { namesOpen = ''; namesEditing = -1; render(true); return; }
+        if (!isOwner() || typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
+        namesOpen = f; namesEditing = -1; namesDraft = ''; namesEditDraft = '';
+        render(true);
+        loadFboxDomains(true).then(function () { if (namesOpen === f) render(true); }).catch(function () {});
+      });
+      b.setAttribute('data-names-fam', f);
+      b.style.flex = 'none';
+      b.style.padding = '4px 10px';
+      return b;
+    }
+    function chosenLine(f) {
+      const line = document.createElement('span');
+      const list = famList(f).length ? famList(f) : FAMS[f].defaults;
+      line.appendChild(document.createTextNode(FAMS[f].icon + ' ' + FAMS[f].word + ' — المختار: '));
+      line.appendChild(ltrText(list[0], '#cbd5e1'));
+      if (list.length > 1) line.appendChild(document.createTextNode(' · ' + arNum(list.length - 1) + ' احتياط'));
+      return line;
+    }
+    const mmDom = document.createElement('div');
+    mmDom.style.cssText = 'display:flex;align-items:center;gap:6px;color:#7f93ab;font-size:.62rem;line-height:1.6';
+    const mmTx = document.createElement('div');
+    mmTx.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px';
+    mmTx.appendChild(chosenLine('mm'));
+    mmDom.appendChild(mmTx);
+    mmDom.appendChild(namesButton('mm'));
+    sec.appendChild(mmDom);
+    if (namesOpen === 'mm') sec.appendChild(namesBox('mm'));
     const dom = document.createElement('div');
     dom.style.cssText = 'display:flex;align-items:center;gap:6px;color:#7f93ab;font-size:.62rem;line-height:1.6';
     // 322.3.119: «📦 fbox — المختار: tinyzone.sx · ٦ احتياط · movie-…» + the names box.
     const domTx = document.createElement('div');
     domTx.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px';
-    const domLine = document.createElement('span');
-    domLine.appendChild(document.createTextNode('📦 fbox — المختار: '));
-    domLine.appendChild(ltrText(fboxDomainList[0] || FBOX_DEFAULT_DOMAINS[0], '#cbd5e1'));
-    if (fboxDomainList.length > 1) domLine.appendChild(document.createTextNode(' · ' + arNum(fboxDomainList.length - 1) + ' احتياط'));
-    domTx.appendChild(domLine);
+    domTx.appendChild(chosenLine('fbox'));
     if (fbox) {
       // this film's page on fbox — 322.3.121: «⚠️ صفحة فيلم آخر» when it is not this
       // film's page, and «🗑️ مسح» so the next «📦 إضافة» starts from the search.
@@ -1599,19 +1983,10 @@
       pageRow.appendChild(clr);
       domTx.appendChild(pageRow);
     }
-    const domBtn = smallBtn(namesOpen ? '✕ إغلاق' : '✏️ الأسماء', 'edit', false, async function () {
-      if (namesOpen) { namesOpen = false; namesEditing = -1; render(true); return; }
-      if (!isOwner() || typeof checkOwnerAccess !== 'function' || !(await checkOwnerAccess())) return;
-      namesOpen = true; namesEditing = -1;
-      render(true);
-      loadFboxDomains(true).then(function () { if (namesOpen) render(true); }).catch(function () {});
-    });
-    domBtn.style.flex = 'none';
-    domBtn.style.padding = '4px 10px';
     dom.appendChild(domTx);
-    dom.appendChild(domBtn);
+    dom.appendChild(namesButton('fbox'));
     sec.appendChild(dom);
-    if (namesOpen) sec.appendChild(namesBox());
+    if (namesOpen === 'fbox') sec.appendChild(namesBox('fbox'));
     sec.appendChild(legacyBlock());   // moves the existing block (with its cards) here
     return sec;
   }
@@ -1647,7 +2022,7 @@
       const grid = document.querySelector('.owner-watch-pills');
       const existing = document.getElementById('subhub-applist-section');
       if (!grid) { if (existing) existing.remove(); lastSig = ''; return; }
-      const sig = JSON.stringify([id, film.loaded, filmFboxUrl(), film.items.map(function (x) { return [x.id, x.label, x.subtitleOffsetMs, viewerNumber('list:' + x.id)]; })]);
+      const sig = JSON.stringify([id, film.loaded, filmFboxUrl(), film.items.map(function (x) { return [x.id, x.label, x.subtitleOffsetMs, viewerNumber('list:' + x.id), ruleText(ruleFor(x.label))]; })]);
       if (existing && existing.isConnected && !force && sig === lastSig && existing.previousElementSibling === grid) return;
       const sec = buildSection(id);
       if (existing) existing.remove();
@@ -1694,7 +2069,7 @@
     const id = String(sel.id || '');
     if (film.movieId !== id) {
       film = { movieId: id, loaded: false, loading: false, failedAt: 0, items: [] };
-      namesOpen = false; namesEditing = -1;   // 322.3.119: the names box closes on another film
+      namesOpen = ''; namesEditing = -1;   // 322.3.119: the names box closes on another film
       removeFilmUi();
       lastSig = '';
     }
