@@ -17,13 +17,20 @@ const asset = n => fs.readFileSync(path.join(__dirname, '../app/src/main/assets'
 const java = fs.readFileSync(path.join(__dirname, '../app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java'), 'utf8');
 const popupClose = asset('popup_close.js');
 
-function javaScriptOf(name, env) {
-  const start = java.indexOf('private String ' + name + '() {');
-  if (start < 0) throw new Error('no method ' + name);
+function methodBody(sig) {
+  const start = java.indexOf(sig);
+  if (start < 0) throw new Error('no method ' + sig);
   const bodyStart = java.indexOf('{', start) + 1;
   const bodyEnd = java.indexOf('\n    }\n', bodyStart);
-  const body = java.slice(bodyStart, bodyEnd).replace(/\bString\s+(\w+)\s*=/g, 'var $1 =');
-  const base = {JSONObject: {quote: v => JSON.stringify(String(v))}, normalizeServerLabel: v => String(v)};
+  return java.slice(bodyStart, bodyEnd).replace(/\bString\s+(\w+)\s*=/g, 'var $1 =');
+}
+// 322.3.124: the check's words and the shared «is the check on the page» function.
+const GATE_WORDS = JSON.parse(java.match(/GATE_WORDS =\s*("(?:[^"\\]|\\.)*");/)[1]);
+const gatePresentFn = () => new Function('GATE_WORDS', methodBody('private static String gatePresentFn() {'))(GATE_WORDS);
+function javaScriptOf(name, env) {
+  const body = methodBody('private String ' + name + '() {');
+  const base = {JSONObject: {quote: v => JSON.stringify(String(v))}, normalizeServerLabel: v => String(v),
+    GATE_WORDS, gatePresentFn};
   const all = Object.assign(base, env);
   return new Function(...Object.keys(all), body)(...Object.values(all));
 }

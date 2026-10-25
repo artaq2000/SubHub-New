@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 132" in gradle
-assert "versionName '322.3.123'" in gradle
+assert "versionCode 133" in gradle
+assert "versionName '322.3.124'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -989,8 +989,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 132' in mv107
-assert "versionCode 132" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 133' in mv107
+assert "versionCode 133" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1250,10 +1250,11 @@ assert 'public void gateTarget(String token, double normalizedX, double normaliz
 gt = d116[d116.index('public void gateTarget(String token'):]
 gt = gt[:gt.index('\n        }\n')]
 assert 'if (closed || !gateShown || gatePageVisible) return;' in gt and 'dispatchProviderTap(normalizedX, normalizedY);' in gt
-assert 'private void showGatePage()' in d116 and 'probe.setAlpha(1.0f);' in d116[d116.index('private void showGatePage()'):]
+# 322.3.124: the fallback shows their box through revealGateBox (only while the check is there).
+assert 'private void showGatePage()' in d116 and 'pv.setAlpha(1.0f);' in d116[d116.index('private void revealGateBox(final WebView pv)'):]
 assert 'if (gateShown && gatePageVisible) v.setAlpha(0.0f);' in d116
 assert 'title.setText("تحقّق من أنك لست روبوتاً");' in d116 and 'Moviesmod التأكد' not in d116   # no site name on our card
-assert 'probe.evaluateJavascript(gateOnlyScript(), null);' in d116                                   # fallback: only their box
+assert 'pv.evaluateJavascript(gateOnlyScript(), null);' in d116                                      # fallback: only their box
 assert "body *{visibility:hidden !important;}" in d116 and "[data-subhub-gate],[data-subhub-gate] *{visibility:visible !important;}" in d116
 assert 'gateBanner' not in d116
 print('322.3.116 own check card checks OK')
@@ -1436,7 +1437,10 @@ assert "if (!present) gateDone();" in g122b                              # «gon
 assert "TextView gateClose = chip(\"✕\", 15, this::gateClosed);" in d122b
 c122b = d122b[d122b.index('private void gateClosed() {'):]
 c122b = c122b[:c122b.index('\n    }\n')]
-assert "startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));" in c122b   # ✕ before the video: the search goes on
+gg122b = d122b[d122b.index('private void gateGone() {'):]   # 322.3.124: ✕ goes through gateGone
+gg122b = gg122b[:gg122b.index('\n    }\n')]
+assert "gateGone();" in c122b and "hideGate();" in gg122b
+assert "startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));" in gg122b   # ✕ before the video: the search goes on
 print('322.3.122 check card fix checks OK')
 
 # 322.3.123: Moviesmod moved (StreamBoppo, StreamDude… — the same pages by TMDB number and the
@@ -1525,3 +1529,65 @@ assert "if (href && href !== '#' && !/^javascript:/i.test(href)) continue;" in p
 assert "node tests/player_pages.browser.cjs" in w123 and "node tests/site_names.browser.cjs" in w123
 assert "node --check app/src/main/assets/site_move.js" in w123 and "node --check app/src/main/assets/popup_close.js" in w123
 print('322.3.123 site names checks OK')
+
+# 322.3.124: the site's check and the viewer. After «✓ تحقّق الآن» the film page was shown to
+# the viewer with its ads and no video came: the site takes its check away in the same page
+# (no new page, so no new report), the fallback 7 s later «showed the check» — by then the film
+# page — and the search stood still; and the saved server had been pressed under the check
+# (the site ignores that) and never again. Chromium: tests/check_gate.browser.cjs.
+d124 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+def body124(sig, end='\n    }\n'):
+    s = d124[d124.index(sig):]
+    return s[:s.index(end)]
+# the words of the check: one list for every script
+assert 'private static final String GATE_WORDS =' in d124 and '"var re=/" + GATE_WORDS + "/i;"' in d124
+assert d124.count('just a quick check|continue to moviesmod') == 1
+# the fallback shows their box only while the check is really there; otherwise the search goes on
+sgp = body124('    private void showGatePage() {')
+assert 'pv.evaluateJavascript(gatePresentScript(), value -> {' in sgp
+assert 'if ("true".equals(value)) revealGateBox(pv);' in sgp and 'else gateGone();' in sgp
+assert 'setAlpha(1.0f)' not in sgp                                       # never shown from here directly
+rgb = body124('    private void revealGateBox(final WebView pv) {')
+assert '|| probeLoading) return;' in rgb                                 # a page still loading is never shown
+assert 'pv.evaluateJavascript(gateWatchScript(), null);' in rgb          # passed by hand in the same page: seen
+# the viewer's press: the page is watched from then on
+gp124 = body124('    private void gatePressed() {')
+assert 'probe.evaluateJavascript(gateWatchScript(), null);' in gp124
+# a new page while their box is shown: hidden at once
+ps124 = d124[d124.index('@Override public void onPageStarted(WebView v, String url'):]
+ps124 = ps124[:ps124.index('\n            }\n')]
+assert 'probeLoading = true;' in ps124 and 'gateShown && gatePageVisible) gateBetweenPages(v);' in ps124
+gbp = body124('    private void gateBetweenPages(WebView v) {')
+assert 'v.setAlpha(0.0f);' in gbp and 'gateCardStatus.setText("جارٍ التحقق…");' in gbp and 'showGatePage();' in gbp
+assert 'probeLoading = false;' in body124('            @Override public void onPageFinished(WebView v, String url) {', '\n                String host')
+assert 'probeLoading = false;' in body124('    private void destroyProbe() {')
+# gone: our screen again, the search goes on, the page gets its own seconds for its servers
+gg124 = body124('    private void gateGone() {')
+assert 'hideGate();' in gg124 and 'startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));' in gg124
+assert 'if (probe != null) scheduleGridWait(probe);' in gg124
+assert 'probe.evaluateJavascript(gateClearScript(), null);' in body124('    private void hideGate() {')   # our style goes
+g124 = d124[d124.index('public void gate(String token, boolean present) {'):]
+g124 = g124[:g124.index('\n        }\n')]
+assert 'else if (gatePageVisible && probe != null) revealGateBox(probe);' in g124 and 'else gateGone();' in g124
+assert 'gateGone();' in body124('    private void gateClosed() {')
+# a server pressed in the page = the check is passed: its card goes
+rpc = body124('    private void recordProviderChoice(String rawLabel) {')
+assert 'if (gateShown) hideGate();' in rpc
+# the server is never pressed under the check; the waiting uses no tries; the check coming and going is said
+pk124 = body124('    private String providerPickerScript() {')
+assert '+ gatePresentFn()' in pk124 and 'function gateSeen(){var on=__subhubGateOn();if(on!==gateWas){gateWas=on;' in pk124
+assert '"if(!gateSeen())sendList();"' in pk124
+assert 'window.__subhubPickLoop=setInterval(function(){if(gateSeen())return;tries++;sendList();' in pk124
+# the check function: their box (under our style) or the words in the page
+gpf = body124('    private static String gatePresentFn() {')
+assert "document.querySelector('[data-subhub-gate]')" in gpf and 'document.body.innerText' in gpf
+# the watch: twice in a row not seen = gone (a redraw is not), two minutes at most
+gws = body124('    private String gateWatchScript() {')
+assert 'else if(++miss>=2){' in gws and 'if(n>=300){' in gws and 'S.gate(t,false);' in gws
+# nothing of the check is pressed by the app itself (only the viewer's own press is passed on)
+assert 'gateButtonScript' not in body124('    private void showGate() {')
+assert 'click(' not in gws and 'click(' not in gpf
+# CI runs the new test
+w124 = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+assert "node tests/check_gate.browser.cjs" in w124
+print('322.3.124 check gate checks OK')

@@ -144,6 +144,12 @@ public final class DirectStreamPlayer {
     // 322.3.113: Moviesmod «Just a quick check» page — shown to the viewer, who
     // presses «Continue» once (it lasts a day); the search waits, then goes on.
     private boolean gateShown = false;
+    // 322.3.124: a page of the probe is loading (between its start and its finish). While
+    // one loads, nothing of it is ever shown to the viewer during the check.
+    private boolean probeLoading = false;
+    // The words of the site's check («Just a quick check» / «Continue to Moviesmod»…).
+    private static final String GATE_WORDS =
+            "just a quick check|continue to moviesmod|real person,? not a bot|verify you are human|checking your browser";
     // 322.3.84: teal Vidnest card. Vidnest pages request two stream families:
     // a clean self-contained "/proxy?url=...m3u8&headers=..." link (https all the
     // way, headers embedded) and a "/hls/<base64>" chain that goes through a plain
@@ -1634,7 +1640,7 @@ public final class DirectStreamPlayer {
     private String gateCheckScript() {
         String bridgeToken = JSONObject.quote(sourceChoiceToken);
         return "(function(){try{var t=" + bridgeToken + ",n=0;"
-                + "var re=/just a quick check|continue to moviesmod|real person,? not a bot|verify you are human|checking your browser/i;"
+                + "var re=/" + GATE_WORDS + "/i;"
                 + "var iv=setInterval(function(){n++;var x='';try{x=String((document.body&&document.body.innerText)||'').slice(0,4000);}catch(_){}"
                 + "if(re.test(x)){clearInterval(iv);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.gate)window.SubHubSourceChoice.gate(t,true);return;}"
                 + "if(n>=7){clearInterval(iv);if(window.SubHubSourceChoice&&window.SubHubSourceChoice.gate)window.SubHubSourceChoice.gate(t,false);}"
@@ -1714,7 +1720,11 @@ public final class DirectStreamPlayer {
         gateCardStatus.setVisibility(View.VISIBLE);
         final int gen = ++gateTapGeneration;
         try { probe.evaluateJavascript(gateButtonScript(), null); } catch (Exception ignored) {}
-        // Still on the check after a few seconds: show the page itself.
+        // 322.3.124: the site may take its check away in this same page (no new page
+        // loads, so no new report would come) — the page is watched from now on.
+        try { probe.evaluateJavascript(gateWatchScript(), null); } catch (Exception ignored) {}
+        // Still on the check after a few seconds: show the check itself (only if it is
+        // really still there — see showGatePage).
         handler.postDelayed(() -> {
             if (gen == gateTapGeneration && gateShown && !closed) showGatePage();
         }, 7000L);
@@ -1737,19 +1747,112 @@ public final class DirectStreamPlayer {
     // Fallback: if our press did not pass, the check itself — only their check
     // box, centred on black (the rest of their page hidden), for the viewer to
     // press by hand.
+    // 322.3.124: only while the check is really on the page. Before, this came 7 s
+    // after the press whatever the page showed by then: when the check had already
+    // gone (the site takes it away in the same page, or its next page was slow), the
+    // whole film page with its ads was shown to the viewer — and the search stood
+    // still behind it. Now a page without the check goes on hidden, with our screen.
     private void showGatePage() {
         if (!gateShown || closed || probe == null || playing) return;
+        final int gen = ++gateTapGeneration;
+        final WebView pv = probe;
+        try {
+            pv.evaluateJavascript(gatePresentScript(), value -> {
+                if (closed || !gateShown || playing || probe != pv || gen != gateTapGeneration) return;
+                if ("true".equals(value)) revealGateBox(pv);
+                else gateGone();
+            });
+        } catch (Exception e) {
+            gateGone();
+        }
+    }
+
+    // Their check box on screen (the rest of their page hidden). Never a page that is
+    // still loading: that page's own report shows the box when it is the check again.
+    private void revealGateBox(final WebView pv) {
+        if (!gateShown || closed || probe != pv || playing) return;
         gateTapGeneration++;
         gatePageVisible = true;
-        if (gateCard != null) gateCard.setVisibility(View.GONE);
-        probe.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
-        try { probe.evaluateJavascript(gateOnlyScript(), null); } catch (Exception ignored) {}
+        pv.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+        try { pv.evaluateJavascript(gateOnlyScript(), null); } catch (Exception ignored) {}
+        // The viewer may pass it by hand in this same page: watched.
+        try { pv.evaluateJavascript(gateWatchScript(), null); } catch (Exception ignored) {}
         handler.postDelayed(() -> {
-            if (closed || !gateShown || !gatePageVisible || probe == null) return;
-            probe.setAlpha(1.0f);
-            probe.bringToFront();
+            if (closed || !gateShown || !gatePageVisible || probe != pv || probeLoading) return;
+            if (gateCard != null) gateCard.setVisibility(View.GONE);
+            pv.setAlpha(1.0f);
+            pv.bringToFront();
             menuButton.bringToFront();
         }, 250L);
+    }
+
+    // 322.3.124: a new page starts while their check box is on screen (the viewer passed
+    // it, or it reloads): hidden at once — the film page never shows behind the check —
+    // and our card says «جارٍ التحقق…» until the new page says whether the check is
+    // still there. Should no word come, the page is looked at once more.
+    private void gateBetweenPages(WebView v) {
+        v.setAlpha(0.0f);
+        if (gateCard != null) {
+            gateCardButton.setEnabled(false);
+            gateCardButton.setAlpha(0.6f);
+            gateCardStatus.setText("جارٍ التحقق…");
+            gateCardStatus.setVisibility(View.VISIBLE);
+            gateCard.setVisibility(View.VISIBLE);
+            gateCard.bringToFront();
+            menuButton.bringToFront();
+        }
+        final int gen = ++gateTapGeneration;
+        handler.postDelayed(() -> {
+            if (gen == gateTapGeneration && gateShown && !closed) showGatePage();
+        }, 12000L);
+    }
+
+    // 322.3.124: the check is gone (the page says so, or it was not there when we
+    // looked): our own screen again, and the search goes on from the step it reached.
+    private void gateGone() {
+        if (!gateShown || closed) return;
+        hideGate();
+        startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
+        // The page behind the check gets its own few seconds to show its servers (the
+        // wait counted from the check page could end just as the viewer passed it).
+        if (probe != null) scheduleGridWait(probe);
+    }
+
+    // 322.3.124: is the site's check on this page? Its words in the page — or, while our
+    // «only the box» style hides the rest of their page, the box itself still there with
+    // its words, its button or its «Verifying…» (their page taking the box away, or
+    // hiding it, = the check is passed).
+    private static String gatePresentFn() {
+        return "var __subhubGateOn=function(){try{var re=/" + GATE_WORDS + "/i,g=document.querySelector('[data-subhub-gate]');"
+                + "if(g&&g.isConnected){var r=g.getBoundingClientRect(),tx=String(g.innerText||g.textContent||'');"
+                + "if(r.width>0&&r.height>0&&(re.test(tx)||/continu|verif|proceed|human|robot|captcha|check|wait/i.test(tx)))return true;}"
+                + "var x=String((document.body&&document.body.innerText)||'').slice(0,4000);return re.test(x);}catch(_){return false;}};";
+    }
+
+    private String gatePresentScript() {
+        return "(function(){" + gatePresentFn() + "return __subhubGateOn();})();";
+    }
+
+    // 322.3.124: «gone» the moment the check leaves this page (twice in a row not seen,
+    // so a page redrawing itself is not taken for it). Two minutes at most.
+    private String gateWatchScript() {
+        String bridgeToken = JSONObject.quote(sourceChoiceToken);
+        return "(function(){try{var t=" + bridgeToken + ",n=0,miss=0;" + gatePresentFn()
+                + "if(window.__subhubGateWatch)clearInterval(window.__subhubGateWatch);"
+                + "window.__subhubGateWatch=setInterval(function(){n++;"
+                + "if(__subhubGateOn()){miss=0;}else if(++miss>=2){clearInterval(window.__subhubGateWatch);window.__subhubGateWatch=0;"
+                + "var S=window.SubHubSourceChoice;if(S&&S.gate)S.gate(t,false);return;}"
+                + "if(n>=300){clearInterval(window.__subhubGateWatch);window.__subhubGateWatch=0;}"
+                + "},400);}catch(_){}})();";
+    }
+
+    // 322.3.124: our «only the box» style and the watch go when the check does, so the
+    // page (hidden from the viewer) is whole again for the server to be pressed in it.
+    private String gateClearScript() {
+        return "(function(){try{var s=document.getElementById('__subhubGateOnly');if(s&&s.parentNode)s.parentNode.removeChild(s);"
+                + "if(window.__subhubGateWatch){clearInterval(window.__subhubGateWatch);window.__subhubGateWatch=0;}"
+                + "[].slice.call(document.querySelectorAll('[data-subhub-gate]')).forEach(function(e){e.removeAttribute('data-subhub-gate');});"
+                + "}catch(_){}})();";
     }
 
     // Their page with everything hidden except the box around «Continue».
@@ -1795,8 +1898,7 @@ public final class DirectStreamPlayer {
             gateDone();
             return;
         }
-        hideGate();
-        startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
+        gateGone();
     }
 
     private void hideGate() {
@@ -1806,6 +1908,7 @@ public final class DirectStreamPlayer {
         gateTapGeneration++;
         if (gateCard != null) gateCard.setVisibility(View.GONE);
         if (probe != null) {
+            try { probe.evaluateJavascript(gateClearScript(), null); } catch (Exception ignored) {}
             probe.setAlpha(0.0f);
             subscriberProviderVisible = false;
             root.post(this::applySubscriberProbePreviewLayout);
@@ -2300,6 +2403,9 @@ public final class DirectStreamPlayer {
         } else if (interactiveSource) {
             showStage("تم اختيار السيرفر " + label + "…");
         } else {
+            // 322.3.124: a server pressed in the page means the check is passed (no server
+            // is pressed under it) — its card goes now, not with the page's next report.
+            if (gateShown) hideGate();
             startSubscriberStartupTimer(3);
             fboxNameWorks();   // 322.3.120: the server was found on this name's page
         }
@@ -2643,22 +2749,11 @@ public final class DirectStreamPlayer {
                 }
                 if (present) {
                     if (!gateShown) showGate();
-                    else if (gatePageVisible && probe != null) {   // the page reloaded: only the box again
-                        try { probe.evaluateJavascript(gateOnlyScript(), null); } catch (Exception ignored) {}
-                        final WebView pv = probe;
-                        handler.postDelayed(() -> {
-                            if (closed || !gateShown || !gatePageVisible || probe != pv) return;
-                            pv.setAlpha(1.0f);
-                            pv.bringToFront();
-                            menuButton.bringToFront();
-                        }, 250L);
-                    }
+                    // the page reloaded with the check: only the box again
+                    else if (gatePageVisible && probe != null) revealGateBox(probe);
                 }
-                else if (gateShown) {
-                    hideGate();
-                    // The page behind the check is open now: go on from the step it reached.
-                    startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
-                }
+                // The page behind the check is open now: go on from the step it reached.
+                else gateGone();
             });
         }
 
@@ -2849,8 +2944,18 @@ public final class DirectStreamPlayer {
                 + "for(var n=1;n<=20;n++)setTimeout(function(){reportFrame(lab);},n*300);}catch(_){}},true);}"
                 + "window.__subhubSelectProvider=activate;"
                 + "window.__subhubRequestServerList=function(){sendList();var n=0,t=setInterval(function(){n++;sendList();if(n>=8)clearInterval(t);},350);};"
-                + "sendList();"
-                + "if(wanted){var tries=0,t=setInterval(function(){tries++;sendList();if(activate(wanted)||tries>=240)clearInterval(t);},500);}"
+                // 322.3.124: the site's check on the page — no server is pressed under it (the
+                // site ignores that press, and the search used to stop there for good). The
+                // waiting uses up no tries. The check coming and going is reported, so a check
+                // that shows late still gets its card, and one passed in the same page lets the
+                // search go on at once.
+                + gatePresentFn()
+                + "var gateWas=false;function gateSeen(){var on=__subhubGateOn();if(on!==gateWas){gateWas=on;"
+                + "try{var S=window.SubHubSourceChoice;if(S&&S.gate)S.gate(bridgeToken,on);}catch(_){}}return on;}"
+                + "if(!gateSeen())sendList();"
+                + "if(wanted){var tries=0;if(window.__subhubPickLoop)clearInterval(window.__subhubPickLoop);"
+                + "window.__subhubPickLoop=setInterval(function(){if(gateSeen())return;tries++;sendList();"
+                + "if(activate(wanted)||tries>=240){clearInterval(window.__subhubPickLoop);window.__subhubPickLoop=0;}},500);}"
                 + "}catch(_){}})();";
     }
 
@@ -3027,6 +3132,7 @@ public final class DirectStreamPlayer {
         probe.setWebViewClient(new WebViewClient() {
             @Override public void onPageFinished(WebView v, String url) {
                 if (closed || v != probe) return;
+                probeLoading = false;
                 String host = "";
                 try { host = Uri.parse(url).getHost(); } catch (Exception ignored) {}
                 if (host != null && !resolvedMainHost.isEmpty()
@@ -3139,7 +3245,11 @@ public final class DirectStreamPlayer {
 
             // 322.3.121: a new page — any reason shown for the one before is gone.
             @Override public void onPageStarted(WebView v, String url, android.graphics.Bitmap favicon) {
-                if (v == probe) fboxPageProblem = "";
+                if (v != probe) return;
+                fboxPageProblem = "";
+                probeLoading = true;
+                // 322.3.124: their check box is on screen and a new page starts — hidden at once.
+                if (!closed && !interactiveSource && gateShown && gatePageVisible) gateBetweenPages(v);
             }
 
             @Override public void onReceivedHttpError(WebView v, WebResourceRequest r,
@@ -3474,6 +3584,7 @@ public final class DirectStreamPlayer {
     }
 
     private void destroyProbe() {
+        probeLoading = false;
         if (probe != null) {
             probe.stopLoading();
             probe.loadUrl("about:blank");
