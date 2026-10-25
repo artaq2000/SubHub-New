@@ -11,6 +11,9 @@
 //   - the watch after the press: «gone» once the check leaves the page, not for a redraw;
 //   - «is the check there?» is right even while our «only the box» style hides the rest of
 //     their page, and that style goes with the check (the page is whole again);
+//   - 322.3.125: their page is for the viewer only with something in it to press («Continue»,
+//     a Cloudflare box); a check verifying by itself («Verifying…», «Continue» not pressable
+//     yet) is waited for behind our card;
 //   - a page without a check: the server is pressed at once, no check word reported.
 // The scripts are taken from DirectStreamPlayer.java itself (a Java method body is valid
 // JavaScript once «String x =» reads «var x =»), so this is the real code.
@@ -156,18 +159,18 @@ const FAKE_BRIDGE = `window.__calls = [];
   await T.waitForTimeout(1000);
   assert.deepEqual(await gates2(), [false], 'said once');
 
-  // --- «is the check there?» with our «only the box» style on their page
-  const present = () => T.evaluate(js('gatePresentScript'));
+  // --- «is the check there, and is there something to press?» (also under our «only the box» style)
+  const state = () => T.evaluate(js('gateStateScript'));
   await open2(FILM);
-  assert.equal(await present(), false, 'a film page: no check');
+  assert.equal(await state(), 'none', 'a film page: no check');
   await open2(IN_PAGE_CHECK);
-  assert.equal(await present(), true, 'their check');
+  assert.equal(await state(), 'press', 'their check, with «Continue» to press');
   await T.evaluate(js('gateOnlyScript'));
   assert.equal(await T.evaluate(() => !!document.querySelector('.card[data-subhub-gate]')), true, 'their box is kept');
   assert.equal(await T.evaluate(() => getComputedStyle(document.querySelector('.srv')).visibility), 'hidden', 'the rest hidden');
-  assert.equal(await present(), true, 'still their check while only the box shows');
+  assert.equal(await state(), 'press', 'still their check while only the box shows');
   await T.evaluate(() => document.getElementById('chk').remove());     // passed: the site takes it away
-  assert.equal(await present(), false, 'gone, even with the rest of the page hidden by us');
+  assert.equal(await state(), 'none', 'gone, even with the rest of the page hidden by us');
   await T.evaluate(js('gateClearScript'));
   assert.equal(await T.evaluate(() => !!document.getElementById('__subhubGateOnly')), false, 'our style goes with the check');
   assert.equal(await T.evaluate(() => getComputedStyle(document.querySelector('.srv')).visibility), 'visible', 'the page is whole again');
@@ -175,12 +178,21 @@ const FAKE_BRIDGE = `window.__calls = [];
   await open2(IN_PAGE_CHECK);
   await T.evaluate(js('gateOnlyScript'));
   await T.evaluate(() => { document.getElementById('chk').style.display = 'none'; });
-  assert.equal(await present(), false, 'their box hidden: passed');
-  // their box saying «Verifying…» = still the check
+  assert.equal(await state(), 'none', 'their box hidden: passed');
+  // their box saying «Verifying…» = still the check, nothing to press: wait (the white page)
   await open2(IN_PAGE_CHECK);
   await T.evaluate(js('gateOnlyScript'));
   await T.evaluate(() => { document.querySelector('.card').innerHTML = '<p>Verifying…</p>'; });
-  assert.equal(await present(), true, '«Verifying…» in their box: still the check');
+  assert.equal(await state(), 'wait', '«Verifying…» in their box: still the check, nothing to press');
+  // the check page verifying by itself, its «Continue» not pressable yet: wait
+  await open2(page('<div class="card"><h2>Just a quick check</h2><p>Verifying your browser…</p></div>'));
+  assert.equal(await state(), 'wait', 'checking by itself: wait');
+  await open2(IN_PAGE_CHECK);
+  await T.evaluate(() => { document.getElementById('go').disabled = true; });
+  assert.equal(await state(), 'wait', '«Continue» not pressable yet: wait');
+  // Cloudflare's box to tick: press
+  await open2(page('<h2>Verify you are human by completing the action below.</h2><iframe src="https://challenges.cloudflare.com/cdn-cgi/challenge-platform/x" style="width:300px;height:65px"></iframe>'));
+  assert.equal(await state(), 'press', 'a Cloudflare box to tick');
 
   // --- a page without a check: the server at once, no check word
   await open2(FILM);
@@ -200,6 +212,6 @@ const FAKE_BRIDGE = `window.__calls = [];
   assert.deepEqual(await gates2(), [false]);
 
   if (process.exitCode) throw new Error('page errors');
-  console.log('Chromium: the site\'s check and the viewer (no server pressed under the check, tries kept, pressed right after it — in the same page or the page drawn after; a late check reported; the watch says «gone» once, not for a redraw; «is the check there?» right under our box style, the style goes with it; no check = pressed at once): PASS');
+  console.log('Chromium: the site\'s check and the viewer (no server pressed under the check, tries kept, pressed right after it — in the same page or the page drawn after; a late check reported; the watch says «gone» once, not for a redraw; «is the check there?» right under our box style, the style goes with it; something to press or verifying by itself; no check = pressed at once): PASS');
   await browser.close();
 })().catch(e => { console.error(e); process.exit(1); });

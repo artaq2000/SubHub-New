@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 133" in gradle
-assert "versionName '322.3.124'" in gradle
+assert "versionCode 134" in gradle
+assert "versionName '322.3.125'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -989,8 +989,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 133' in mv107
-assert "versionCode 133" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 134' in mv107
+assert "versionCode 134" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1437,9 +1437,9 @@ assert "if (!present) gateDone();" in g122b                              # «gon
 assert "TextView gateClose = chip(\"✕\", 15, this::gateClosed);" in d122b
 c122b = d122b[d122b.index('private void gateClosed() {'):]
 c122b = c122b[:c122b.index('\n    }\n')]
-gg122b = d122b[d122b.index('private void gateGone() {'):]   # 322.3.124: ✕ goes through gateGone
+gg122b = d122b[d122b.index('private void gateResume() {'):]   # 322.3.125: ✕ goes through gateResume
 gg122b = gg122b[:gg122b.index('\n    }\n')]
-assert "gateGone();" in c122b and "hideGate();" in gg122b
+assert "gateResume();" in c122b and "hideGate();" in gg122b
 assert "startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));" in gg122b   # ✕ before the video: the search goes on
 print('322.3.122 check card fix checks OK')
 
@@ -1544,8 +1544,8 @@ assert 'private static final String GATE_WORDS =' in d124 and '"var re=/" + GATE
 assert d124.count('just a quick check|continue to moviesmod') == 1
 # the fallback shows their box only while the check is really there; otherwise the search goes on
 sgp = body124('    private void showGatePage() {')
-assert 'pv.evaluateJavascript(gatePresentScript(), value -> {' in sgp
-assert 'if ("true".equals(value)) revealGateBox(pv);' in sgp and 'else gateGone();' in sgp
+assert 'pv.evaluateJavascript(gateStateScript(), value -> {' in sgp          # 322.3.125: none / press / wait
+assert 'if ("none".equals(state)) {' in sgp and 'gateGone();' in sgp and 'revealGateBox(pv);' in sgp
 assert 'setAlpha(1.0f)' not in sgp                                       # never shown from here directly
 rgb = body124('    private void revealGateBox(final WebView pv) {')
 assert '|| probeLoading) return;' in rgb                                 # a page still loading is never shown
@@ -1562,14 +1562,14 @@ assert 'v.setAlpha(0.0f);' in gbp and 'gateCardStatus.setText("جارٍ التح
 assert 'probeLoading = false;' in body124('            @Override public void onPageFinished(WebView v, String url) {', '\n                String host')
 assert 'probeLoading = false;' in body124('    private void destroyProbe() {')
 # gone: our screen again, the search goes on, the page gets its own seconds for its servers
-gg124 = body124('    private void gateGone() {')
+gg124 = body124('    private void gateResume() {')                      # 322.3.125: the going on is gateResume
 assert 'hideGate();' in gg124 and 'startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));' in gg124
 assert 'if (probe != null) scheduleGridWait(probe);' in gg124
 assert 'probe.evaluateJavascript(gateClearScript(), null);' in body124('    private void hideGate() {')   # our style goes
 g124 = d124[d124.index('public void gate(String token, boolean present) {'):]
 g124 = g124[:g124.index('\n        }\n')]
 assert 'else if (gatePageVisible && probe != null) revealGateBox(probe);' in g124 and 'else gateGone();' in g124
-assert 'gateGone();' in body124('    private void gateClosed() {')
+assert 'gateResume();' in body124('    private void gateClosed() {')        # ✕: the search goes on (322.3.125)
 # a server pressed in the page = the check is passed: its card goes
 rpc = body124('    private void recordProviderChoice(String rawLabel) {')
 assert 'if (gateShown) hideGate();' in rpc
@@ -1591,3 +1591,38 @@ assert 'click(' not in gws and 'click(' not in gpf
 w124 = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
 assert "node tests/check_gate.browser.cjs" in w124
 print('322.3.124 check gate checks OK')
+
+# 322.3.125: the check passed → the player starts again from the start (as when the viewer
+# closes it and presses ▶ again — that is what played; going on in the same page did not).
+# Their page is shown only with something in it to press; a check verifying by itself waits.
+d125 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+def body125(sig, end='\n    }\n'):
+    s = d125[d125.index(sig):]
+    return s[:s.index(end)]
+assert 'private final String originalDirectEmbedUrl;' in d125
+assert 'this.originalDirectEmbedUrl = this.directEmbedUrl;' in d125
+gg125 = body125('    private void gateGone() {')
+assert 'if (!gateRestarted && !playing && !interactiveSource) {' in gg125 and 'restartAfterCheck();' in gg125
+assert 'gateResume();' in gg125
+rs125 = body125('    private void restartAfterCheck() {')
+assert 'gateRestarted = true;' in rs125 and 'gateShown = false;' in rs125
+assert 'destroyProbe();' in rs125 and 'cleanupPlayerForRetry();' in rs125      # the check page and its scripts go at once
+assert 'gateCardStatus.setText("✓ تم التحقق — جارٍ التشغيل من جديد…");' in rs125
+assert 'directEmbedUrl = originalDirectEmbedUrl;' in rs125 and 'embedFallbackUsed = false;' in rs125
+assert 'subscriberStartupAttempt = 0;' in rs125 and 'beginCapture();' in rs125 and '}, 1100L);' in rs125
+assert 'if (closed || rg != gateRestartGeneration) return;' in rs125
+assert 'gateResume();' in body125('    private void gateClosed() {')            # ✕ never starts again
+rpc125 = body125('    private void recordProviderChoice(String rawLabel) {')
+assert 'if (gateShown && !gateRestarted) {\n                gateGone();\n                return;\n            }' in rpc125
+assert 'if (!interactiveSource && probe == null) return;' in rpc125          # a word from a page already gone
+orp125 = body125('    private void openResolvedProvider(String rawLabel, String rawUrl) {')
+assert 'recordProviderChoice(label);\n            // 322.3.125' in orp125 and 'if (probe == null || closed) return;' in orp125
+sg125 = body125('    private void showGate() {')
+assert 'gateLooks = 0;' in sg125 and 'gateCardButton.setVisibility(View.VISIBLE);' in sg125
+sgp125 = body125('    private void showGatePage() {')
+assert 'if ("wait".equals(state) && gateLooks < 4) {' in sgp125 and '}, 4000L);' in sgp125
+gst125 = body125('    private String gateStateScript() {')
+assert "return 'none';" in gst125 and "return 'press';" in gst125 and "return 'wait';" in gst125
+assert 'challenges.cloudflare.com' in gst125 and '!e.disabled' in gst125
+assert 'private String gatePresentScript()' not in d125
+print('322.3.125 check restart checks OK')

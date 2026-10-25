@@ -147,6 +147,16 @@ public final class DirectStreamPlayer {
     // 322.3.124: a page of the probe is loading (between its start and its finish). While
     // one loads, nothing of it is ever shown to the viewer during the check.
     private boolean probeLoading = false;
+    // 322.3.125: once the site's check is passed the player starts again from the start —
+    // as when the viewer closes it and presses ▶ again, which is what plays (going on in
+    // the same page after the check did not). Once per player. The saved player link is
+    // taken back for it (a failed try of it clears directEmbedUrl).
+    private final String originalDirectEmbedUrl;
+    private boolean gateRestarted = false;
+    private int gateRestartGeneration = 0;
+    // 322.3.125: looks at a check that is verifying by itself (nothing to press) before its
+    // page is shown all the same.
+    private int gateLooks = 0;
     // The words of the site's check («Just a quick check» / «Continue to Moviesmod»…).
     private static final String GATE_WORDS =
             "just a quick check|continue to moviesmod|real person,? not a bot|verify you are human|checking your browser";
@@ -453,6 +463,7 @@ public final class DirectStreamPlayer {
         this.openServers = openServers && !vidnestMode;
         this.activity = activity;
         this.directEmbedUrl = (directEmbedUrl == null || interactiveSource) ? "" : directEmbedUrl.trim();
+        this.originalDirectEmbedUrl = this.directEmbedUrl;
         this.listener = listener;
         this.source = source;
         this.catalog = catalog;
@@ -1705,15 +1716,19 @@ public final class DirectStreamPlayer {
         }
         gateCardButton.setEnabled(true);
         gateCardButton.setAlpha(1f);
+        gateCardButton.setVisibility(View.VISIBLE);
+        gateCardStatus.setTextColor(Color.rgb(184, 197, 214));
         gateCardStatus.setVisibility(View.GONE);
         gateCard.setVisibility(View.VISIBLE);
         gateCard.bringToFront();
         menuButton.bringToFront();
+        gateLooks = 0;
     }
 
     // The viewer's own press → the page's «Continue» button.
     private void gatePressed() {
         if (!gateShown || closed || probe == null) return;
+        gateLooks = 0;
         gateCardButton.setEnabled(false);
         gateCardButton.setAlpha(0.6f);
         gateCardStatus.setText("جارٍ التحقق…");
@@ -1752,19 +1767,48 @@ public final class DirectStreamPlayer {
     // gone (the site takes it away in the same page, or its next page was slow), the
     // whole film page with its ads was shown to the viewer — and the search stood
     // still behind it. Now a page without the check goes on hidden, with our screen.
+    // 322.3.125: and only when there is something in it to press (their «Continue», or a
+    // Cloudflare box): while the site checks by itself («Verifying…» — the white page the
+    // viewer saw for a few seconds), our card stays and the page is looked at again; after
+    // about 16 s more it is shown all the same, should it need a hand.
     private void showGatePage() {
         if (!gateShown || closed || probe == null || playing) return;
         final int gen = ++gateTapGeneration;
         final WebView pv = probe;
         try {
-            pv.evaluateJavascript(gatePresentScript(), value -> {
+            pv.evaluateJavascript(gateStateScript(), value -> {
                 if (closed || !gateShown || playing || probe != pv || gen != gateTapGeneration) return;
-                if ("true".equals(value)) revealGateBox(pv);
-                else gateGone();
+                String state = value == null ? "" : value.replace("\"", "").trim();
+                if ("none".equals(state)) {
+                    gateGone();
+                    return;
+                }
+                if ("wait".equals(state) && gateLooks < 4) {
+                    gateLooks++;
+                    final int g2 = ++gateTapGeneration;
+                    handler.postDelayed(() -> {
+                        if (g2 == gateTapGeneration && gateShown && !closed) showGatePage();
+                    }, 4000L);
+                    return;
+                }
+                revealGateBox(pv);
             });
         } catch (Exception e) {
             gateGone();
         }
+    }
+
+    // 322.3.125: «none» (the check is gone), «press» (their check with something to press:
+    // a «Continue / Verify» button that can be pressed, or a Cloudflare box) or «wait» (their
+    // check verifying by itself).
+    private String gateStateScript() {
+        return "(function(){" + gatePresentFn() + "if(!__subhubGateOn())return 'none';"
+                + "try{if(document.querySelector('iframe[src*=\"challenges.cloudflare.com\"],#challenge-stage,.cf-turnstile'))return 'press';"
+                + "var els=[].slice.call(document.querySelectorAll('button,a,[role=button],input[type=submit],input[type=button]'));"
+                + "for(var i=0;i<els.length;i++){var e=els[i],x=String(e.innerText||e.value||e.textContent||'').trim(),r=e.getBoundingClientRect();"
+                + "if(r.width>0&&r.height>0&&!e.disabled&&e.getAttribute('aria-disabled')!=='true'"
+                + "&&(/continue to moviesmod/i.test(x)||/^(continue|verify|proceed|i'?m human|i am human)/i.test(x)))return 'press';}"
+                + "}catch(_){}return 'wait';})();";
     }
 
     // Their check box on screen (the rest of their page hidden). Never a page that is
@@ -1809,13 +1853,66 @@ public final class DirectStreamPlayer {
 
     // 322.3.124: the check is gone (the page says so, or it was not there when we
     // looked): our own screen again, and the search goes on from the step it reached.
+    // 322.3.125: the first time, the player starts again from the start instead.
     private void gateGone() {
+        if (!gateShown || closed) return;
+        if (!gateRestarted && !playing && !interactiveSource) {
+            restartAfterCheck();
+            return;
+        }
+        gateResume();
+    }
+
+    // The search goes on from the step it reached (also after «✕» on the card).
+    private void gateResume() {
         if (!gateShown || closed) return;
         hideGate();
         startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
         // The page behind the check gets its own few seconds to show its servers (the
         // wait counted from the check page could end just as the viewer passed it).
         if (probe != null) scheduleGridWait(probe);
+    }
+
+    // 322.3.125: «✓ تم التحقق — جارٍ التشغيل من جديد…» on our card for a moment, then the
+    // player from the start, as when it was opened: the saved player link first (now with
+    // the check passed), all its tries again. The page of the check and its scripts go at
+    // once, so nothing they still say can change the new start.
+    private void restartAfterCheck() {
+        gateRestarted = true;
+        gateShown = false;
+        gatePageVisible = false;
+        gateTapGeneration++;
+        final int rg = ++gateRestartGeneration;
+        subscriberStartupGeneration++;          // no time limit of the old try runs on
+        stopSubscriberStageAnimation();
+        cleanupPlayerForRetry();
+        destroyProbe();
+        removeDirectCover();
+        status.setVisibility(View.GONE);
+        if (gateCard != null) {
+            gateCardButton.setVisibility(View.GONE);
+            gateCardStatus.setText("✓ تم التحقق — جارٍ التشغيل من جديد…");
+            gateCardStatus.setTextColor(Color.rgb(134, 239, 172));
+            gateCardStatus.setVisibility(View.VISIBLE);
+            gateCard.setVisibility(View.VISIBLE);
+            gateCard.bringToFront();
+            menuButton.bringToFront();
+        }
+        handler.postDelayed(() -> {
+            if (closed || rg != gateRestartGeneration) return;
+            if (gateCard != null && !gateShown) gateCard.setVisibility(View.GONE);
+            if (playing || playbackReady || probe != null) return;
+            cleanupPlayerForRetry();             // anything the old page said meanwhile
+            directEmbedUrl = originalDirectEmbedUrl;
+            embedFallbackUsed = false;
+            subscriberStartupAttempt = 0;
+            subscriberStartupPhase = 0;
+            firstFailureReason = "";
+            fboxGridSize = 0;
+            discoveredServerPageUrl = "";
+            directKickRounds = 0;
+            beginCapture();
+        }, 1100L);
     }
 
     // 322.3.124: is the site's check on this page? Its words in the page — or, while our
@@ -1827,10 +1924,6 @@ public final class DirectStreamPlayer {
                 + "if(g&&g.isConnected){var r=g.getBoundingClientRect(),tx=String(g.innerText||g.textContent||'');"
                 + "if(r.width>0&&r.height>0&&(re.test(tx)||/continu|verif|proceed|human|robot|captcha|check|wait/i.test(tx)))return true;}"
                 + "var x=String((document.body&&document.body.innerText)||'').slice(0,4000);return re.test(x);}catch(_){return false;}};";
-    }
-
-    private String gatePresentScript() {
-        return "(function(){" + gatePresentFn() + "return __subhubGateOn();})();";
     }
 
     // 322.3.124: «gone» the moment the check leaves this page (twice in a row not seen,
@@ -1898,7 +1991,7 @@ public final class DirectStreamPlayer {
             gateDone();
             return;
         }
-        gateGone();
+        gateResume();
     }
 
     private void hideGate() {
@@ -2392,6 +2485,8 @@ public final class DirectStreamPlayer {
         final String key = serverKey(label);
         if (key.isEmpty()) return;
         if (closed || playing) return;
+        // 322.3.125: a word from a page already gone (the player is starting again) changes nothing.
+        if (!interactiveSource && probe == null) return;
         selectedProviderLabel = label;
         pendingServerKey = key;
         pendingServerLabel = label;
@@ -2405,6 +2500,11 @@ public final class DirectStreamPlayer {
         } else {
             // 322.3.124: a server pressed in the page means the check is passed (no server
             // is pressed under it) — its card goes now, not with the page's next report.
+            // 322.3.125: the first time, the player starts again from the start instead.
+            if (gateShown && !gateRestarted) {
+                gateGone();
+                return;
+            }
             if (gateShown) hideGate();
             startSubscriberStartupTimer(3);
             fboxNameWorks();   // 322.3.120: the server was found on this name's page
@@ -2637,6 +2737,9 @@ public final class DirectStreamPlayer {
         if (!label.isEmpty() && isProviderServerLabel(label)) {
             selectedProviderLabel = label;
             recordProviderChoice(label);
+            // 322.3.125: that press ended the site's check — the player starts again from
+            // the start (this page is gone).
+            if (probe == null || closed) return;
         }
         if (verifyFirst && interactiveSource) {
             // 322.3.106: remember the server's player URL only. The page keeps
