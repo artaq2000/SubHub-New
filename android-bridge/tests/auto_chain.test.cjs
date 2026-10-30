@@ -156,5 +156,54 @@ function makeEnv() {
     assert.strictEqual(g.win.__subhubNextEpisodeV3112('other', 1, 3), false);
     assert.strictEqual(g.ends.length, 1);
   }
-  console.log('auto chain: order, hand-over, remember (by name), fallback, skip, cancel, own files first, usual time, next episode — OK');
+  // 10) 322.3.127: films — the request's own launcher and result keeper
+  {
+    const e = makeEnv();
+    const launched = [], results = [], stats = [];
+    e.win.__subhubServerStatV401 = (...a) => stats.push(a);     // the episodes' keeper is not used
+    e.win.__subhubAutoChainV3110({
+      movieId: 'tt1', kind: 'movie', keys: ['s1', 's2', 's3'], names: ['vidnest', 'VIP (No ADS)', 'VidFast'],
+      ms: [0, 9000, 0], fallback: '',
+      launch: (k) => launched.push(k),
+      onResult: (n, ok, ms) => results.push([n, ok, typeof ms === 'number'])
+    });
+    assert.deepStrictEqual(launched, ['s1']);
+    assert.deepStrictEqual(e.calls, []);                       // never the episode opener
+    assert.strictEqual(e.arms[0].total, 3);
+    assert.strictEqual(e.arms[0].more, true);
+    const id = e.arms[0].chain;
+    e.win.__subhubAutoOpenedV3110(id, 0);
+    e.win.__subhubAutoNextV3110(id); e.flush(200);             // vidnest did not play
+    assert.deepStrictEqual(launched, ['s1', 's2']);
+    assert.strictEqual(e.arms[1].expectMs, 9000);              // VIP's usual start time
+    e.win.__subhubAutoOpenedV3110(id, 1);
+    e.win.__subhubAutoOkV3110(id);                             // VIP played
+    assert.deepStrictEqual(results, [['vidnest', false, true], ['VIP (No ADS)', true, true]]);
+    assert.deepStrictEqual(stats, []);
+    assert.deepStrictEqual(e.oks, []);
+    // the last server of a film: more=false, nothing after it
+    const f = makeEnv();
+    const fl = [];
+    f.win.__subhubAutoChainV3110({ movieId: 'tt1', kind: 'movie', keys: ['a', 'b'], names: ['A', 'B'], fallback: '', launch: (k) => fl.push(k) });
+    f.win.__subhubAutoOpenedV3110(f.arms[0].chain, 0);
+    f.win.__subhubAutoNextV3110(f.arms[0].chain); f.flush(200);
+    assert.strictEqual(f.arms[1].more, false);
+    f.win.__subhubAutoNextV3110(f.arms[0].chain); f.flush(200);
+    assert.deepStrictEqual(fl, ['a', 'b']);
+    assert.ok(f.ends.length >= 1);                             // the black screen goes
+    // a film's server that never opens the player is skipped after the wait
+    const g = makeEnv();
+    const gl = [];
+    g.win.__subhubAutoChainV3110({ movieId: 'tt1', kind: 'movie', keys: ['x', 'y'], names: ['X', 'Y'], fallback: '', launch: (k) => gl.push(k) });
+    g.flush(20000);
+    assert.deepStrictEqual(gl, ['x', 'y']);
+    // a launcher that throws: the next one at once
+    const h = makeEnv();
+    const hl = [];
+    h.win.__subhubAutoChainV3110({ movieId: 'tt1', kind: 'movie', keys: ['bad', 'ok'], names: ['B', 'O'], fallback: '',
+      launch: (k) => { hl.push(k); if (k === 'bad') throw new Error('x'); } });
+    h.flush(200);
+    assert.deepStrictEqual(hl, ['bad', 'ok']);
+  }
+  console.log('auto chain: order, hand-over, remember (by name), fallback, skip, cancel, own files first, usual time, next episode, films — OK');
 })().catch(e => { console.error(e); process.exit(1); });

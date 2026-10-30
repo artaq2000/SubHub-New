@@ -455,6 +455,48 @@
     return 's' + Number(ctx.season) + 'e' + Number(ctx.episode);
   }
 
+  // 322.3.127: ONE watch place per film, shared with the site page: its own servers
+  // (VidLink and the others, site v405) keep it in «subhub_site_resume_v405» —
+  // {movieId: {t, d, at}} in seconds — and read it when they open. Our players
+  // read it too (the latest stop wins, against the app's own saved place) and
+  // write it as they play, so every server — site or app — goes on from there.
+  const SITE_RESUME_KEY = 'subhub_site_resume_v405';
+  function siteResumeMap() {
+    try { return JSON.parse(localStorage.getItem(SITE_RESUME_KEY) || '{}') || {}; }
+    catch (_) { return {}; }
+  }
+  function filmProgress(mid) {
+    const id = String(mid || '');
+    const out = { movieId: id, resumeMs: 0, at: 0 };
+    try {
+      const m = siteResumeMap()[id];
+      const t = m ? Number(m.t) : 0, d = m ? Number(m.d) : 0;
+      if (t >= 5 && (!(d > 0) || t < d * 0.95)) {
+        out.resumeMs = Math.round(t * 1000);
+        out.at = Math.max(0, Number(m.at) || 0);
+      }
+    } catch (_) {}
+    return out;
+  }
+  // Called by the app player every few seconds (and at its end) for a film.
+  window.__subhubFilmProgressV3127 = function (mid, t, d) {
+    try {
+      const id = String(mid || '');
+      t = Number(t) || 0; d = Number(d) || 0;
+      if (!id || !(t >= 0)) return;
+      const map = siteResumeMap();
+      if (d > 0 && t >= d * 0.95) delete map[id];          // watched: the next time starts over
+      else if (t >= 5) map[id] = { t: Math.floor(t), d: Math.floor(d), at: Date.now() };
+      else return;
+      const ks = Object.keys(map);
+      if (ks.length > 80) {
+        ks.sort(function (a, b) { return ((map[a] || {}).at || 0) - ((map[b] || {}).at || 0); })
+          .slice(0, ks.length - 80).forEach(function (k) { delete map[k]; });
+      }
+      localStorage.setItem(SITE_RESUME_KEY, JSON.stringify(map));
+    } catch (_) {}
+  };
+
   async function freshDocData(movieId) {
     const snap = await db.collection('subtitles').doc(String(movieId)).get();
     return snap && snap.exists ? (snap.data() || {}) : {};
@@ -673,6 +715,9 @@
       const rule = auto && item ? ruleFor(item.label) : null;
       const base = String(selected.id || ('tmdb_' + kind + '_' + tmdbId)).replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 60);
       const stableKey = (base + (ctx.kind === 'tv' ? '_' + ekOf(ctx) : '') + '_' + (item ? item.id : 'new')).slice(0, 100);
+      // 322.3.127: one watch place per film / episode for every server (the key above
+      // holds the server: each server used to keep its own place).
+      const titleKey = (base + (ctx.kind === 'tv' ? '_' + ekOf(ctx) : '')).slice(0, 100);
       const session = 'applist_' + Date.now() + '_' + Math.random().toString(36).slice(2);
 
       active = {
@@ -700,6 +745,10 @@
         session: session,
         movieId: stableKey,
         resumeKey: stableKey,
+        titleKey: titleKey,
+        // 322.3.127: films — the place the site page keeps for this film (its own servers
+        // and ours), and where ours report it.
+        filmProgress: ctx.kind === 'tv' ? null : filmProgress(ctx.movieId),
         tmdbId: tmdbId,
         kind: kind,
         // 322.3.109: the device subtitle file belongs to this film / episode.
@@ -1231,6 +1280,7 @@
     const s = document.getElementById('subhub-applist-section');
     if (s) s.remove();
     [].slice.call(document.querySelectorAll('.subhub-applist-btn[data-applist="app"]')).forEach(function (b) { b.remove(); });
+    removeAutoUi();   // 322.3.127
   }
 
   function smallBtn(text, kind, disabled, fn) {
@@ -1840,9 +1890,12 @@
     head.appendChild(count);
     const hint = document.createElement('div');
     hint.style.cssText = 'color:#a9b7cb;font-size:.68rem;line-height:1.7';
-    hint.textContent = film.loaded
-      ? 'تضغط «➕ إضافة سيرفر»، تجرّب السيرفر في الصفحة، ثم تحفظه. الرقم على 👁 هو رقمه عند المشترك («مشاهدة بالتطبيق ٢»).'
-      : 'جارٍ تحميل سيرفرات التطبيق…';
+    hint.textContent = !film.loaded
+      ? 'جارٍ تحميل سيرفرات التطبيق…'
+      : film.items.length > 1
+        // 322.3.127: viewers get one automatic button for the list.
+        ? 'تضغط «➕ إضافة سيرفر»، تجرّب السيرفر في الصفحة، ثم تحفظه. المشترك يرى «📱 مشاهدة بالتطبيق» يجرّب السيرفرات بالترتيب (اللي اشتغل معه قبل أولاً، ثم ترتيبك هنا)، والرقم على 👁 هو رقمه في «اختيار السيرفر» («مشاهدة بالتطبيق ٢»).'
+        : 'تضغط «➕ إضافة سيرفر»، تجرّب السيرفر في الصفحة، ثم تحفظه. الرقم على 👁 هو رقمه عند المشترك («مشاهدة بالتطبيق ٢»).';
     sec.appendChild(head);
     sec.appendChild(hint);
 
@@ -1991,6 +2044,142 @@
     return sec;
   }
 
+  // ------------------------------------------------------- 322.3.127 automatic
+  // A film with two or more app servers: viewers get ONE button,
+  // «📱 مشاهدة بالتطبيق», that tries them one after the other behind the black
+  // screen (auto_chain.js + the app player's per-step limits: page 10 s, server
+  // 12 s, link 20 s, start 15 s; a server known to be slow here gets longer), and
+  // «🔀 اختيار السيرفر» that shows the numbered buttons (the owner's 👁 numbers).
+  // Order: what each server did for this viewer on THIS film (worked → fastest
+  // first; untried; worked once then failed; only failed), then the owner's order.
+  // Results are kept by server name in the site's «shSrvStatsV401» (same as episodes).
+  const STATS_KEY = 'shSrvStatsV401';
+  let chooserOpen = false;
+  let chooserFilm = '';
+  function normName(n) { return String(n || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 60); }
+  function statsAll() {
+    try { return JSON.parse(localStorage.getItem(STATS_KEY) || '{}') || {}; }
+    catch (_) { return {}; }
+  }
+  function recordStat(mid, name, ok, ms) {
+    try {
+      if (typeof window.__subhubServerStatV401 === 'function') { window.__subhubServerStatV401(mid, name, ok, ms); return; }
+    } catch (_) {}
+    try {
+      const k = normName(name);
+      if (!k) return;
+      const a = statsAll(), m = a[String(mid)] || (a[String(mid)] = {});
+      const r = m[k] || (m[k] = { ok: 0, fail: 0, ms: 0, okAt: 0, failAt: 0 });
+      if (ok) {
+        const t = Math.max(0, Math.min(120000, Number(ms) || 0));
+        r.ms = r.ok ? Math.round((r.ms * r.ok + t) / (r.ok + 1)) : t;
+        r.ok++; r.okAt = Date.now();
+      } else { r.fail++; r.failAt = Date.now(); }
+      m.__at = Date.now();
+      const ids = Object.keys(a).sort(function (x, y) { return ((a[y] || {}).__at || 0) - ((a[x] || {}).__at || 0); });
+      ids.slice(100).forEach(function (x) { delete a[x]; });
+      localStorage.setItem(STATS_KEY, JSON.stringify(a));
+    } catch (_) {}
+  }
+  function rankFilm(items, mid) {
+    const st = statsAll()[String(mid)] || {};
+    const rows = items.map(function (x, i) {
+      const r = st[normName(x.label)] || null;
+      let tier = 2;
+      if (r && r.ok > 0 && r.okAt > (r.failAt || 0)) tier = 1;
+      else if (r && r.ok > 0) tier = 3;
+      else if (r && r.fail > 0) tier = 4;
+      return { x: x, i: i, r: r, tier: tier };
+    });
+    rows.sort(function (a, b) {
+      return a.tier - b.tier
+        || ((a.tier === 1 || a.tier === 3) ? (a.r.ms - b.r.ms) : 0)
+        || (a.tier === 4 ? (a.r.fail - b.r.fail) : 0)
+        || a.i - b.i;
+    });
+    return rows;
+  }
+  function autoReady(items) {
+    return items.length > 1 && typeof window.__subhubAutoChainV3110 === 'function';
+  }
+  function startAuto() {
+    if (opening || active) return;   // a second tap while the first search opens a player
+    const items = film.loaded ? film.items.slice() : [];
+    if (!items.length || film.movieId !== currentId()) return;
+    if (!autoReady(items)) { openSession({ movieId: film.movieId, kind: 'movie' }, items[0].id, false, ''); return; }
+    const mid = film.movieId;
+    const rows = rankFilm(items, mid);
+    window.__subhubAutoChainV3110({
+      movieId: mid,
+      kind: 'movie',
+      keys: rows.map(function (r) { return r.x.id; }),
+      names: rows.map(function (r) { return r.x.label; }),
+      ms: rows.map(function (r) { return (r.r && r.r.ok > 0 && r.r.ms) || 0; }),
+      fallback: '',
+      launch: function (key) { openSession({ movieId: mid, kind: 'movie' }, key, false, ''); },
+      onResult: function (name, ok, ms) { recordStat(mid, name, ok, ms); }
+    });
+  }
+  function autoButton() {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'subhub-appauto-btn';
+    b.className = 'watch-pill subhub-appauto-btn';
+    b.style.cssText = 'border-color:' + ACCENT + ';background:rgba(34,211,238,.14);font-weight:800;cursor:pointer';
+    b.textContent = '📱 مشاهدة بالتطبيق';
+    b.title = 'يجرّب سيرفرات التطبيق بالترتيب حتى يشتغل واحد';
+    b.addEventListener('click', startAuto);
+    return b;
+  }
+  function chooserButton() {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.id = 'subhub-appchoose-btn';
+    b.className = 'watch-pill subhub-appchoose-btn';
+    b.style.cssText = 'border-color:#3b5470;cursor:pointer';
+    b.addEventListener('click', function () {
+      chooserOpen = !chooserOpen;
+      chooserFilm = film.movieId;
+      render(true);
+    });
+    return b;
+  }
+  function syncAutoUi(grid, items) {
+    if (chooserFilm !== film.movieId) { chooserOpen = false; chooserFilm = film.movieId; }
+    const on = !!grid && autoReady(items);
+    let a = document.getElementById('subhub-appauto-btn');
+    let c = document.getElementById('subhub-appchoose-btn');
+    if (!on) {
+      if (a) a.remove();
+      if (c) c.remove();
+      showListButtons(true);
+      return;
+    }
+    if (!a) a = autoButton();
+    if (!c) c = chooserButton();
+    const place = window.__subhubPlaceAppCardV3106;
+    [[a, 0.05], [c, 0.06]].forEach(function (p) {
+      if (p[0].parentElement === grid && p[0].getAttribute('data-app-order') === String(p[1])) return;
+      if (typeof place === 'function') place(grid, p[0], 'list', p[1]); else grid.insertBefore(p[0], grid.firstChild);
+    });
+    const label = chooserOpen ? '🔀 اختيار السيرفر ▴' : '🔀 اختيار السيرفر ▾';
+    if (c.textContent !== label) c.textContent = label;
+    c.setAttribute('aria-expanded', chooserOpen ? 'true' : 'false');
+    showListButtons(chooserOpen);
+  }
+  function showListButtons(show) {
+    [].slice.call(document.querySelectorAll('.subhub-applist-btn[data-applist="app"]')).forEach(function (b) {
+      const want = show ? '' : 'none';
+      if (b.style.display !== want) b.style.display = want;
+    });
+  }
+  function removeAutoUi() {
+    ['subhub-appauto-btn', 'subhub-appchoose-btn'].forEach(function (id) {
+      const b = document.getElementById(id);
+      if (b) b.remove();
+    });
+  }
+
   function viewerButton(it) {
     const b = document.createElement('button');
     b.type = 'button';
@@ -2019,6 +2208,7 @@
     }
     if (isOwner()) {
       [].slice.call(document.querySelectorAll('.subhub-applist-btn[data-applist="app"]')).forEach(function (b) { b.remove(); });
+      removeAutoUi();   // 322.3.127: viewers' buttons only
       const grid = document.querySelector('.owner-watch-pills');
       const existing = document.getElementById('subhub-applist-section');
       if (!grid) { if (existing) existing.remove(); lastSig = ''; return; }
@@ -2039,7 +2229,7 @@
     [].slice.call(document.querySelectorAll('.subhub-applist-btn[data-applist="app"]')).forEach(function (b) {
       if (!grid || b.parentElement !== grid || wantIds.indexOf(b.id) < 0) b.remove();
     });
-    if (!grid) return;
+    if (!grid) { removeAutoUi(); return; }
     want.forEach(function (it, i) {
       const order = Number((0.1 + i * 0.01).toFixed(2));
       let b = document.getElementById('subhub-applist-btn-' + it.id);
@@ -2051,6 +2241,7 @@
         grid.appendChild(b);
       }
     });
+    syncAutoUi(grid, want);   // 322.3.127
   }
 
   function install() {

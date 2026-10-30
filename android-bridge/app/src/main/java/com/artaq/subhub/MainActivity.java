@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 135;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 136;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -1858,6 +1858,15 @@ public class MainActivity extends Activity {
         ui.postDelayed(() -> { if (g == autoCoverGeneration) hideAutoCover(); }, 30000L);
     }
 
+    // 322.3.127: the film (or episode) a player shows — its watch place is shared by
+    // every server and card. The list sends it (its own key holds the server); the
+    // other cards' key already is the film's (or the episode's).
+    static String titleKeyOf(JSONObject config, String stableKey, boolean listMode) {
+        String t = config == null ? "" : config.optString("titleKey", "").trim();
+        if (t.matches("[A-Za-z0-9_.-]{1,100}")) return t;
+        return listMode || stableKey == null || !stableKey.matches("[A-Za-z0-9_.-]{1,100}") ? "" : stableKey;
+    }
+
     private static String arabicDigits(int value) {
         String w = String.valueOf(value), a = "٠١٢٣٤٥٦٧٨٩";
         StringBuilder o = new StringBuilder();
@@ -2184,6 +2193,9 @@ public class MainActivity extends Activity {
                     final String sourceUrl;
                     final String allowedHost;
                     final String resumeKey;
+                    // 322.3.127: the key this server/card used before the shared place
+                    // per film (used once, when the film has no shared place yet).
+                    String legacyResumeKeyValue = "";
                     final String preferredServerKey;
                     final String preferredServerLabel;
                     final boolean interactiveSource;
@@ -2249,7 +2261,10 @@ public class MainActivity extends Activity {
                             allowedHost = HOME_HOST;
                             directEmbedUrl = ou.toString();
                         }
-                        resumeKey = "own_" + stableKey;
+                        // 322.3.127: one watch place per episode, whatever button plays it.
+                        String ownTitle = titleKeyOf(config, stableKey, false);
+                        resumeKey = ownTitle.isEmpty() ? "own_" + stableKey : "title_" + ownTitle;
+                        legacyResumeKeyValue = ownTitle.isEmpty() ? "" : "own_" + stableKey;
                         syncScopeValue = "own_" + stableKey;
                         String ownTmdb = config.optString("tmdbId", "");
                         String ownEpisodeKey = config.optString("episodeKey", "").trim();
@@ -2329,7 +2344,13 @@ public class MainActivity extends Activity {
                         allowedHost = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;
                         fboxNameValue = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;
                         siteFamilyValue = fboxHostValue.isEmpty() ? "mm" : "fbox";
-                        resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
+                        // 322.3.127: one watch place per film (or episode) for every server and
+                        // card — before, each server kept its own (server 1 at 30:00, server 2
+                        // at 15:00). The old key of this one is used once (no shared place yet).
+                        String oldResume = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;
+                        String mmTitle = titleKeyOf(config, stableKey, "list".equals(mode));
+                        resumeKey = mmTitle.isEmpty() ? oldResume : "title_" + mmTitle;
+                        legacyResumeKeyValue = mmTitle.isEmpty() ? "" : oldResume;
                         syncScopeValue = mode + "_" + stableKey;
                         if ("tv".equals(kind)) {
                             String episodeKey = config.optString("episodeKey", "").trim();
@@ -2418,6 +2439,15 @@ public class MainActivity extends Activity {
                     final int progEpisode = prog == null ? 0 : prog.optInt("episode", 0);
                     final boolean progValid = progMovie.matches("[A-Za-z0-9_.-]{1,120}") && progSeason > 0 && progEpisode > 0;
                     final long progResumeMs = prog == null ? 0L : Math.max(0L, prog.optLong("resumeMs", 0L));
+                    // 322.3.127: films — the place is shared with the site page too (its own
+                    // servers read and write it): where the viewer stopped there, with its time.
+                    JSONObject filmProg = config.optJSONObject("filmProgress");
+                    final String filmProgId = filmProg == null ? "" : filmProg.optString("movieId", "");
+                    final boolean filmProgValid = !progValid && !interactiveSource
+                            && filmProgId.matches("[A-Za-z0-9_.-]{1,120}");
+                    final long filmResumeMs = filmProg == null ? 0L : Math.max(0L, filmProg.optLong("resumeMs", 0L));
+                    final long filmResumeAt = filmProg == null ? 0L : Math.max(0L, filmProg.optLong("at", 0L));
+                    final String legacyResumeKey = legacyResumeKeyValue;
                     // 322.3.112: the episode after this one, for «الحلقة التالية».
                     JSONObject nxt = config.optJSONObject("next");
                     final String nextMovie = nxt == null ? "" : nxt.optString("movieId", "");
@@ -2551,6 +2581,17 @@ public class MainActivity extends Activity {
                             });
                         }
                         public void progress(long positionMs, long durationMs) {
+                            // 322.3.127: a film's place goes to the site page (one place per film).
+                            if (filmProgValid && webView != null) {
+                                ui.post(() -> {
+                                    if (webView == null || !isTrustedHomePage()) return;
+                                    webView.evaluateJavascript("window.__subhubFilmProgressV3127 && window.__subhubFilmProgressV3127("
+                                            + JSONObject.quote(filmProgId) + ","
+                                            + String.format(Locale.US, "%.1f", positionMs / 1000.0) + ","
+                                            + String.format(Locale.US, "%.1f", durationMs / 1000.0) + ")", null);
+                                });
+                                return;
+                            }
                             if (!progValid || webView == null) return;
                             ui.post(() -> {
                                 if (webView == null || !isTrustedHomePage()) return;
@@ -2630,8 +2671,12 @@ public class MainActivity extends Activity {
                     if (ownFlow) directStreamPlayer.setOwnReferer(HOME_URL);
                     if (nextValid) directStreamPlayer.setNextEpisode(nextLabel, nextAuto);
                     if (episodeItems.length() > 1) directStreamPlayer.setEpisodes(episodeItems);
+                    // 322.3.127: the old place of this server/card, once (no shared place yet).
+                    directStreamPlayer.useLegacyResume(legacyResumeKey);
                     // 322.3.111: continue the episode from where the site says the viewer stopped.
                     if (progValid && progResumeMs > 0L) directStreamPlayer.setResumeFromMs(progResumeMs);
+                    // 322.3.127: a film — the latest stop wins (the site's servers or ours).
+                    if (filmProgValid && filmResumeMs >= 5000L) directStreamPlayer.setTitleResume(filmResumeMs, filmResumeAt);
                     final int defaultIndex = config.optInt("defaultIndex", -1);
                     // 322.3.109: a file this viewer added for this film opens by itself.
                     if (localSubtitleFile(localSubtitleKey) != null && localSubtitleFile(localSubtitleKey).isFile()) {

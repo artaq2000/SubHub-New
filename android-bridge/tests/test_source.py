@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 135" in gradle
-assert "versionName '322.3.126'" in gradle
+assert "versionCode 136" in gradle
+assert "versionName '322.3.127'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -361,10 +361,12 @@ assert 'fallbackSourceUrl = "https://moviesmod.gd/" + kind + "/" + Uri.encode(tm
 # 322.3.123: Moviesmod opens on the chosen name of its names (moviesmod.gd is the saved form).
 assert 'allowedHost = fboxHostValue.isEmpty() ? mmHostValue : fboxHostValue;' in main
 # 322.3.98: purple/teal keys unchanged; open cards add their own prefix.
-assert 'resumeKey = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey' in main
+# 322.3.127: that key is now the old one (used once); the place is one per film / episode.
+assert 'String oldResume = (vidnestMode ? "vidnest_" : openMode ? mode + "_" : "moviesmod_") + stableKey;' in main
+assert 'resumeKey = mmTitle.isEmpty() ? oldResume : "title_" + mmTitle;' in main
 assert 'resumePrefKey' in direct
 assert 'persistResume(false)' in direct
-assert 'prefs.edit().putLong(key, position).apply()' in direct
+assert 'prefs.edit().putLong(key, position).putLong(key + "_at", System.currentTimeMillis()).apply()' in direct   # 322.3.127: + when
 assert 'player.seekTo(pendingResumeMs)' in direct
 assert 'onCreateWindow' in direct
 assert 'url.toLowerCase(Locale.ROOT).contains(".m3u8")' in direct
@@ -991,8 +993,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 135' in mv107
-assert "versionCode 135" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 136' in mv107
+assert "versionCode 136" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1149,7 +1151,7 @@ assert 'if (!(autoActive() && autoMore)) return;' in ap          # never the las
 assert 'static final int OWN_NONE = 0, OWN_FILE = 1, OWN_PAGE = 2;' in d112
 assert 'if (this.ownKind == OWN_FILE) handler.post(this::beginOwnFile);' in d112
 assert '(ownKind == OWN_PAGE && isOwnWorkerMedia(r.getUrl()))' in d112
-assert 'ProgressiveMediaSource.Factory(sourceFactory)' in d112 and 'if (ownKind != OWN_NONE && !looksLikeHls(candidate))' in d112
+assert 'ProgressiveMediaSource.Factory(sourceFactory)' in d112 and 'if ((ownKind != OWN_NONE || capturedFiles.contains(candidate)) && !looksLikeHls(candidate))' in d112   # 322.3.127: + files taken from the page
 assert 'public void mediaFound(String token, String rawUrl)' in d112
 assert 'final boolean ownFlow = "ownfile".equals(mode) || "ownpage".equals(mode);' in m112
 assert 'if (HOME_HOST.equalsIgnoreCase(oh)) return;' in m112
@@ -1670,3 +1672,71 @@ clc126 = open('app/src/main/java/com/artaq/subhub/CapturedLinkCheck.java', encod
 assert 'static final double MIN_FILM_SECONDS = 180.0;' in clc126 and 'import android' not in clc126
 assert '"#EXT-X-STREAM-INF"' in clc126 and 'static String verdict(String url, Fetcher fetch)' in clc126
 print('322.3.126 hidden capture checks OK')
+
+# 322.3.127: video files are taken too (Vidnest on fbox plays a 1.48 GB MKV, and a 276 KB ad
+# before it), the hidden page is muted, films get «📱 مشاهدة بالتطبيق» (automatic search),
+# one watch place per film / episode for every server (shared with the site's servers),
+# and «تلقائي» starts from the speed measured on this device.
+d127 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m127 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+def body127(sig, text=None):
+    t = d127 if text is None else text
+    i = t.index(sig); j = t.index('\n    }\n', i)
+    return t[i:j]
+si127 = d127[d127.index('public WebResourceResponse shouldInterceptRequest('):]
+si127 = si127[:si127.index('return null;')]
+assert 'CapturedLinkCheck.isVideoFileRequest(url, r.getRequestHeaders())' in si127 and '|| videoFile)' in si127
+assert 'boolean videoFile = !vidnestMode && ownKind == OWN_NONE' in si127
+cp127 = body127('    private void capture(String url, Map<String,String> headers) {')
+assert cp127.index('checkCapturedLink(url, headers);') < cp127.index('checkCapturedFile(url, headers);') < cp127.index('acceptCapture(url, headers);')
+cf127 = body127('    private void checkCapturedFile(final String url, Map<String,String> headers) {')
+assert 'if (!linkChecked.add(url)) return;' in cf127 and 'CapturedLinkCheck.fileVerdict(url, CapturedLinkCheck.httpHead(h,' in cf127
+assert 'capturedFiles.add(url);\n                        acceptCapture(url, h);' in cf127
+assert 'if (ownerMode || interactiveSource) showTransientValue("⏭ " + verdict, 1800);' in cf127
+assert '(ownKind != OWN_NONE || capturedFiles.contains(candidate)) && !looksLikeHls(candidate)' in d127
+assert 'capturedFiles.clear();   // 322.3.127' in body127('    private void cleanupPlayerForRetry() {')
+ac127 = body127('    private void acceptCapture(String url, Map<String,String> headers) {')
+assert 'String last = url == null ? null : Uri.parse(url).getLastPathSegment();' in ac127 and 'getLastPathSegment()\n' not in ac127
+# muted hidden page: every frame (document start), not on the owner's add-server page
+bc127 = body127('    private void beginCapture() {')
+assert 'if (!interactiveSource) muteHiddenPage(probe);' in bc127
+assert 'if (!interactiveSource && !muteInAllFrames) {' in bc127
+mh127 = body127('    private void muteHiddenPage(WebView v) {')
+assert 'WebViewFeature.DOCUMENT_START_SCRIPT' in mh127 and 'addDocumentStartJavaScript(v, MUTE_SCRIPT, java.util.Collections.singleton("*"))' in mh127
+assert "set:function(){d.set.call(this,true);}" in d127 and "P.play=function(){on(this);" in d127
+# automatic quality start
+ex127 = body127('    private void startExoPlayer(String userAgent, String referer, String origin) {')
+assert 'new ExoPlayer.Builder(activity).setBandwidthMeter(bandwidthMeter).build()' in ex127
+assert '.setInitialBitrateEstimate(BandwidthMemory.initial(prefs.getLong(bandwidthKey, 0L)))' in ex127
+assert 'new ExoPlayer.Builder(activity).build()' not in d127
+assert 'saveBandwidth();   // 322.3.127' in body127('    public void close() {')
+assert 'saveBandwidth();   // 322.3.127' in body127('    private void cleanupPlayerForRetry() {')
+bw127 = open('app/src/main/java/com/artaq/subhub/BandwidthMemory.java', encoding='utf-8').read()
+assert 'static final long DEFAULT_BPS = 4_000_000L;' in bw127 and 'import android' not in bw127
+# one watch place per film / episode
+assert 'prefs.edit().putLong(key, position).putLong(key + "_at", System.currentTimeMillis()).apply();' in d127
+assert 'prefs.edit().remove(key).remove(key + "_at").apply();' in body127('    private void clearResumePosition() {')
+ul127 = body127('    public void useLegacyResume(String legacyKey) {')
+assert 'if (now.isEmpty() || prefs.contains(now)) return;' in ul127
+tr127 = body127('    public void setTitleResume(long ms, long atMillis) {')
+assert 'if (atMillis > savedAt + 2000L) pendingResumeMs = ms;' in tr127
+assert 'resumeKey = ownTitle.isEmpty() ? "own_" + stableKey : "title_" + ownTitle;' in m127
+assert 'String mmTitle = titleKeyOf(config, stableKey, "list".equals(mode));' in m127
+tk127 = body127('    static String titleKeyOf(JSONObject config, String stableKey, boolean listMode) {', m127)
+assert 'return listMode || stableKey == null' in tk127
+assert 'directStreamPlayer.useLegacyResume(legacyResumeKey);' in m127
+assert 'if (filmProgValid && filmResumeMs >= 5000L) directStreamPlayer.setTitleResume(filmResumeMs, filmResumeAt);' in m127
+assert 'window.__subhubFilmProgressV3127 && window.__subhubFilmProgressV3127(' in m127
+assert 'final boolean filmProgValid = !progValid && !interactiveSource' in m127
+al127 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert "titleKey: titleKey," in al127 and "filmProgress: ctx.kind === 'tv' ? null : filmProgress(ctx.movieId)," in al127
+assert "const titleKey = (base + (ctx.kind === 'tv' ? '_' + ekOf(ctx) : '')).slice(0, 100);" in al127
+assert "window.__subhubFilmProgressV3127 = function (mid, t, d) {" in al127 and "'subhub_site_resume_v405'" in al127
+# films: «📱 مشاهدة بالتطبيق» + «🔀 اختيار السيرفر»
+assert "b.textContent = '📱 مشاهدة بالتطبيق';" in al127 and "'🔀 اختيار السيرفر ▾'" in al127
+assert "b.className = 'watch-pill subhub-appauto-btn';" in al127   # never renumbered by the site
+assert 'syncAutoUi(grid, want);   // 322.3.127' in al127
+assert "launch: function (key) { openSession({ movieId: mid, kind: 'movie' }, key, false, ''); }," in al127
+ac127j = open('app/src/main/assets/auto_chain.js', encoding='utf-8').read()
+assert "if (typeof c.launch === 'function') {" in ac127j and "if (typeof c.onResult === 'function') {" in ac127j
+print('322.3.127 auto servers checks OK')

@@ -48,6 +48,7 @@ import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
@@ -257,6 +258,8 @@ public final class DirectStreamPlayer {
     private final java.util.HashSet<String> linkChecked = new java.util.HashSet<>();
     private int linkChecksRunning = 0;
     private int linkSkipped = 0;
+    // 322.3.127: video files (MKV / MP4) taken from the page — played as a file, not a playlist.
+    private final java.util.HashSet<String> capturedFiles = new java.util.HashSet<>();
     private final ArrayList<android.animation.Animator> coverAnimators = new ArrayList<>();
     private int directRevealGeneration = 0;
     private boolean chooserAutoRequested = false;
@@ -2389,6 +2392,7 @@ public final class DirectStreamPlayer {
             playerView = null;
         }
         if (player != null) {
+            saveBandwidth();   // 322.3.127
             try { player.release(); } catch (Exception ignored) {}
             player = null;
         }
@@ -2427,6 +2431,7 @@ public final class DirectStreamPlayer {
         linkCheckGen.incrementAndGet();
         linkChecked.clear();
         linkChecksRunning = 0;
+        capturedFiles.clear();   // 322.3.127
     }
 
     private void retrySubscriberStartup() {
@@ -3133,8 +3138,33 @@ public final class DirectStreamPlayer {
 
     private void clearResumePosition() {
         String key = resumePrefKey();
-        if (!key.isEmpty()) prefs.edit().remove(key).apply();
+        if (!key.isEmpty()) prefs.edit().remove(key).remove(key + "_at").apply();
         pendingResumeMs = 0L;
+    }
+
+    // 322.3.127: films and episodes share one place across servers («title_…»). The
+    // first time after the update, the place this server/card had saved is kept.
+    public void useLegacyResume(String legacyKey) {
+        if (closed || legacyKey == null || legacyKey.trim().isEmpty()) return;
+        String now = resumePrefKey();
+        if (now.isEmpty() || prefs.contains(now)) return;
+        String old = "resume_" + legacyKey.trim().replaceAll("[^A-Za-z0-9_.-]", "_");
+        long v = Math.max(0L, prefs.getLong(old, 0L));
+        if (v >= 5000L && v > pendingResumeMs) pendingResumeMs = v;
+    }
+
+    // 322.3.127: a film — the site page's place for it (its own servers and ours write
+    // it) with the time it was saved: the latest stop wins. Without a time on our side
+    // (nothing saved since the update) the further place is kept.
+    public void setTitleResume(long ms, long atMillis) {
+        if (closed || ms < 5000L) return;
+        String key = resumePrefKey();
+        long savedAt = key.isEmpty() ? 0L : prefs.getLong(key + "_at", 0L);
+        if (savedAt <= 0L) {
+            if (ms > pendingResumeMs) pendingResumeMs = ms;
+            return;
+        }
+        if (atMillis > savedAt + 2000L) pendingResumeMs = ms;
     }
 
     private void persistResume(boolean force) {
@@ -3157,7 +3187,8 @@ public final class DirectStreamPlayer {
         }
         if (position < 5000L) return;
         String key = resumePrefKey();
-        if (!key.isEmpty()) prefs.edit().putLong(key, position).apply();
+        // 322.3.127: + when (the latest stop wins between servers and the site).
+        if (!key.isEmpty()) prefs.edit().putLong(key, position).putLong(key + "_at", System.currentTimeMillis()).apply();
     }
 
     private boolean isAllowedMainHost(String host) {
@@ -3249,6 +3280,10 @@ public final class DirectStreamPlayer {
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         CookieManager.getInstance().setAcceptThirdPartyCookies(probe, true);
         probe.addJavascriptInterface(new SourceChoiceBridge(), "SubHubSourceChoice");
+        // 322.3.127: the hidden page never makes a sound behind our screen — every
+        // video and audio in every frame of it is muted (not while the owner tries a
+        // server on the page itself).
+        if (!interactiveSource) muteHiddenPage(probe);
         probe.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onCreateWindow(
                     WebView view, boolean isDialog, boolean isUserGesture,
@@ -3261,6 +3296,10 @@ public final class DirectStreamPlayer {
             @Override public void onPageFinished(WebView v, String url) {
                 if (closed || v != probe) return;
                 probeLoading = false;
+                // 322.3.127: a WebView without document-start scripts — the top page at least.
+                if (!interactiveSource && !muteInAllFrames) {
+                    try { v.evaluateJavascript(MUTE_SCRIPT, null); } catch (Exception ignored) {}
+                }
                 String host = "";
                 try { host = Uri.parse(url).getHost(); } catch (Exception ignored) {}
                 if (host != null && !resolvedMainHost.isEmpty()
@@ -3432,9 +3471,15 @@ public final class DirectStreamPlayer {
             @Override public WebResourceResponse shouldInterceptRequest(
                     WebView v, WebResourceRequest r) {
                 String url = r.getUrl().toString();
+                // 322.3.127: a video FILE the page's player reads (Vidnest on fbox: a 1.48 GB
+                // MKV) is taken too, not only playlists; it is looked at before it plays.
+                boolean videoFile = !vidnestMode && ownKind == OWN_NONE
+                        && !url.toLowerCase(Locale.ROOT).contains(".m3u8")
+                        && CapturedLinkCheck.isVideoFileRequest(url, r.getRequestHeaders());
                 if ("https".equals(r.getUrl().getScheme())
                         && (url.toLowerCase(Locale.ROOT).contains(".m3u8")
-                            || (ownKind == OWN_PAGE && isOwnWorkerMedia(r.getUrl())))
+                            || (ownKind == OWN_PAGE && isOwnWorkerMedia(r.getUrl()))
+                            || videoFile)
                         && ((!interactiveSource && autoServer) || !selectedProviderLabel.isEmpty())
                         // 322.3.106: no capture while the owner verifies on the page.
                         && !(verifyFirst && interactiveSource)) {
@@ -3737,7 +3782,51 @@ public final class DirectStreamPlayer {
             checkCapturedLink(url, headers);
             return;
         }
+        // 322.3.127: a video file — its head says its length (or its size): an ad is skipped.
+        if (!vidnestMode && ownKind == OWN_NONE && CapturedLinkCheck.isVideoFileRequest(url, headers)) {
+            checkCapturedFile(url, headers);
+            return;
+        }
         acceptCapture(url, headers);
+    }
+
+    // 322.3.127: the same queue as playlists. The page reads a file in many byte
+    // ranges — each link is looked at once.
+    private void checkCapturedFile(final String url, Map<String,String> headers) {
+        if (!linkChecked.add(url)) return;   // each link once
+        if (linkCheckExec == null) linkCheckExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+        final int gen = linkCheckGen.get();
+        final Map<String,String> h = headers == null ? new HashMap<>() : new HashMap<>(headers);
+        linkChecksRunning++;
+        try {
+            linkCheckExec.execute(() -> {
+                if (gen != linkCheckGen.get()) return;   // the try is over (no post: counter reset)
+                String v;
+                try {
+                    v = CapturedLinkCheck.fileVerdict(url, CapturedLinkCheck.httpHead(h,
+                            u -> CookieManager.getInstance().getCookie(u)));
+                } catch (Throwable t) {
+                    v = "";
+                }
+                final String verdict = v;
+                handler.post(() -> {
+                    if (gen != linkCheckGen.get()) return;
+                    linkChecksRunning = Math.max(0, linkChecksRunning - 1);
+                    if (closed || playing) return;
+                    if (verdict.isEmpty()) {
+                        capturedFiles.add(url);
+                        acceptCapture(url, h);
+                        return;
+                    }
+                    linkSkipped++;
+                    if (ownerMode || interactiveSource) showTransientValue("⏭ " + verdict, 1800);
+                });
+            });
+        } catch (Exception e) {   // no thread for it: straight to the player
+            linkChecksRunning = Math.max(0, linkChecksRunning - 1);
+            capturedFiles.add(url);
+            acceptCapture(url, h);
+        }
     }
 
     private void checkCapturedLink(final String url, Map<String,String> headers) {
@@ -3779,8 +3868,10 @@ public final class DirectStreamPlayer {
         if (closed || playing) return;
         if (manualServerButton != null) manualServerButton.setVisibility(View.GONE);
         boolean first = candidate == null;
-        if (first || Uri.parse(url).getLastPathSegment()
-                .toLowerCase(Locale.ROOT).contains("master")) {
+        // 322.3.127: a file link may end with «/» (no last segment).
+        String last = url == null ? null : Uri.parse(url).getLastPathSegment();
+        if (first || (last != null && last.toLowerCase(Locale.ROOT).contains("master")
+                && !capturedFiles.contains(candidate))) {
             candidate = url;
             candidateHeaders = headers;
         }
@@ -3813,6 +3904,61 @@ public final class DirectStreamPlayer {
             handler.postDelayed(() -> {
                 if (!closed && !playing) startStream();
             }, startDelay);
+        }
+    }
+
+    // 322.3.127: the speed the automatic quality starts from (BandwidthMemory).
+    private DefaultBandwidthMeter bandwidthMeter;
+    private String bandwidthKey = "";
+    private boolean bandwidthMeasured = false;
+
+    private void saveBandwidth() {
+        if (bandwidthMeter == null || bandwidthKey.isEmpty()) return;
+        long v = BandwidthMemory.toSave(bandwidthMeter.getBitrateEstimate(), bandwidthMeasured);
+        if (v > 0) prefs.edit().putLong(bandwidthKey, v).apply();
+        bandwidthMeasured = false;
+    }
+
+    /** "wifi" (Wi-Fi / cable), "cell" (mobile data) or "other". */
+    private String networkKind() {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    activity.getSystemService(android.content.Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return "other";
+            android.net.Network n = cm.getActiveNetwork();
+            android.net.NetworkCapabilities c = n == null ? null : cm.getNetworkCapabilities(n);
+            if (c == null) return "other";
+            if (c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                    || c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) return "wifi";
+            if (c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) return "cell";
+        } catch (Exception ignored) {}
+        return "other";
+    }
+
+    // 322.3.127: every <video>/<audio> of the hidden page (and of each frame in it) is
+    // muted and stays muted: «muted» can only be set to true, play() mutes first, and
+    // a media that starts or turns its sound on is muted again. The page still loads
+    // and plays — we only take its link.
+    static final String MUTE_SCRIPT = "(function(){try{if(window.__subhubMuteV3127)return;window.__subhubMuteV3127=1;"
+            + "var P=HTMLMediaElement.prototype,d=Object.getOwnPropertyDescriptor(P,'muted');"
+            + "var on=function(m){try{if(d&&d.set)d.set.call(m,true);else m.muted=true;}catch(e){}};"
+            + "var is=function(m){try{return d&&d.get?d.get.call(m):m.muted;}catch(e){return true;}};"
+            + "if(d&&d.set&&d.get){Object.defineProperty(P,'muted',{configurable:true,enumerable:d.enumerable,"
+            + "get:d.get,set:function(){d.set.call(this,true);}});}"
+            + "var pl=P.play;P.play=function(){on(this);return pl.apply(this,arguments);};"
+            + "var hush=function(e){var t=e&&e.target;if(t instanceof HTMLMediaElement&&!is(t))on(t);};"
+            + "['play','playing','volumechange','loadeddata'].forEach(function(n){document.addEventListener(n,hush,true);});"
+            + "}catch(e){}})();";
+    private boolean muteInAllFrames = false;
+
+    private void muteHiddenPage(WebView v) {
+        try {
+            if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(v, MUTE_SCRIPT, java.util.Collections.singleton("*"));
+                muteInAllFrames = true;
+            }
+        } catch (Exception ignored) {
+            muteInAllFrames = false;
         }
     }
 
@@ -4499,7 +4645,16 @@ public final class DirectStreamPlayer {
                     return spec.withRequestHeaders(scoped);
                 });
 
-        player = new ExoPlayer.Builder(activity).build();
+        // 322.3.127: «تلقائي» starts from the speed this device measured last time on
+        // this kind of connection (about 720p the first time), then follows the real
+        // speed while playing, as before.
+        bandwidthKey = BandwidthMemory.key(networkKind());
+        bandwidthMeasured = false;
+        bandwidthMeter = new DefaultBandwidthMeter.Builder(activity)
+                .setInitialBitrateEstimate(BandwidthMemory.initial(prefs.getLong(bandwidthKey, 0L)))
+                .build();
+        bandwidthMeter.addEventListener(handler, (elapsedMs, bytes, bitrate) -> bandwidthMeasured = true);
+        player = new ExoPlayer.Builder(activity).setBandwidthMeter(bandwidthMeter).build();
         player.setTrackSelectionParameters(
                 player.getTrackSelectionParameters().buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
@@ -4594,7 +4749,8 @@ public final class DirectStreamPlayer {
         androidx.media3.datasource.DataSource.Factory sourceFactory =
                 vidnestMode ? new DefaultDataSource.Factory(activity, data) : data;
         // 322.3.112: our own plain files (R2 / mp4) are not playlists.
-        if (ownKind != OWN_NONE && !looksLikeHls(candidate)) {
+        // 322.3.127: nor a video file taken from the page (MKV / MP4).
+        if ((ownKind != OWN_NONE || capturedFiles.contains(candidate)) && !looksLikeHls(candidate)) {
             player.setMediaSource(new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(sourceFactory)
                     .createMediaSource(MediaItem.fromUri(candidate)));
         } else {
@@ -5735,6 +5891,7 @@ public final class DirectStreamPlayer {
         }
 
         persistResume(true);
+        saveBandwidth();   // 322.3.127
         if (playerView != null) playerView.setPlayer(null);
         if (player != null) {
             player.release();

@@ -21,6 +21,9 @@
   //   site → window.__subhubAutoChainV3110({movieId, season, episode, keys, names, ms, fallback})
   //   app  → __subhubAutoOpenedV3110(chain, index) / __subhubAutoNextV3110(chain)
   //          / __subhubAutoOkV3110(chain) / __subhubNextEpisodeV3112(movieId, season, episode)
+  // 322.3.127: films too (app_list_stream.js «📱 مشاهدة بالتطبيق»): the request
+  // brings its own `launch(key)` (opens one app server of the film) and
+  // `onResult(name, ok, ms)` (keeps what each server did, by name).
 
   const token = '__VIDSRC_GUARD_TOKEN__';
   const OPEN_WAIT_MS = 10000;   // a server that never opens the player is skipped
@@ -44,6 +47,10 @@
   function record(c, ok) {
     const name = c.names[c.i] || '';
     const ms = Date.now() - (c.t0 || Date.now());
+    if (typeof c.onResult === 'function') {   // 322.3.127: films
+      try { if (name) c.onResult(name, !!ok, ms); } catch (_) {}
+      return;
+    }
     try {
       if (name && typeof window.__subhubServerStatV401 === 'function') {
         window.__subhubServerStatV401(c.movieId, name, ok, ms);
@@ -83,7 +90,10 @@
     c.t0 = Date.now();
     const at = c.i, key = c.keys[at];
     try {
-      if (OWN_KEY.test(key)) {
+      if (typeof c.launch === 'function') {
+        // 322.3.127: a film's app server (the request's own way to open it).
+        c.launch(key);
+      } else if (OWN_KEY.test(key)) {
         // 322.3.112: our own file (R2 / direct link / our player page).
         const own = window.SubHubSeriesOwnSourceV3112;
         if (typeof own !== 'function') { c.i++; setTimeout(attempt, 150); return; }
@@ -111,6 +121,9 @@
       names: (Array.isArray(req.names) ? req.names : []).map(function (x) { return String(x || ''); }).slice(0, 20),
       ms: keys.map(function (_, i) { return Array.isArray(req.ms) ? (Number(req.ms[i]) || 0) : 0; }),
       fallback: String(req.fallback || ''),
+      // 322.3.127: films — how to open one server, and where its result goes.
+      launch: typeof req.launch === 'function' ? req.launch : null,
+      onResult: typeof req.onResult === 'function' ? req.onResult : null,
       i: 0,
       opened: {}
     };
