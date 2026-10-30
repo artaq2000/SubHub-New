@@ -359,6 +359,25 @@ public final class DirectStreamPlayer {
     // page that does not open at all is skipped at once; a server that is alive
     // gets time to answer, and a server known to be slow gets twice its usual time.
     private long autoExpectMs = 0L;
+    // 322.3.128: several connections at once for the servers' links (ParallelLoad; our own
+    // files load as before), every byte from the network (the owner's speed line, and
+    // «the video still comes» for the last server's longer wait), and the open time.
+    private ParallelLoad.Session parallel;
+    private ParallelSources.Counter loadCounter;
+    private final long createdAt = SystemClock.elapsedRealtime();
+    private long openedInMs = -1L;
+    private TextView speedMeter;
+    private final java.util.ArrayDeque<long[]> loadSamples = new java.util.ArrayDeque<>();
+    private long lastLoadBytes = 0L, lastLoadAt = 0L, busyBytes = 0L, busyMs = 0L;
+    private double speedNow = 0d;
+    // 322.3.128: no other server to go to (the film's only app server / the last of the
+    // automatic search): while the video's data still comes, it may wait up to a minute.
+    private boolean onlyServer = false;
+    private long phaseStartedAt = 0L;
+    private boolean slowStageShown = false;
+    static final long LAST_RESORT_MS = 60_000L;
+    static final long FLOWING_BYTES = 32L * 1024;
+    static final String PARALLEL_OWNER_KEY = "par_owner_n";
     // 322.3.112: «الحلقة التالية» card — 10 s after the last subtitle line (the
     // credits), or 40 s before the end when there is no usable subtitle.
     static final int NEXT_COUNTDOWN_S = EpisodeTiming.NEXT_COUNTDOWN_S;
@@ -705,6 +724,7 @@ public final class DirectStreamPlayer {
         if (this.ownKind == OWN_FILE) handler.post(this::beginOwnFile);
         else beginCapture();
         handler.post(tick);
+        handler.post(loadTick);   // 322.3.128
     }
 
     // 322.3.112: the page our own files are opened from (Referer).
@@ -2341,6 +2361,8 @@ public final class DirectStreamPlayer {
         // gives way to the next one. 322.3.112: the limit depends on the step.
         if (autoActive() && autoMore) timeoutMs = EpisodeTiming.autoPhaseLimitMs(phase, autoExpectMs);
         subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + timeoutMs;
+        phaseStartedAt = SystemClock.elapsedRealtime();   // 322.3.128
+        slowStageShown = false;
         subscriberStartupGeneration++;
         int generation = subscriberStartupGeneration;
         showSubscriberStage(startupStageText(phase));
@@ -2352,6 +2374,19 @@ public final class DirectStreamPlayer {
                 || generation != subscriberStartupGeneration) return;
 
         if (SystemClock.elapsedRealtime() < subscriberStartupDeadlineMs) {
+            handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
+            return;
+        }
+        // 322.3.128: 15 s stay the rule (the next server comes). Only when there is no other
+        // server (the film's only one / the last of the search) and the video's data still
+        // comes, it waits — up to a minute from the start of this step.
+        if (subscriberStartupPhase >= 6 && lastResort() && dataFlowing()
+                && SystemClock.elapsedRealtime() - phaseStartedAt < LAST_RESORT_MS) {
+            subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + 2000L;
+            if (!slowStageShown) {
+                slowStageShown = true;
+                showSubscriberStage("جارٍ تشغيل الفيديو\nالسيرفر بطيء، لحظات");
+            }
             handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
             return;
         }
@@ -2399,6 +2434,8 @@ public final class DirectStreamPlayer {
             try { player.release(); } catch (Exception ignored) {}
             player = null;
         }
+        closeParallel();   // 322.3.128: after the player — its loading stops first
+        if (speedMeter != null) speedMeter.setVisibility(View.GONE);
         playing = false;
         playbackReady = false;
         controllerShown = false;   // 322.3.115: the bottom row leaves with the old player
@@ -3911,6 +3948,165 @@ public final class DirectStreamPlayer {
         }
     }
 
+    // ------------------------------------------------------------------ 322.3.128
+    // Several connections at once (ParallelLoad / ParallelSources), the owner's speed line,
+    // and the last server's longer wait.
+
+    private int parallelChoice() {
+        if (!ownerMode) return ParallelLoad.DEFAULT_CONNECTIONS;
+        return ParallelLoad.clamp(prefs.getInt(PARALLEL_OWNER_KEY, ParallelLoad.DEFAULT_CONNECTIONS));
+    }
+
+    /** Servers that refused extra connections: one connection for them for a few days. */
+    private ParallelLoad.Hosts parallelHosts() {
+        final SharedPreferences p = prefs;
+        return new ParallelLoad.Hosts() {
+            @Override public boolean refused(String host) {
+                return p.getLong("par_off_" + host, 0L) > System.currentTimeMillis();
+            }
+
+            @Override public void refuse(String host) {
+                p.edit().putLong("par_off_" + host, System.currentTimeMillis() + ParallelLoad.REFUSE_FOR_MS).apply();
+            }
+        };
+    }
+
+    private void closeParallel() {
+        ParallelLoad.Session s = parallel;
+        parallel = null;
+        if (s != null) s.close();
+    }
+
+    // The film's only app server (the page says so): no other server to go to.
+    public void setOnlyServer(boolean only) {
+        onlyServer = only;
+    }
+
+    /** No other server comes after this one: the last of the automatic search, or the only one. */
+    private boolean lastResort() {
+        if (interactiveSource || closed) return false;
+        return autoActive() ? !autoMore : onlyServer;
+    }
+
+    private void resetLoadSamples() {
+        loadSamples.clear();
+        lastLoadBytes = 0L;
+        lastLoadAt = 0L;
+        busyBytes = 0L;
+        busyMs = 0L;
+        speedNow = 0d;
+    }
+
+    // Once a second: how fast the video comes (the owner's line) and whether it still comes.
+    private final Runnable loadTick = new Runnable() {
+        @Override public void run() {
+            if (closed) return;
+            sampleLoad();
+            if (ownerMode) updateSpeedMeter();
+            handler.postDelayed(this, 1000L);
+        }
+    };
+
+    private void sampleLoad() {
+        ParallelSources.Counter c = loadCounter;
+        if (c == null) return;
+        long now = SystemClock.elapsedRealtime();
+        long b = c.bytes.get();
+        if (lastLoadAt > 0L && b >= lastLoadBytes) {
+            long db = b - lastLoadBytes, dt = Math.max(1L, now - lastLoadAt);
+            double inst = db * 1000d / dt;
+            speedNow = speedNow <= 0d ? inst : speedNow * 0.4d + inst * 0.6d;
+            if (db > 0L) {   // the average counts the seconds something came only
+                busyBytes += db;
+                busyMs += dt;
+            }
+        }
+        lastLoadBytes = b;
+        lastLoadAt = now;
+        loadSamples.addLast(new long[] { now, b });
+        while (loadSamples.size() > 8) loadSamples.removeFirst();
+    }
+
+    /** The video's data still comes: FLOWING_BYTES or more in the last few seconds. */
+    private boolean dataFlowing() {
+        ParallelSources.Counter c = loadCounter;
+        if (c == null || loadSamples.isEmpty()) return false;
+        long now = SystemClock.elapsedRealtime();
+        long[] from = loadSamples.peekFirst();
+        for (long[] x : loadSamples) {
+            if (now - x[0] <= 3500L) {
+                from = x;
+                break;
+            }
+        }
+        return c.bytes.get() - from[1] >= FLOWING_BYTES;
+    }
+
+    private void ensureSpeedMeter() {
+        if (speedMeter != null || root == null) return;
+        TextView v = new TextView(activity);
+        v.setTextColor(Color.WHITE);
+        v.setTextSize(11);
+        v.setTextDirection(View.TEXT_DIRECTION_RTL);
+        v.setGravity(Gravity.RIGHT);
+        v.setLineSpacing(0, 1.1f);
+        v.setPadding(dp(10), dp(5), dp(10), dp(6));
+        v.setBackground(round(0xaa081826, 0x664E718B, 1, 12));
+        v.setElevation(dp(22));
+        v.setOnClickListener(x -> cycleConnections());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
+        lp.topMargin = dp(8);
+        lp.rightMargin = dp(10);
+        root.addView(v, lp);
+        speedMeter = v;
+    }
+
+    /**
+     * The owner's speed line (top right; tap: 3 → 4 → 1 connections):
+     *   «⬇ ٢٫٤ ميجا/ث · متوسط ٢٫١ · محمّل ١:٤٥»
+     *   «٣ اتصالات (شغّال ٢) · فتح خلال ٦٫٣ ث»
+     */
+    private void updateSpeedMeter() {
+        if (!ownerMode || closed) return;
+        if (player == null) {
+            if (speedMeter != null) speedMeter.setVisibility(View.GONE);
+            return;
+        }
+        ensureSpeedMeter();
+        if (speedMeter == null) return;
+        boolean hide = menuOpen || panelOpen;
+        speedMeter.setVisibility(hide ? View.GONE : View.VISIBLE);
+        if (hide) return;
+        Locale ar = new Locale("ar");
+        ParallelSources.Counter c = loadCounter;
+        int open = c == null ? 0 : Math.max(0, c.open.get());
+        long ahead = Math.max(0L, player.getTotalBufferedDuration());
+        String avg = busyMs >= 2000L
+                ? String.format(ar, " · متوسط %.1f", busyBytes * 1000d / busyMs / 1048576d) : "";
+        String line1 = (open == 0 && ahead >= 90_000L
+                ? "⏸ ممتلئ"
+                : String.format(ar, "⬇ %.1f ميجا/ث", speedNow / 1048576d))
+                + avg
+                + String.format(ar, " · محمّل %d:%02d", ahead / 60000L, (ahead / 1000L) % 60L);
+        ParallelLoad.Session s = parallel;
+        String line2;
+        if (s == null) line2 = "اتصال واحد";
+        else if (s.refusedSeen()) line2 = "اتصال واحد — السيرفر رفض أكثر";
+        else if (s.connections() <= 1) line2 = String.format(ar, "اتصال واحد (شغّال %d)", open);
+        else line2 = String.format(ar, "%d اتصالات (شغّال %d)", s.connections(), open);
+        if (openedInMs >= 0L) line2 += String.format(ar, " · فتح خلال %.1f ث", openedInMs / 1000d);
+        speedMeter.setText(line1 + "\n" + line2);
+    }
+
+    private void cycleConnections() {
+        int n = ParallelLoad.nextChoice(prefs.getInt(PARALLEL_OWNER_KEY, ParallelLoad.DEFAULT_CONNECTIONS));
+        prefs.edit().putInt(PARALLEL_OWNER_KEY, n).apply();
+        ParallelLoad.Session s = parallel;
+        if (s != null) s.setConnections(n);
+        showTransientValue(n == 1 ? "اتصال واحد" : String.format(new Locale("ar"), "%d اتصالات", n), 1200);
+        updateSpeedMeter();
+    }
+
     // 322.3.127: the quality — every film starts at 720 (480 when there is no 720), the
     // automatic choice stays at or under it, one quality down when it stalls (with a
     // quick line saying where the trouble most likely is), back up when calm. A quality
@@ -4784,6 +4980,10 @@ public final class DirectStreamPlayer {
                         .setUserAgent(userAgent)
                         .setAllowCrossProtocolRedirects(vidnestMode)
                         .setDefaultRequestProperties(headers);
+        // 322.3.128: every byte from the network and the connections open now (all requests).
+        loadCounter = new ParallelSources.Counter();
+        http.setTransferListener(loadCounter);
+        resetLoadSamples();
 
         ResolvingDataSource.Factory data =
                 new ResolvingDataSource.Factory(http, spec -> {
@@ -4853,6 +5053,8 @@ public final class DirectStreamPlayer {
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
+                    // 322.3.128: how long this server took to open (the owner's speed line).
+                    if (openedInMs < 0L) openedInMs = SystemClock.elapsedRealtime() - createdAt;
                     // 322.3.127: a stall (if any) is over.
                     stallBeganAt = 0L;
                     stallGeneration++;
@@ -4929,13 +5131,22 @@ public final class DirectStreamPlayer {
         // 322.3.87: Vidnest plays a clean master given as a data: URI.
         androidx.media3.datasource.DataSource.Factory sourceFactory =
                 vidnestMode ? new DefaultDataSource.Factory(activity, data) : data;
+        // 322.3.128: the servers' links load on several connections at once (3; the owner
+        // chooses 1 / 3 / 4 on his speed line). Our own files load as before.
+        closeParallel();
+        if (ownKind == OWN_NONE) parallel = new ParallelLoad.Session(parallelChoice(), parallelHosts());
         // 322.3.112: our own plain files (R2 / mp4) are not playlists.
         // 322.3.127: nor a video file taken from the page (MKV / MP4).
         if ((ownKind != OWN_NONE || capturedFiles.contains(candidate)) && !looksLikeHls(candidate)) {
-            player.setMediaSource(new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(sourceFactory)
+            androidx.media3.datasource.DataSource.Factory fileFactory =
+                    parallel != null ? ParallelSources.files(sourceFactory, parallel) : sourceFactory;
+            player.setMediaSource(new androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(fileFactory)
                     .createMediaSource(MediaItem.fromUri(candidate)));
         } else {
-            player.setMediaSource(new HlsMediaSource.Factory(sourceFactory).createMediaSource(item));
+            HlsMediaSource.Factory hlsFactory = parallel != null
+                    ? new HlsMediaSource.Factory(ParallelSources.hls(sourceFactory, parallel))
+                    : new HlsMediaSource.Factory(sourceFactory);
+            player.setMediaSource(hlsFactory.createMediaSource(item));
         }
         player.prepare();
         if (pendingResumeMs >= 5000L) player.seekTo(pendingResumeMs);
@@ -6098,6 +6309,7 @@ public final class DirectStreamPlayer {
             player.release();
             player = null;
         }
+        closeParallel();   // 322.3.128
 
         exitImmersive();
 

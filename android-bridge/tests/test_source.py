@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 136" in gradle
-assert "versionName '322.3.127'" in gradle
+assert "versionCode 137" in gradle
+assert "versionName '322.3.128'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -993,8 +993,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 136' in mv107
-assert "versionCode 136" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 137' in mv107
+assert "versionCode 137" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1151,7 +1151,7 @@ assert 'if (!(autoActive() && autoMore)) return;' in ap          # never the las
 assert 'static final int OWN_NONE = 0, OWN_FILE = 1, OWN_PAGE = 2;' in d112
 assert 'if (this.ownKind == OWN_FILE) handler.post(this::beginOwnFile);' in d112
 assert '(ownKind == OWN_PAGE && isOwnWorkerMedia(r.getUrl()))' in d112
-assert 'ProgressiveMediaSource.Factory(sourceFactory)' in d112 and 'if ((ownKind != OWN_NONE || capturedFiles.contains(candidate)) && !looksLikeHls(candidate))' in d112   # 322.3.127: + files taken from the page
+assert 'ProgressiveMediaSource.Factory(fileFactory)' in d112 and 'if ((ownKind != OWN_NONE || capturedFiles.contains(candidate)) && !looksLikeHls(candidate))' in d112   # 322.3.127: + files taken from the page; 322.3.128: in parts
 assert 'public void mediaFound(String token, String rawUrl)' in d112
 assert 'final boolean ownFlow = "ownfile".equals(mode) || "ownpage".equals(mode);' in m112
 assert 'if (HOME_HOST.equalsIgnoreCase(oh)) return;' in m112
@@ -1765,3 +1765,65 @@ assert "launch: function (key) { openSession({ movieId: mid, kind: 'movie' }, ke
 ac127j = open('app/src/main/assets/auto_chain.js', encoding='utf-8').read()
 assert "if (typeof c.launch === 'function') {" in ac127j and "if (typeof c.onResult === 'function') {" in ac127j
 print('322.3.127 auto servers checks OK')
+
+# 322.3.128: several connections at once for the servers' links, the owner's speed line,
+# and a longer wait only for the last server.
+d128 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+m128 = open('app/src/main/java/com/artaq/subhub/MainActivity.java', encoding='utf-8').read()
+pl128 = open('app/src/main/java/com/artaq/subhub/ParallelLoad.java', encoding='utf-8').read()
+ps128 = open('app/src/main/java/com/artaq/subhub/ParallelSources.java', encoding='utf-8').read()
+def body128(sig, src=None, end='\n    }\n'):
+    t = d128 if src is None else src
+    i = t.index(sig)
+    return t[i:t.index(end, i) + len(end)]
+# the core is plain Java (tested with javac in the CI); the Media3 side is apart
+assert 'import android' not in pl128 and 'import androidx' not in pl128
+assert 'static final int DEFAULT_CONNECTIONS = 3;' in pl128 and 'static final int MAX_CONNECTIONS = 4;' in pl128
+assert 'return c == 3 ? 4 : c == 4 ? 1 : 3;' in pl128   # the owner's switch 3 → 4 → 1
+assert 'static final int REFUSALS_TO_STOP = 1;' in pl128 and 'static final long REFUSE_FOR_MS = 3L * 24 * 60 * 60 * 1000;' in pl128
+assert 'awaitSettled(gone, SETTLE_MS);' in pl128          # one connection only after the dropped ones closed
+assert 'window.loadAhead();   // its connection is open: the next pieces now' in ps128
+assert '@UnstableApi\nfinal class ParallelSources {' in ps128
+assert 'import androidx.annotation' not in ps128            # not on the app's compile path
+assert 'if (dataType == C.DATA_TYPE_MANIFEST) return new Tap(base.createDataSource(), segments);' in ps128
+assert 'if (dataType == C.DATA_TYPE_MEDIA) return new Media(upstream, segments.window());' in ps128
+assert 'refs.add(new ParallelLoad.Ref(UriUtil.resolveToUri(m.baseUri, s.url).toString(),' in ps128   # the player's own piece address
+assert 'h.put("Range", "bytes=" + start + "-" + (end >= 0 ? String.valueOf(end) : ""));' in ps128     # our Range: nothing skipped
+assert 'window.calm(u, h.piece);' in ps128
+# wiring: the servers' links only (our own files as before), counted, released after the player
+ex128 = body128('    private void startExoPlayer(String userAgent, String referer, String origin) {')
+assert 'loadCounter = new ParallelSources.Counter();\n        http.setTransferListener(loadCounter);' in ex128
+assert 'if (ownKind == OWN_NONE) parallel = new ParallelLoad.Session(parallelChoice(), parallelHosts());' in ex128
+assert 'parallel != null ? ParallelSources.files(sourceFactory, parallel) : sourceFactory;' in ex128
+assert '? new HlsMediaSource.Factory(ParallelSources.hls(sourceFactory, parallel))\n                    : new HlsMediaSource.Factory(sourceFactory);' in ex128
+assert 'if (openedInMs < 0L) openedInMs = SystemClock.elapsedRealtime() - createdAt;' in ex128
+cl128 = body128('    private void cleanupPlayerForRetry() {')
+assert cl128.index('player.release()') < cl128.index('closeParallel();')
+assert 'closeParallel();   // 322.3.128' in body128('    public void close() {')
+assert 'handler.post(loadTick);   // 322.3.128' in d128
+pc128 = body128('    private int parallelChoice() {')
+assert 'if (!ownerMode) return ParallelLoad.DEFAULT_CONNECTIONS;' in pc128   # viewers: always three
+assert 'p.getLong("par_off_" + host, 0L) > System.currentTimeMillis()' in d128
+# the owner's line: speed, average, loaded ahead, connections (working now), open time; tap switches
+sm128 = body128('    private void updateSpeedMeter() {')
+assert 'if (!ownerMode || closed) return;' in sm128
+assert '"⬇ %.1f ميجا/ث"' in sm128 and '" · متوسط %.1f"' in sm128 and '" · محمّل %d:%02d"' in sm128
+assert '"%d اتصالات (شغّال %d)"' in sm128 and '"اتصال واحد — السيرفر رفض أكثر"' in sm128 and '" · فتح خلال %.1f ث"' in sm128
+assert 'boolean hide = menuOpen || panelOpen;' in sm128
+assert 'v.setOnClickListener(x -> cycleConnections());' in body128('    private void ensureSpeedMeter() {')
+cc128 = body128('    private void cycleConnections() {')
+assert 'prefs.edit().putInt(PARALLEL_OWNER_KEY, n).apply();' in cc128 and 'if (s != null) s.setConnections(n);' in cc128
+# 15 s stay the rule; the longer wait only with no other server, and only while data comes
+st128 = body128('    private void subscriberStartupTick(int generation) {')
+assert 'if (subscriberStartupPhase >= 6 && lastResort() && dataFlowing()\n                && SystemClock.elapsedRealtime() - phaseStartedAt < LAST_RESORT_MS) {' in st128
+assert st128.index('lastResort() && dataFlowing()') < st128.index('retrySubscriberStartup();')
+assert 'static final long LAST_RESORT_MS = 60_000L;' in d128
+assert 'else if (phase >= 5) timeoutMs = 15000L;' in d128   # unchanged
+lr128 = body128('    private boolean lastResort() {')
+assert 'return autoActive() ? !autoMore : onlyServer;' in lr128 and 'if (interactiveSource || closed) return false;' in lr128
+assert 'directStreamPlayer.setOnlyServer(config.optBoolean("onlyServer", false));' in m128
+al128 = open('app/src/main/assets/app_list_stream.js', encoding='utf-8').read()
+assert "onlyServer: !owner && !!item && items.length === 1," in al128
+wf128 = open('../.github/workflows/build-subhub-bridge.yml', encoding='utf-8').read()
+assert 'tests/ParallelLoadTest.java' in wf128
+print('322.3.128 several connections checks OK')

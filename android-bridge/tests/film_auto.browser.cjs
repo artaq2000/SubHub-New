@@ -8,6 +8,8 @@
 //  - one place per film: the list sends the film's key (not the server's) and the site's
 //    place for the film; the app's reports write it (finished = removed);
 //  - one server only / the owner: no automatic button.
+//  - 322.3.128: the player is told when a server is the film's only one (it may wait longer
+//    while the video still comes); never in the automatic search or with several servers.
 const {chromium} = require('playwright');
 const fs = require('fs'), path = require('path'), assert = require('assert');
 const A = p => fs.readFileSync(path.join(__dirname, '../app/src/main/assets', p), 'utf8');
@@ -100,6 +102,7 @@ window.SubHubAndroidBridge = {
   assert.equal(o.filmProgress.resumeMs, 2400000, 'the site\'s place goes with it');
   assert.ok(o.filmProgress.at > 0);
   assert.equal(o.site, 'fbox');
+  assert.equal(o.onlyServer, false, 'three servers: not the only one');
   const chainId = st.arms[0].chain;
   // the app: the player opened, VidFast does not play → closed, next
   await page.evaluate(c => window.__subhubAutoOpenedV3110(c, 0), chainId);
@@ -153,6 +156,7 @@ window.SubHubAndroidBridge = {
   assert.equal(o.serverLabel, 'vidnest');
   assert.equal(o.titleKey, 'tmdb_movie_12345');
   assert.equal(o.filmProgress.resumeMs, 0, 'finished: no place');
+  assert.equal(o.onlyServer, false, 'chosen by hand among three: others remain');
   await page.evaluate(s => window.__subhubDirectClosed(s), o.session);
 
   // ---- another film with ONE server: no automatic button, its button shown
@@ -165,6 +169,13 @@ window.SubHubAndroidBridge = {
   assert.equal(await page.locator('#subhub-appauto-btn').count(), 0);
   assert.equal(await page.locator('#subhub-appchoose-btn').count(), 0);
   assert.equal(await hiddenCount(), 0, 'its button is shown');
+  // its only server: the player may wait longer while the video still comes (322.3.128)
+  await page.locator('#subhub-applist-btn-z9').click();
+  await page.waitForFunction(() => window.opens.length === 6);
+  o = await page.evaluate(() => window.opens[5]);
+  assert.equal(o.serverLabel, 'VidFast');
+  assert.equal(o.onlyServer, true, 'the film\'s only app server');
+  await page.evaluate(s => window.__subhubDirectClosed(s), o.session);
   // back to the first film: the chooser starts closed again
   await page.evaluate(() => {
     currentMovie = {id: 'tmdb_movie_12345', title: 'The Cycle'};

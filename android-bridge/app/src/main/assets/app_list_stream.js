@@ -763,6 +763,9 @@
           ? H().episodeList(ctx.movieId, ctx.season, ctx.episode) : [],
         interactiveSource: owner && !auto,
         ownerMode: owner,
+        // 322.3.128: the only app server of this film / episode — no other server to go to,
+        // so the player may wait longer while the video's data still comes.
+        onlyServer: !owner && !!item && items.length === 1,
         openChooser: owner && !auto && hadPage,
         serverKey: auto ? item.key : '',
         serverLabel: auto ? item.label : '',

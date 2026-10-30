@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.127 auto servers
+name: Build TEST SubHub 322.3.128 parallel loading
 
 on:
   push:
     branches:
-      - 'test/auto-servers-322.3.127'
+      - 'test/parallel-322.3.128'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -166,6 +166,12 @@ jobs:
           javac -d /tmp/subhub-stall-tests app/src/main/java/com/artaq/subhub/StallGuard.java tests/StallGuardTest.java
           java -cp /tmp/subhub-stall-tests com.artaq.subhub.StallGuardTest
 
+      - name: Test loading on several connections (HLS pieces ahead, file parts, refusals)
+        run: |
+          mkdir -p /tmp/subhub-parallel-tests
+          javac -d /tmp/subhub-parallel-tests app/src/main/java/com/artaq/subhub/ParallelLoad.java tests/ParallelLoadTest.java
+          java -cp /tmp/subhub-parallel-tests com.artaq.subhub.ParallelLoadTest
+
       - name: Test episode timing (next episode + smart waiting)
         run: |
           mkdir -p /tmp/subhub-timing-tests
@@ -211,8 +217,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='136'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.127'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='137'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.128'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -220,12 +226,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.127-auto-servers.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.128-parallel.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.127-auto-servers
-          path: SubHub-322.3.127-auto-servers.apk
+          name: SubHub-322.3.128-parallel
+          path: SubHub-322.3.128-parallel.apk
           retention-days: 7
 
       - name: Remove signing key from runner

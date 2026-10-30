@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
     // be offered «تحديث متوفر» for itself every day). What reaches subscribers is
     // still only what the owner publishes in R2 releases. These constants are the
     // fallback if the package manager cannot answer.
-    private static final int NATIVE_VERSION_CODE_FALLBACK = 136;
+    private static final int NATIVE_VERSION_CODE_FALLBACK = 137;
     private int installedVersionCode = -1;
     private String installedVersionName = null;
 
@@ -2647,6 +2647,8 @@ public class MainActivity extends Activity {
                     });
                     directStreamPlayer.setSubtitleOffsetMs(config.optLong("subtitleOffsetMs", 0L));
                     directStreamPlayer.setSyncScope(syncScopeValue);
+                    // 322.3.128: the film's only app server — it may wait longer while the video comes.
+                    directStreamPlayer.setOnlyServer(config.optBoolean("onlyServer", false));
                     // 322.3.123: the names system of this page, and the page scripts (move notices,
                     // the site's pop-ups) — set before the fallback names, which use them.
                     directStreamPlayer.setSiteFamily(siteFamily);
