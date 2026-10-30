@@ -42,8 +42,8 @@ assert '_onlyflixUseTimeV317' in site
 print('source checks OK')
 
 gradle=(root/'app/build.gradle').read_text(encoding='utf-8')
-assert "versionCode 134" in gradle
-assert "versionName '322.3.125'" in gradle
+assert "versionCode 135" in gradle
+assert "versionName '322.3.126'" in gradle
 assert 'SubHubNativeResumeV3257' in site
 assert 'wakeVidSrcPlaybackV3256' in site
 assert 'vidSrcWakeRetryCountV3257' in site
@@ -539,7 +539,8 @@ assert 'applySubscriberProbePreviewLayout' in direct
 assert 'new FrameLayout.LayoutParams(dp(320), dp(180), Gravity.CENTER)' in direct
 assert 'probe.setAlpha(interactiveSource ? 1.0f : 0.0f)' in direct
 assert 'probe.setBackgroundColor(Color.BLACK)' in direct
-assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
+assert 'اضغط داخل شاشة الفيديو للتشغيل.' not in direct   # 322.3.126: their page is never shown — our button instead
+assert 'showCoverTapButton();' in direct
 assert 'subscriberStartupPhase <= 4 && probe != null' in direct
 assert 'if (phase == 4) timeoutMs = 30000L' in direct
 assert 'root.post(this::applySubscriberProbePreviewLayout)' in direct
@@ -559,9 +560,10 @@ assert "__subhub_player_host" in direct
 assert "document.querySelectorAll('iframe[src],video')" in direct
 assert "e.style.cssText+=" in direct
 assert "if(e.parentNode!==h)h.appendChild(e)" in direct
-assert 'probe.setAlpha(subscriberProviderVisible ? 1.0f : 0.0f)' in direct
+assert 'probe.setAlpha(subscriberProviderVisible && directCover != null ? 1.0f : 0.0f)' in direct   # 322.3.126: only under our screen
 assert 'setTimeout(kick,120)' in direct
-assert 'اضغط داخل شاشة الفيديو للتشغيل.' in direct
+assert 'اضغط داخل شاشة الفيديو للتشغيل.' not in direct   # 322.3.126: their page is never shown — our button instead
+assert 'showCoverTapButton();' in direct
 
 
 # 322.3.76: keep subtitle timing on ExoPlayer content time and save the
@@ -989,8 +991,8 @@ assert 'private int nativeVersionCode()' in mv107 and 'getLongVersionCode()' in 
 assert 'd.optInt("versionCode", 0) > nativeVersionCode()' in mv107
 assert '"/latest?current=" + nativeVersionCode()' in mv107
 assert 'NATIVE_VERSION_CODE = 109' not in mv107
-assert 'NATIVE_VERSION_CODE_FALLBACK = 134' in mv107
-assert "versionCode 134" in open('app/build.gradle', encoding='utf-8').read()
+assert 'NATIVE_VERSION_CODE_FALLBACK = 135' in mv107
+assert "versionCode 135" in open('app/build.gradle', encoding='utf-8').read()
 print('322.3.107 real version checks OK')
 
 # 322.3.108: no "server's own player" fallback (owner: viewers gain nothing
@@ -1626,3 +1628,45 @@ assert "return 'none';" in gst125 and "return 'press';" in gst125 and "return 'w
 assert 'challenges.cloudflare.com' in gst125 and '!e.disabled' in gst125
 assert 'private String gatePresentScript()' not in d125
 print('322.3.125 check restart checks OK')
+
+# 322.3.126: hidden capture — the viewer never sees the provider page or its ads; our own
+# «▶ اضغط هنا لتشغيل الفيديو» passes the press to it; captured links are looked at first.
+d126 = open('app/src/main/java/com/artaq/subhub/DirectStreamPlayer.java', encoding='utf-8').read()
+def body126(sig):
+    i = d126.index(sig); j = d126.index('\n    }\n', i)
+    return d126[i:j]
+assert 'if (interactiveSource || closed || playbackReady) return;   // 322.3.126: every viewer start' in body126('    private void showDirectCover() {')
+assert 'chip("▶ اضغط هنا لتشغيل الفيديو", 16, this::coverTapPressed)' in body126('    private void showDirectCover() {')
+assert 'coverTapButton.setVisibility(View.GONE);' in body126('    private void showDirectCover() {')
+bc126 = body126('    private void beginCapture() {')
+assert 'directKickRounds = 0;   // 322.3.126' in bc126
+assert 'showDirectCover();\n                root.post(this::applySubscriberProbePreviewLayout);\n                startSubscriberStartupTimer(1);' in bc126
+assert 'ensureViewerCover();\n                            subscriberProviderVisible = true;' in bc126
+assert 'probe.setAlpha(subscriberProviderVisible && directCover != null ? 1.0f : 0.0f);' in body126('    private void applySubscriberProbePreviewLayout() {')
+sk126 = body126('    private void scheduleDirectKick(WebView v) {')
+assert 'if (interactiveSource) return;' in sk126 and 'directEmbedUrl.isEmpty()' not in sk126
+sr126 = body126('    private void scheduleDirectReveal(WebView v) {')
+assert 'showCoverTapButton();' in sr126 and 'removeDirectCover();' not in sr126 and 'showStage(' not in sr126
+assert 'if (directCover == null || linkChecksRunning > 0) return;' in sr126
+st126 = body126('    private void subscriberStartupTick(int generation) {')
+assert 'showCoverTapButton();' in st126 and 'removeDirectCover();\n            showStage' not in st126
+assert 'if (linkChecksRunning > 0) {' in st126
+assert 'اضغط داخل الفيديو للتشغيل.' not in d126 and 'اضغط داخل شاشة الفيديو للتشغيل.' not in d126
+ev126 = body126('    private void ensureViewerCover() {')
+assert 'if (interactiveSource || closed || playing || playbackReady || gateShown) return;' in ev126
+assert 'ensureViewerCover();   // 322.3.126' in body126('    private void gateResume() {')
+ct126 = body126('    private void coverTapPressed() {')
+assert 'providerPlayScript()' in ct126 and 'dispatchProviderTap(0.5d, 0.5d);' in ct126 and 'startSubscriberStartupTimer(4);' in ct126
+assert 'checkCapturedLink(url, headers);' in body126('    private void capture(String url, Map<String,String> headers) {')
+cl126 = body126('    private void checkCapturedLink(final String url, Map<String,String> headers) {')
+assert 'if (!linkChecked.add(url)) return;' in cl126 and 'CapturedLinkCheck.verdict(url' in cl126
+assert 'CookieManager.getInstance().getCookie(u)' in cl126 and 'acceptCapture(url, h);' in cl126
+assert 'if (ownerMode || interactiveSource) showTransientValue' in cl126
+assert 'private void acceptCapture(String url, Map<String,String> headers) {' in d126
+assert 'linkCheckGen.incrementAndGet();\n        linkChecked.clear();\n        linkChecksRunning = 0;' in body126('    private void cleanupPlayerForRetry() {')
+assert 'linkCheckExec.shutdownNow();' in body126('    public void close() {')
+assert 'gateDone();   // 322.3.122: the video came, so the check passed — its card goes\n        linkCheckGen.incrementAndGet();' in d126
+clc126 = open('app/src/main/java/com/artaq/subhub/CapturedLinkCheck.java', encoding='utf-8').read()
+assert 'static final double MIN_FILM_SECONDS = 180.0;' in clc126 and 'import android' not in clc126
+assert '"#EXT-X-STREAM-INF"' in clc126 and 'static String verdict(String url, Fetcher fetch)' in clc126
+print('322.3.126 hidden capture checks OK')

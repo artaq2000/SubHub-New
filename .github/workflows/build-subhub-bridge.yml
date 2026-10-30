@@ -1,9 +1,9 @@
-name: Build TEST SubHub 322.3.125 check restart
+name: Build TEST SubHub 322.3.126 hidden capture
 
 on:
   push:
     branches:
-      - 'test/check-restart-322.3.125'
+      - 'test/hidden-capture-322.3.126'
     paths:
       - 'android-bridge/**'
       - '.github/workflows/build-subhub-bridge.yml'
@@ -142,6 +142,12 @@ jobs:
           javac -d /tmp/subhub-namecheck-tests app/src/main/java/com/artaq/subhub/NameCheckRules.java tests/NameCheckRulesTest.java
           java -cp /tmp/subhub-namecheck-tests NameCheckRulesTest
 
+      - name: Test captured link check (short clips skipped before playing)
+        run: |
+          mkdir -p /tmp/subhub-linkcheck-tests
+          javac -d /tmp/subhub-linkcheck-tests app/src/main/java/com/artaq/subhub/CapturedLinkCheck.java tests/CapturedLinkCheckTest.java
+          java -cp /tmp/subhub-linkcheck-tests com.artaq.subhub.CapturedLinkCheckTest
+
       - name: Test episode timing (next episode + smart waiting)
         run: |
           mkdir -p /tmp/subhub-timing-tests
@@ -187,8 +193,8 @@ jobs:
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/35.0.0/apksigner"
           test -f "$APK"
           "$AAPT" dump badging "$APK" | grep "package: name='com.artaq.subhub.bridge'"
-          "$AAPT" dump badging "$APK" | grep "versionCode='134'"
-          "$AAPT" dump badging "$APK" | grep "versionName='322.3.125'"
+          "$AAPT" dump badging "$APK" | grep "versionCode='135'"
+          "$AAPT" dump badging "$APK" | grep "versionName='322.3.126'"
           EXPECTED="D24EEB8926927AC174EB1BE67D410A8C389CABE5F36EA2A1A53281DA300AF0E3"
           ACTUAL="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr '[:lower:]' '[:upper:]' | tr -d ':')"
           echo "Expected signing SHA-256: $EXPECTED"
@@ -196,12 +202,12 @@ jobs:
           test "$ACTUAL" = "$EXPECTED"
 
       - name: Prepare yellow direct-stream test APK
-        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.125-check-restart.apk
+        run: cp app/build/outputs/apk/release/app-release.apk ../SubHub-322.3.126-hidden-capture.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SubHub-322.3.125-check-restart
-          path: SubHub-322.3.125-check-restart.apk
+          name: SubHub-322.3.126-hidden-capture
+          path: SubHub-322.3.126-hidden-capture.apk
           retention-days: 7
 
       - name: Remove signing key from runner

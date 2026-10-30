@@ -244,8 +244,19 @@ public final class DirectStreamPlayer {
     }
     private int directKickRounds = 0;
     // 322.3.80: clean SubHub cover over the hidden provider page (direct mode only).
+    // 322.3.126: over every start for the viewer — the provider page is never shown.
     private FrameLayout directCover;
     private TextView directCoverStage;
+    // 322.3.126: our own «▶ اضغط هنا لتشغيل الفيديو» on that screen; it passes the
+    // press to the hidden page instead of showing the page and its ads.
+    private TextView coverTapButton;
+    private int coverTapGeneration = 0;
+    // 322.3.126: captured links are looked at one by one (CapturedLinkCheck) before one plays.
+    private java.util.concurrent.ExecutorService linkCheckExec;
+    private final java.util.concurrent.atomic.AtomicInteger linkCheckGen = new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.HashSet<String> linkChecked = new java.util.HashSet<>();
+    private int linkChecksRunning = 0;
+    private int linkSkipped = 0;
     private final ArrayList<android.animation.Animator> coverAnimators = new ArrayList<>();
     private int directRevealGeneration = 0;
     private boolean chooserAutoRequested = false;
@@ -1867,6 +1878,7 @@ public final class DirectStreamPlayer {
     private void gateResume() {
         if (!gateShown || closed) return;
         hideGate();
+        ensureViewerCover();   // 322.3.126: the search goes on behind our screen
         startSubscriberStartupTimer(Math.max(2, subscriberStartupPhase));
         // The page behind the check gets its own few seconds to show its servers (the
         // wait counted from the check page could end just as the viewer passed it).
@@ -2337,6 +2349,12 @@ public final class DirectStreamPlayer {
             handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
             return;
         }
+        // 322.3.126: a captured link is being looked at — its answer comes first.
+        if (linkChecksRunning > 0) {
+            subscriberStartupDeadlineMs = SystemClock.elapsedRealtime() + 3000L;
+            handler.postDelayed(() -> subscriberStartupTick(generation), 1000L);
+            return;
+        }
 
         if (firstFailureReason.isEmpty()) {
             firstFailureReason = "انتهت المهلة عند «" + startupStageText(subscriberStartupPhase) + "»";
@@ -2350,8 +2368,9 @@ public final class DirectStreamPlayer {
             subscriberStartupGeneration++;
             final int tapGeneration = subscriberStartupGeneration;
             stopSubscriberStageAnimation();
-            removeDirectCover();
-            showStage("اضغط داخل شاشة الفيديو للتشغيل.");
+            // 322.3.126: the page is never shown (no «اضغط داخل شاشة الفيديو» on their
+            // player with its ads) — our own button passes the press to it instead.
+            showCoverTapButton();
             handler.postDelayed(() -> {
                 if (closed || interactiveSource || playbackReady || tapGeneration != subscriberStartupGeneration) return;
                 retrySubscriberStartup();
@@ -2404,6 +2423,10 @@ public final class DirectStreamPlayer {
         vidnestStreams.clear();
         vidnestListShown = false;
         vidnestEvalPending = false;
+        // 322.3.126: links still being looked at belong to the old try.
+        linkCheckGen.incrementAndGet();
+        linkChecked.clear();
+        linkChecksRunning = 0;
     }
 
     private void retrySubscriberStartup() {
@@ -3179,7 +3202,8 @@ public final class DirectStreamPlayer {
                 Gravity.CENTER
         );
         probe.setLayoutParams(lp);
-        probe.setAlpha(subscriberProviderVisible ? 1.0f : 0.0f);
+        // 322.3.126: drawn only while our screen is over it — never shown to the viewer.
+        probe.setAlpha(subscriberProviderVisible && directCover != null ? 1.0f : 0.0f);
         probe.setVisibility(View.VISIBLE);
         probe.setBackgroundColor(Color.BLACK);
         probe.bringToFront();
@@ -3201,6 +3225,7 @@ public final class DirectStreamPlayer {
         } else {
             if (subscriberStartupAttempt == 0) subscriberStartupAttempt = 1;
             if (subscriberStartupAttempt > 1) showSubscriberStage("جارٍ إعادة المحاولة");
+            directKickRounds = 0;   // 322.3.126: each try gets its own taps
         }
         probe = new WebView(activity);
         probe.setClickable(true);
@@ -3252,6 +3277,9 @@ public final class DirectStreamPlayer {
                         }
                         handler.postDelayed(() -> {
                             if (closed || probe == null || v != probe) return;
+                            // 322.3.126: the provider page is drawn (its player needs it) but
+                            // only under our screen — the viewer never sees it or its ads.
+                            ensureViewerCover();
                             subscriberProviderVisible = true;
                             applySubscriberProbePreviewLayout();
                             try { v.evaluateJavascript(providerPlayScript(), null); } catch (Exception ignored) {}
@@ -3461,6 +3489,9 @@ public final class DirectStreamPlayer {
             if (interactiveSource) {
                 showManualServerButton();
             } else {
+                // 322.3.126: our screen from the first step (the servers page, the server,
+                // its player) until the video plays — the viewer sees none of their pages.
+                showDirectCover();
                 root.post(this::applySubscriberProbePreviewLayout);
                 startSubscriberStartupTimer(1);
             }
@@ -3478,7 +3509,9 @@ public final class DirectStreamPlayer {
     // times (the first taps hit an invisible ad layer). Keep tapping the play
     // target every few seconds until the stream is captured.
     private void scheduleDirectKick(WebView v) {
-        if (directEmbedUrl.isEmpty()) return;
+        // 322.3.126: every viewer start (not only the saved player link) — the page is
+        // hidden, so these taps (and our button after them) are the only ones it gets.
+        if (interactiveSource) return;
         if (tapRuleTaps >= 0) {   // 322.3.123: the owner's «⚙️» taps are the whole plan
             if (directKickRounds == 0) {
                 directKickRounds = 3;
@@ -3500,26 +3533,26 @@ public final class DirectStreamPlayer {
 
     // If the automatic taps did not start the video within a few seconds, show
     // the provider player so the viewer can tap it once by hand.
+    // 322.3.126: the provider player is no longer shown — our own button
+    // («▶ اضغط هنا لتشغيل الفيديو») on our screen passes the viewer's press to it.
+    // The time limit keeps running: no press, and the next try / message comes.
     private void scheduleDirectReveal(WebView v) {
         directRevealGeneration++;
         final int generation = directRevealGeneration;
         handler.postDelayed(() -> {
             if (generation != directRevealGeneration || closed || playing
                     || candidate != null || probe == null || v != probe) return;
-            if (directCover == null) return;
+            if (directCover == null || linkChecksRunning > 0) return;
             if (autoActive() && autoMore) return;   // 322.3.110: the next server comes instead
-            subscriberStartupGeneration++;
-            stopSubscriberStageAnimation();
-            removeDirectCover();
-            showStage("اضغط داخل الفيديو للتشغيل.");
-        }, 7000L);
+            showCoverTapButton();
+        }, 8000L);
     }
 
     // 322.3.81: animated SubHub loading screen. Letters rise in one by one,
     // the name then pulses softly, three gold dots bounce, and the real stage
     // text sits under them (no separate box) until the video starts.
     private void showDirectCover() {
-        if (directEmbedUrl.isEmpty() || interactiveSource || closed) return;
+        if (interactiveSource || closed || playbackReady) return;   // 322.3.126: every viewer start
         removeDirectCover();
         directCover = new FrameLayout(activity);
         directCover.setBackgroundColor(Color.BLACK);
@@ -3593,6 +3626,14 @@ public final class DirectStreamPlayer {
         stageLp.topMargin = dp(10);
         column.addView(directCoverStage, stageLp);
 
+        // 322.3.126: shown only when the hidden page needs a press (see showCoverTapButton).
+        coverTapButton = chip("▶ اضغط هنا لتشغيل الفيديو", 16, this::coverTapPressed);
+        coverTapButton.setBackground(round(0xff12301d, 0xff22c55e, 1, 14));
+        coverTapButton.setVisibility(View.GONE);
+        LinearLayout.LayoutParams tapLp = new LinearLayout.LayoutParams(dp(270), dp(48));
+        tapLp.topMargin = dp(18);
+        column.addView(coverTapButton, tapLp);
+
         directCover.addView(column, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
         root.addView(directCover, new FrameLayout.LayoutParams(-1, -1));
         directCover.bringToFront();
@@ -3623,6 +3664,8 @@ public final class DirectStreamPlayer {
         directRevealGeneration++;
         stopCoverAnimators();
         directCoverStage = null;
+        coverTapButton = null;
+        coverTapGeneration++;
         if (directCover != null) {
             ViewGroup parent = (ViewGroup) directCover.getParent();
             if (parent != null) parent.removeView(directCover);
@@ -3636,6 +3679,8 @@ public final class DirectStreamPlayer {
         if (cover == null) return;
         directCover = null;
         directCoverStage = null;
+        coverTapButton = null;
+        coverTapGeneration++;
         directRevealGeneration++;
         cover.setClickable(false);
         cover.animate().alpha(0f).setDuration(380L).withEndAction(() -> {
@@ -3645,7 +3690,92 @@ public final class DirectStreamPlayer {
         }).start();
     }
 
+    // 322.3.126: the viewer's start always runs behind our screen (it can be gone after
+    // their check card, or a page that loaded while it was away).
+    private void ensureViewerCover() {
+        if (interactiveSource || closed || playing || playbackReady || gateShown) return;
+        if (directCover == null) showDirectCover();
+    }
+
+    // 322.3.126: the hidden page needs a press — our button, never their page.
+    private void showCoverTapButton() {
+        if (closed || playing || interactiveSource || probe == null) return;
+        ensureViewerCover();
+        if (coverTapButton == null) return;
+        setDirectCoverStage("السيرفر يحتاج ضغطة لتشغيل الفيديو");
+        coverTapButton.setVisibility(View.VISIBLE);
+    }
+
+    // The viewer's press → the hidden page: its own play button (found in the page),
+    // then the middle of its player. A fresh time for this step; our button again
+    // after a few seconds if still nothing came.
+    private void coverTapPressed() {
+        if (closed || playing || probe == null || candidate != null) return;
+        if (coverTapButton != null) coverTapButton.setVisibility(View.GONE);
+        final int gen = ++coverTapGeneration;
+        final WebView pv = probe;
+        directKickRounds = 0;
+        try {
+            pv.evaluateJavascript("window.__subhubProviderKickV3265=false;" + providerPlayScript(), null);
+        } catch (Exception ignored) {}
+        dispatchProviderTap(0.5d, 0.5d);
+        startSubscriberStartupTimer(4);
+        handler.postDelayed(() -> {
+            if (gen != coverTapGeneration || closed || playing || candidate != null
+                    || probe != pv || linkChecksRunning > 0) return;
+            if (autoActive() && autoMore) return;
+            showCoverTapButton();
+        }, 9000L);
+    }
+
+    // 322.3.126: every m3u8 the page asks for is looked at before it plays — one at a
+    // time, in the page's order. A short complete clip (an ad, the site's intro) is
+    // skipped and the capture goes on; anything that cannot be judged plays as before.
     private void capture(String url, Map<String,String> headers) {
+        if (closed || playing) return;
+        if (url != null && url.toLowerCase(Locale.ROOT).contains(".m3u8")) {
+            checkCapturedLink(url, headers);
+            return;
+        }
+        acceptCapture(url, headers);
+    }
+
+    private void checkCapturedLink(final String url, Map<String,String> headers) {
+        if (!linkChecked.add(url)) return;   // each link once
+        if (linkCheckExec == null) linkCheckExec = java.util.concurrent.Executors.newSingleThreadExecutor();
+        final int gen = linkCheckGen.get();
+        final Map<String,String> h = headers == null ? new HashMap<>() : new HashMap<>(headers);
+        linkChecksRunning++;
+        try {
+            linkCheckExec.execute(() -> {
+                if (gen != linkCheckGen.get()) return;   // the try is over (no post: counter reset)
+                String v;
+                try {
+                    v = CapturedLinkCheck.verdict(url, CapturedLinkCheck.http(h,
+                            u -> CookieManager.getInstance().getCookie(u)));
+                } catch (Throwable t) {
+                    v = "";
+                }
+                final String verdict = v;
+                handler.post(() -> {
+                    if (gen != linkCheckGen.get()) return;
+                    linkChecksRunning = Math.max(0, linkChecksRunning - 1);
+                    if (closed || playing) return;
+                    if (verdict.isEmpty()) {
+                        acceptCapture(url, h);
+                        return;
+                    }
+                    linkSkipped++;
+                    if (ownerMode || interactiveSource) showTransientValue("⏭ " + verdict, 1800);
+                });
+            });
+        } catch (Exception e) {   // no thread for it: as before, straight to the player
+            linkChecksRunning = Math.max(0, linkChecksRunning - 1);
+            acceptCapture(url, h);
+        }
+    }
+
+    private void acceptCapture(String url, Map<String,String> headers) {
         if (closed || playing) return;
         if (manualServerButton != null) manualServerButton.setVisibility(View.GONE);
         boolean first = candidate == null;
@@ -4305,6 +4435,8 @@ public final class DirectStreamPlayer {
         if (candidate == null || closed) return;
         playing = true;
         gateDone();   // 322.3.122: the video came, so the check passed — its card goes
+        linkCheckGen.incrementAndGet();   // 322.3.126: the rest of the queue is not needed
+        linkChecksRunning = 0;
         if (interactiveSource) showStage("جارٍ تشغيل الفيديو…");
         else startSubscriberStartupTimer(6);
 
@@ -5597,6 +5729,10 @@ public final class DirectStreamPlayer {
         hidePanel();
         destroyProbe();
         removeDirectCover();
+        if (linkCheckExec != null) {   // 322.3.126
+            linkCheckExec.shutdownNow();
+            linkCheckExec = null;
+        }
 
         persistResume(true);
         if (playerView != null) playerView.setPlayer(null);
