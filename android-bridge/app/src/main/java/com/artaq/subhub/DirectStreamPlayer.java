@@ -46,8 +46,11 @@ import androidx.media3.common.Tracks;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.ResolvingDataSource;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.hls.HlsMediaSource;
+import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection;
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector;
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
@@ -2432,6 +2435,7 @@ public final class DirectStreamPlayer {
         linkChecked.clear();
         linkChecksRunning = 0;
         capturedFiles.clear();   // 322.3.127
+        hideLowerHint();         // 322.3.127
     }
 
     private void retrySubscriberStartup() {
@@ -3907,15 +3911,160 @@ public final class DirectStreamPlayer {
         }
     }
 
+    // 322.3.127: the quality — every film starts at 720 (480 when there is no 720), the
+    // automatic choice stays at or under it, one quality down when it stalls (with a
+    // quick line saying where the trouble most likely is), back up when calm. A quality
+    // the viewer raised by hand is never lowered by itself: when it stalls the same way,
+    // a small card offers «⬇ خفّض إلى …» (StallGuard, a second one for his pick).
+    private final StallGuard stallGuard = new StallGuard();
+    private final StallGuard manualGuard = new StallGuard();
+    private boolean manualQuality = false;
+    private long stallBeganAt = 0L;
+    private long lastSeekAt = 0L;
+    private int stallGeneration = 0;
+    private long lastCalmCheckAt = 0L;
+    private LinearLayout lowerHint;
+
+    private void noteStall() {
+        if (player == null || closed || !playbackReady || stallBeganAt > 0L) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastSeekAt < 4000L) return;   // the viewer moved in the film
+        stallBeganAt = now;
+        final int gen = ++stallGeneration;
+        final boolean byHand = manualQuality;
+        final StallGuard g = byHand ? manualGuard : stallGuard;
+        stallVerdict(g.onStall(now, playingHeight(), videoHeights()), byHand);
+        handler.postDelayed(() -> {
+            if (closed || player == null || gen != stallGeneration || stallBeganAt == 0L || manualQuality != byHand) return;
+            stallVerdict(g.onLongStall(SystemClock.elapsedRealtime(), playingHeight(), videoHeights()), byHand);
+        }, StallGuard.LONG_STALL_MS);
+    }
+
+    // A lower quality is due: «تلقائي» takes it with a quick line; a hand pick is offered it.
+    private void stallVerdict(int lower, boolean byHand) {
+        if (lower <= 0 || player == null) return;
+        String why = BandwidthMemory.slowReason(
+                bandwidthMeasured && bandwidthMeter != null ? bandwidthMeter.getBitrateEstimate() : 0L,
+                bandwidthBestKey.isEmpty() ? 0L : prefs.getLong(bandwidthBestKey, 0L));
+        if (byHand) {
+            showLowerHint(lower, why);
+            return;
+        }
+        setVideoCap(lower);
+        showTransientValue("⬇ " + lower + " — " + why, 2600);
+    }
+
+    private void showLowerHint(final int lower, String why) {
+        hideLowerHint();
+        if (root == null || closed) return;
+        LinearLayout box = new LinearLayout(activity);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(12), dp(10), dp(12), dp(10));
+        box.setBackground(round(0xee0b1725, 0xccF7BC3D, 1, 14));
+        box.setElevation(dp(26));
+        TextView t = new TextView(activity);
+        t.setText("الفيديو يعلّق — " + why);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(13);
+        box.addView(t, new LinearLayout.LayoutParams(-2, -2));
+        TextView b = chip("⬇ خفّض إلى " + lower, 13, () -> {
+            hideLowerHint();
+            pickHeight(lower);
+        });
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2);
+        blp.topMargin = dp(8);
+        box.addView(b, blp);
+        FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.END);
+        p.setMargins(dp(16), dp(16), dp(16), dp(76));
+        root.addView(box, p);
+        lowerHint = box;
+        final LinearLayout mine = box;
+        handler.postDelayed(() -> { if (lowerHint == mine) hideLowerHint(); }, 12000L);
+    }
+
+    private void hideLowerHint() {
+        if (lowerHint == null) return;
+        ViewGroup parent = (ViewGroup) lowerHint.getParent();
+        if (parent != null) parent.removeView(lowerHint);
+        lowerHint = null;
+    }
+
+    // The viewer took the offer: that height, still his own choice.
+    private void pickHeight(int height) {
+        if (player == null || closed) return;
+        for (Tracks.Group g : player.getCurrentTracks().getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_VIDEO) continue;
+            for (int i = 0; i < g.length; i++) {
+                if (!g.isTrackSupported(i) || g.getTrackFormat(i).height != height) continue;
+                player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
+                        .setOverrideForType(new TrackSelectionOverride(g.getMediaTrackGroup(), i))
+                        .clearVideoSizeConstraints()
+                        .build());
+                manualQuality = true;
+                manualGuard.begin(height, SystemClock.elapsedRealtime());
+                stallBeganAt = 0L;
+                stallGeneration++;
+                showTransientValue("⬇ " + height, 1200);
+                return;
+            }
+        }
+    }
+
+    // Every few seconds of smooth playback: back up one quality after calm minutes.
+    private void calmCheck() {
+        if (player == null || closed || manualQuality || stallBeganAt > 0L || !player.isPlaying()) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastCalmCheckAt < 5000L) return;
+        lastCalmCheckAt = now;
+        int up = stallGuard.onCalm(now, videoHeights());
+        if (up > 0) setVideoCap(up);
+    }
+
+    private void setVideoCap(int cap) {
+        if (player == null || cap <= 0) return;
+        player.setTrackSelectionParameters(player.getTrackSelectionParameters().buildUpon()
+                .setMaxVideoSize(Integer.MAX_VALUE, cap).build());
+    }
+
+    private int playingHeight() {
+        androidx.media3.common.Format f = player == null ? null : player.getVideoFormat();
+        return f == null || f.height <= 0 ? 0 : f.height;
+    }
+
+    /** The qualities (heights) this stream has. */
+    private int[] videoHeights() {
+        if (player == null) return new int[0];
+        java.util.TreeSet<Integer> set = new java.util.TreeSet<>();
+        for (Tracks.Group g : player.getCurrentTracks().getGroups()) {
+            if (g.getType() != C.TRACK_TYPE_VIDEO) continue;
+            for (int i = 0; i < g.length; i++) {
+                if (!g.isTrackSupported(i)) continue;
+                int h = g.getTrackFormat(i).height;
+                if (h > 0) set.add(h);
+            }
+        }
+        int[] out = new int[set.size()];
+        int k = 0;
+        for (Integer h : set) out[k++] = h;
+        return out;
+    }
+
     // 322.3.127: the speed the automatic quality starts from (BandwidthMemory).
     private DefaultBandwidthMeter bandwidthMeter;
     private String bandwidthKey = "";
+    private String bandwidthBestKey = "";   // the best speed lately here (for «where is the trouble»)
     private boolean bandwidthMeasured = false;
 
     private void saveBandwidth() {
         if (bandwidthMeter == null || bandwidthKey.isEmpty()) return;
         long v = BandwidthMemory.toSave(bandwidthMeter.getBitrateEstimate(), bandwidthMeasured);
-        if (v > 0) prefs.edit().putLong(bandwidthKey, v).apply();
+        if (v > 0) {
+            prefs.edit()
+                    .putLong(bandwidthKey, v)
+                    .putLong(bandwidthBestKey, BandwidthMemory.newBest(prefs.getLong(bandwidthBestKey, 0L), v))
+                    .apply();
+        }
         bandwidthMeasured = false;
     }
 
@@ -4648,16 +4797,38 @@ public final class DirectStreamPlayer {
         // 322.3.127: «تلقائي» starts from the speed this device measured last time on
         // this kind of connection (about 720p the first time), then follows the real
         // speed while playing, as before.
-        bandwidthKey = BandwidthMemory.key(networkKind());
+        String network = networkKind();
+        bandwidthKey = BandwidthMemory.key(network);
+        bandwidthBestKey = BandwidthMemory.bestKey(network);
         bandwidthMeasured = false;
         bandwidthMeter = new DefaultBandwidthMeter.Builder(activity)
                 .setInitialBitrateEstimate(BandwidthMemory.initial(prefs.getLong(bandwidthKey, 0L)))
                 .build();
         bandwidthMeter.addEventListener(handler, (elapsedMs, bytes, bitrate) -> bandwidthMeasured = true);
-        player = new ExoPlayer.Builder(activity).setBandwidthMeter(bandwidthMeter).build();
+        // 322.3.127: loads further ahead (2–2.5 minutes; less at the highest qualities,
+        // where memory limits it) and goes up a quality more carefully (60 % of the
+        // measured speed, 15 s loaded first) — servers that are slow on one connection.
+        DefaultTrackSelector selector = new DefaultTrackSelector(activity,
+                new AdaptiveTrackSelection.Factory(15_000, 25_000, 25_000, 0.6f));
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+                .setBufferDurationsMs(120_000, 150_000, 2_500, 5_000)
+                .build();
+        player = new ExoPlayer.Builder(activity)
+                .setBandwidthMeter(bandwidthMeter)
+                .setTrackSelector(selector)
+                .setLoadControl(loadControl)
+                .build();
+        // 322.3.127: every film starts at 720 (480 when there is no 720) and the automatic
+        // choice stays at or under it; StallGuard lowers it when it stalls.
+        manualQuality = false;
+        stallBeganAt = 0L;
+        stallGeneration++;
+        hideLowerHint();
+        stallGuard.begin(StallGuard.START_HEIGHT, SystemClock.elapsedRealtime());
         player.setTrackSelectionParameters(
                 player.getTrackSelectionParameters().buildUpon()
                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        .setMaxVideoSize(Integer.MAX_VALUE, stallGuard.cap())
                         .build()
         );
         player.setAudioAttributes(
@@ -4682,6 +4853,9 @@ public final class DirectStreamPlayer {
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_READY) {
+                    // 322.3.127: a stall (if any) is over.
+                    stallBeganAt = 0L;
+                    stallGeneration++;
                     playbackReady = true;
                     updateBottomRow();   // 322.3.115
                     if (autoActive() && !autoReported) {
@@ -4706,6 +4880,7 @@ public final class DirectStreamPlayer {
                         showTransientValue("تم تشغيل الفيديو", 700);
                     }
                 } else if (state == Player.STATE_BUFFERING) {
+                    noteStall();   // 322.3.127
                     if (interactiveSource) showStage("جارٍ تحميل الفيديو…");
                     else showSubscriberStage("جارٍ تشغيل الفيديو");
                 } else if (state == Player.STATE_ENDED) {
@@ -4714,6 +4889,12 @@ public final class DirectStreamPlayer {
                     // 322.3.112: the end came before the card (short credits): go on.
                     if (!nextLabel.isEmpty() && nextAuto && !nextCancelled && !interactiveSource) goNextEpisode();
                 }
+            }
+
+            @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
+                    Player.PositionInfo newPosition, int reason) {
+                // 322.3.127: a seek loads for a moment — that is not a stall.
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) lastSeekAt = SystemClock.elapsedRealtime();
             }
 
             @Override public void onPlayerError(PlaybackException error) {
@@ -4873,8 +5054,11 @@ public final class DirectStreamPlayer {
 
         ArrayList<String> labels = new ArrayList<>();
         ArrayList<TrackSelectionOverride> choices = new ArrayList<>();
-        labels.add("تلقائي");
+        ArrayList<Integer> heights = new ArrayList<>();   // 322.3.127
+        // 322.3.127: «تلقائي» = 720 and under (lower when the server stalls).
+        labels.add(String.format(new Locale("ar"), "تلقائي — حتى %d", StallGuard.START_HEIGHT));
         choices.add(null);
+        heights.add(0);
 
         for (Tracks.Group g : player.getCurrentTracks().getGroups()) {
             if (g.getType() != C.TRACK_TYPE_VIDEO) continue;
@@ -4885,6 +5069,7 @@ public final class DirectStreamPlayer {
                         ? String.format(new Locale("ar"), "%d بكسل", f.height)
                         : "جودة المصدر");
                 choices.add(new TrackSelectionOverride(g.getMediaTrackGroup(), i));
+                heights.add(Math.max(0, f.height));
             }
         }
 
@@ -4903,7 +5088,22 @@ public final class DirectStreamPlayer {
                 androidx.media3.common.TrackSelectionParameters.Builder b =
                         player.getTrackSelectionParameters().buildUpon()
                                 .clearOverridesOfType(C.TRACK_TYPE_VIDEO);
-                if (choices.get(which) != null) b.setOverrideForType(choices.get(which));
+                hideLowerHint();
+                stallBeganAt = 0L;
+                stallGeneration++;
+                if (choices.get(which) != null) {
+                    b.setOverrideForType(choices.get(which));
+                    // 322.3.127: the viewer's own quality — no cap and never lowered by
+                    // itself (a stall only offers «⬇ خفّض»). Not kept for the next film.
+                    b.clearVideoSizeConstraints();
+                    manualQuality = true;
+                    manualGuard.begin(Math.max(0, heights.get(which)), SystemClock.elapsedRealtime());
+                } else {
+                    // 322.3.127: «تلقائي» again — 720 and under, and the stall rule.
+                    manualQuality = false;
+                    stallGuard.begin(StallGuard.START_HEIGHT, SystemClock.elapsedRealtime());
+                    b.setMaxVideoSize(Integer.MAX_VALUE, stallGuard.cap());
+                }
                 player.setTrackSelectionParameters(b.build());
                 hidePanel();
             }));
@@ -5852,6 +6052,7 @@ public final class DirectStreamPlayer {
             subtitle.setVisibility(text.isEmpty() ? View.GONE : View.VISIBLE);
             checkCredits();
             persistResume(false);
+            calmCheck();   // 322.3.127
             handler.postDelayed(this, 100);
         }
     };

@@ -1706,7 +1706,32 @@ assert 'WebViewFeature.DOCUMENT_START_SCRIPT' in mh127 and 'addDocumentStartJava
 assert "set:function(){d.set.call(this,true);}" in d127 and "P.play=function(){on(this);" in d127
 # automatic quality start
 ex127 = body127('    private void startExoPlayer(String userAgent, String referer, String origin) {')
-assert 'new ExoPlayer.Builder(activity).setBandwidthMeter(bandwidthMeter).build()' in ex127
+assert '.setBandwidthMeter(bandwidthMeter)\n                .setTrackSelector(selector)\n                .setLoadControl(loadControl)\n                .build();' in ex127
+assert 'new AdaptiveTrackSelection.Factory(15_000, 25_000, 25_000, 0.6f)' in ex127
+assert '.setBufferDurationsMs(120_000, 150_000, 2_500, 5_000)' in ex127
+# the quality: starts at 720 (or the viewer's last pick), down on stalls, a hand pick left alone
+assert 'stallGuard.begin(StallGuard.START_HEIGHT, SystemClock.elapsedRealtime());' in ex127   # every film: 720
+assert 'QUALITY_PICK' not in d127   # the owner chose: never the last pick
+assert '.setMaxVideoSize(Integer.MAX_VALUE, stallGuard.cap())' in ex127
+assert 'noteStall();   // 322.3.127' in ex127 and 'if (reason == Player.DISCONTINUITY_REASON_SEEK) lastSeekAt' in ex127
+ns127 = body127('    private void noteStall() {')
+assert 'if (now - lastSeekAt < 4000L) return;' in ns127 and 'g.onStall(now, playingHeight(), videoHeights())' in ns127
+assert 'g.onLongStall(' in ns127 and 'StallGuard.LONG_STALL_MS' in ns127
+sv127 = body127('    private void stallVerdict(int lower, boolean byHand) {')
+assert 'BandwidthMemory.slowReason(' in sv127 and 'showLowerHint(lower, why);' in sv127
+assert 'setVideoCap(lower);\n        showTransientValue("⬇ " + lower + " — " + why, 2600);' in sv127
+lh127 = body127('    private void showLowerHint(final int lower, String why) {')
+assert '"الفيديو يعلّق — " + why' in lh127 and 'chip("⬇ خفّض إلى " + lower, 13,' in lh127 and '12000L' in lh127
+assert 'manualGuard.begin(height, SystemClock.elapsedRealtime());' in body127('    private void pickHeight(int height) {')
+assert 'final StallGuard g = byHand ? manualGuard : stallGuard;' in body127('    private void noteStall() {')
+assert '.putLong(bandwidthBestKey, BandwidthMemory.newBest(' in body127('    private void saveBandwidth() {')
+assert 'calmCheck();   // 322.3.127' in d127
+q127 = body127('    private void quality() {')
+assert 'b.clearVideoSizeConstraints();\n                    manualQuality = true;' in q127
+assert 'manualGuard.begin(Math.max(0, heights.get(which)), SystemClock.elapsedRealtime());' in q127 and '"تلقائي — حتى %d", StallGuard.START_HEIGHT' in q127
+assert 'stallGuard.begin(StallGuard.START_HEIGHT, SystemClock.elapsedRealtime());\n                    b.setMaxVideoSize(Integer.MAX_VALUE, stallGuard.cap());' in q127
+sg127 = open('app/src/main/java/com/artaq/subhub/StallGuard.java', encoding='utf-8').read()
+assert 'static final int START_HEIGHT = 720;' in sg127 and 'import android' not in sg127
 assert '.setInitialBitrateEstimate(BandwidthMemory.initial(prefs.getLong(bandwidthKey, 0L)))' in ex127
 assert 'new ExoPlayer.Builder(activity).build()' not in d127
 assert 'saveBandwidth();   // 322.3.127' in body127('    public void close() {')

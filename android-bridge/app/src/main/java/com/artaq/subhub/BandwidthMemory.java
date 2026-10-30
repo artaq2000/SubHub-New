@@ -35,4 +35,28 @@ final class BandwidthMemory {
         if (!measured || estimate < MIN_BPS) return -1;
         return Math.min(MAX_BPS, estimate);
     }
+
+    // ------------------------------------------------------------------------
+    // When a film stalls, the viewer is told where the trouble most likely is: the
+    // best speed this device got lately on this kind of connection (from any server)
+    // against what THIS server gives now. Far under it → the server; else → the
+    // connection. The best fades a little each time (an old fast day is forgotten).
+
+    static String bestKey(String network) {
+        return key(network).replace("bw_start_", "bw_best_");
+    }
+
+    /** The best speed to keep after a player measured `measured`. */
+    static long newBest(long oldBest, long measured) {
+        long faded = oldBest > 0 ? (long) (oldBest * 0.9) : 0L;
+        long now = measured >= MIN_BPS ? Math.min(MAX_BPS, measured) : 0L;
+        return Math.max(faded, now);
+    }
+
+    /** «السيرفر بطيء غالباً» / «الاتصال بطيء غالباً» / both when nothing is known. */
+    static String slowReason(long measured, long best) {
+        if (measured <= 0 || best <= 0) return "السيرفر أو الاتصال بطيء";
+        if (measured < best * 0.35) return "السيرفر بطيء غالباً";
+        return "الاتصال بطيء غالباً";
+    }
 }

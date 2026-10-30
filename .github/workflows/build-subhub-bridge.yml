@@ -160,6 +160,12 @@ jobs:
           javac -d /tmp/subhub-bandwidth-tests app/src/main/java/com/artaq/subhub/BandwidthMemory.java tests/BandwidthMemoryTest.java
           java -cp /tmp/subhub-bandwidth-tests com.artaq.subhub.BandwidthMemoryTest
 
+      - name: Test the start quality and the stall rule
+        run: |
+          mkdir -p /tmp/subhub-stall-tests
+          javac -d /tmp/subhub-stall-tests app/src/main/java/com/artaq/subhub/StallGuard.java tests/StallGuardTest.java
+          java -cp /tmp/subhub-stall-tests com.artaq.subhub.StallGuardTest
+
       - name: Test episode timing (next episode + smart waiting)
         run: |
           mkdir -p /tmp/subhub-timing-tests

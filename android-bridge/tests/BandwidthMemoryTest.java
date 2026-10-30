@@ -31,6 +31,18 @@ public class BandwidthMemoryTest {
         eq(BandwidthMemory.key("cell"), "bw_start_cell", "mobile data");
         eq(BandwidthMemory.key("vpn"), "bw_start_other", "other");
         eq(BandwidthMemory.key(null), "bw_start_other", "unknown");
+        // the best speed lately (per connection kind), fading a little each time
+        eq(BandwidthMemory.bestKey("wifi"), "bw_best_wifi", "best key");
+        eq(BandwidthMemory.bestKey("x"), "bw_best_other", "best key other");
+        eq(BandwidthMemory.newBest(0L, 30_000_000L), 30_000_000L, "first measurement");
+        eq(BandwidthMemory.newBest(30_000_000L, 2_000_000L), 27_000_000L, "a slow server: the best fades only");
+        eq(BandwidthMemory.newBest(10_000_000L, 40_000_000L), 40_000_000L, "faster: kept");
+        eq(BandwidthMemory.newBest(10_000_000L, 0L), 9_000_000L, "nothing measured: fades");
+        // where the trouble is
+        eq(BandwidthMemory.slowReason(2_000_000L, 30_000_000L), "السيرفر بطيء غالباً", "this server far under this device's best");
+        eq(BandwidthMemory.slowReason(1_500_000L, 2_500_000L), "الاتصال بطيء غالباً", "the device is slow everywhere");
+        eq(BandwidthMemory.slowReason(0L, 30_000_000L), "السيرفر أو الاتصال بطيء", "not measured");
+        eq(BandwidthMemory.slowReason(5_000_000L, 0L), "السيرفر أو الاتصال بطيء", "no best yet");
         System.out.println("BandwidthMemoryTest OK (" + n + " checks)");
     }
 }
